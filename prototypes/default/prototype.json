@@ -1,0 +1,21 @@
+{
+  "name": "Default Test Prototype",
+  "mechanics": {
+    "fog_of_war": false,
+    "darkness": false,
+    "turn_based": false,
+    "line_of_sight": false
+  },
+  "stats": {
+    "health": {
+      "max": 100,
+      "current": 100
+    }
+  },
+  "inventory": {
+    "max_items": 10
+  },
+  "available_items": [],
+  "available_actors": [],
+  "win_conditions": []
+}

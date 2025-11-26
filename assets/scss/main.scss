@@ -1,0 +1,15 @@
+// Main SCSS file for Dungeon Mode Kit
+@import 'base';
+@import 'typography'; 
+@import 'game';
+
+// Additional styles for the kit
+body {
+    margin: 0;
+    padding: 20px;
+    font-family: 'courier_prime_coderegular', 'Courier New', monospace;
+}
+
+h1 {
+    font-family: 'Computer Modern Roman', serif;
+}

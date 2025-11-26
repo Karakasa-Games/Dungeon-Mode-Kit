@@ -1,0 +1,96 @@
+{
+  "key": {
+    "name": "Key",
+    "tileIndex": {"x": 10, "y": 0},
+    "attributes": {
+      "pickupable": true,
+      "visible": true,
+      "stackable": false,
+      "flammable": false
+    },
+    "use_effect": "unlock_door"
+  },
+  
+  "bow": {
+    "name": "Bow",
+    "tileIndex": {"x": 13, "y": 0},
+    "attributes": {
+      "pickupable": true,
+      "visible": true,
+      "stackable": false,
+      "flammable": true,
+      "weapon": true
+    },
+    "attack_type": "ranged",
+    "attack_range": 10,
+    "requires": "arrow"
+  },
+  
+  "arrow": {
+    "name": "Arrow",
+    "tileIndex": {"x": 3, "y": 1},
+    "attributes": {
+      "pickupable": true,
+      "visible": true,
+      "stackable": true,
+      "flammable": true,
+      "ammunition": true
+    },
+    "damage": 10
+  },
+  
+  "health_potion": {
+    "name": "Health Potion",
+    "tileIndex": {"x": 15, "y": 0},
+    "attributes": {
+      "pickupable": true,
+      "visible": true,
+      "stackable": true,
+      "flammable": false,
+      "consumable": true
+    },
+    "use_effect": "restore_health",
+    "restore_amount": 50
+  },
+  
+  "strength_potion": {
+    "name": "Strength Potion",
+    "tileIndex": {"x": 16, "y": 0},
+    "attributes": {
+      "pickupable": true,
+      "visible": true,
+      "stackable": true,
+      "flammable": false,
+      "consumable": true
+    },
+    "use_effect": "restore_strength",
+    "restore_amount": 5
+  },
+  
+  "flower": {
+    "name": "Flower",
+    "tileIndex": {"x": 11, "y": 10},
+    "attributes": {
+      "pickupable": true,
+      "visible": true,
+      "stackable": true,
+      "flammable": true
+    },
+    "tint_variation": true
+  },
+  
+  "mattock": {
+    "name": "Mattock",
+    "tileIndex": {"x": 3, "y": 8},
+    "attributes": {
+      "pickupable": true,
+      "visible": true,
+      "stackable": false,
+      "flammable": true,
+      "tool": true
+    },
+    "use_effect": "mine_wall",
+    "durability": 20,
+    "break_chance": 0.05
+  }
+}

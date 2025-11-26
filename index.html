@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Dungeon Mode Kit - Minimal Test</title>
+     <link rel="stylesheet" href="assets/main.css" type="text/css" media="screen" charset="utf-8">
+</head>
+<body>
+    <div id="info">
+        <h2>Dungeon Mode Kit</h2>
+        <p>Status: <span id="status">Ready</span></p>
+        <button onclick="startTest()">Start Test</button>
+    </div>
+    
+    <div id="game"></div>
+
+    <!-- Libraries -->
+    <script src="lib/rot.js"></script>
+    <script src="lib/pixi.min.js"></script>
+    <script src="lib/tweenjs.js"></script>
+    <script src="lib/howler.js"></script>
+    <script src="globals.js"></script>
+    <script src="engine.js"></script>
+
+    <script>
+        const statusEl = document.getElementById('status');
+        
+        function updateStatus(message, isError = false) {
+            statusEl.textContent = message;
+            statusEl.className = isError ? 'error' : 'success';
+            console.log(message);
+        }
+
+        async function startTest() {
+            try {
+                updateStatus('Initializing engine...');
+                await initializeGame();
+                updateStatus('✓ Engine loaded! You should see a tile pattern below.');
+            } catch (e) {
+                updateStatus(`✗ Error: ${e.message}`, true);
+                console.error(e);
+            }
+        }
+
+        // Auto-start
+        window.addEventListener('load', () => {
+            setTimeout(startTest, 500);
+        });
+    </script>
+</body>
+</html>

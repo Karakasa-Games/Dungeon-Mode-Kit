@@ -1,0 +1,4 @@
+lib/*
+.vscode
+.sass-cache
+tiled/

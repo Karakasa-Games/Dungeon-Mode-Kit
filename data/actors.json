@@ -1,0 +1,107 @@
+{
+  "player": {
+    "name": "Player",
+    "tileIndexBase": {"x": 10, "y": 5},
+    "tileIndexTop": {"x": 1, "y": 0},
+    "attributes": {
+      "controlled": true,
+      "solid": true,
+      "visible": true,
+      "flammable": true
+    },
+    "stats": {
+      "health": 100,
+      "strength": 10
+    }
+  },
+  
+  "skeleton": {
+    "name": "Skeleton",
+    "tileIndexBase": {"x": 8, "y": 7},
+    "tileIndexTop": {"x": 9, "y": 7},
+    "personality": "aggressive_melee",
+    "attributes": {
+      "hostile": true,
+      "solid": true,
+      "visible": true,
+      "flammable": true
+    },
+    "stats": {
+      "health": 30,
+      "strength": 5
+    }
+  },
+  
+  "basilisk": {
+    "name": "Basilisk",
+    "tileIndexBase": {"x": 10, "y": 7},
+    "tileIndexTop": {"x": 21, "y": 6},
+    "personality": "ranged_attacker",
+    "attributes": {
+      "hostile": true,
+      "solid": true,
+      "visible": true,
+      "flammable": false
+    },
+    "stats": {
+      "health": 50,
+      "strength": 8
+    }
+  },
+  
+  "wall": {
+    "name": "Wall",
+    "tileIndexBase": {"x": 22, "y": 8},
+    "tileIndexTop": {"x": 21, "y": 8},
+    "attributes": {
+      "solid": true,
+      "visible": true,
+      "pushable": false,
+      "breakable": true
+    }
+  },
+  
+  "pushable_wall": {
+    "name": "Pushable Wall",
+    "tileIndexBase": {"x": 22, "y": 8},
+    "tileIndexTop": {"x": 21, "y": 8},
+    "attributes": {
+      "solid": true,
+      "visible": true,
+      "pushable": true,
+      "breakable": false
+    }
+  },
+  
+  "door": {
+    "name": "Door",
+    "tileIndexBase": {"x": 21, "y": 8},
+    "tileIndexTop": {"x": 10, "y": 6},
+    "tileIndexTop_open": {"x": 13, "y": 8},
+    "attributes": {
+      "solid": true,
+      "visible": true,
+      "openable": true,
+      "lockable": true
+    },
+    "state": {
+      "open": false,
+      "locked": false
+    }
+  },
+  
+  "fire": {
+    "name": "Fire",
+    "animated": true,
+    "animation_frames": "fire",
+    "attributes": {
+      "solid": false,
+      "visible": true,
+      "damages": true,
+      "spreads": true
+    },
+    "damage_per_turn": 10,
+    "spread_chance": 0.3,
+    "lifetime": 5
+  }
+}
