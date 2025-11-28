@@ -1,8 +1,8 @@
 {
   "player": {
     "name": "Player",
-    "tileIndexBase": {"x": 10, "y": 5},
-    "tileIndexTop": {"x": 1, "y": 0},
+    "tileIndexBase": "LEG",
+    "tileIndexTop": "OPAQUE_DARK_SMILING_FACE",
     "attributes": {
       "controlled": true,
       "solid": true,
@@ -17,8 +17,8 @@
   
   "skeleton": {
     "name": "Skeleton",
-    "tileIndexBase": {"x": 8, "y": 7},
-    "tileIndexTop": {"x": 9, "y": 7},
+    "tileIndexBase": "SKELETON_LEGS",
+    "tileIndexTop": "SKULL",
     "personality": "aggressive_melee",
     "attributes": {
       "hostile": true,
@@ -35,7 +35,7 @@
   "basilisk": {
     "name": "Basilisk",
     "tileIndexBase": {"x": 10, "y": 7},
-    "tileIndexTop": {"x": 21, "y": 6},
+    "tileIndexTop": "CYCLOPS_FACE",
     "personality": "ranged_attacker",
     "attributes": {
       "hostile": true,
@@ -51,8 +51,8 @@
   
   "wall": {
     "name": "Wall",
-    "tileIndexBase": {"x": 22, "y": 8},
-    "tileIndexTop": {"x": 21, "y": 8},
+    "tileIndexBase": "OPAQUE_DARK_SHADE",
+    "tileIndexTop": "OPAQUE_MEDIUM_LIGHT_SHADE",
     "attributes": {
       "solid": true,
       "visible": true,
@@ -63,8 +63,8 @@
   
   "pushable_wall": {
     "name": "Pushable Wall",
-    "tileIndexBase": {"x": 22, "y": 8},
-    "tileIndexTop": {"x": 21, "y": 8},
+    "tileIndexBase": "OPAQUE_DARK_SHADE",
+    "tileIndexTop": "OPAQUE_MEDIUM_LIGHT_SHADE",
     "attributes": {
       "solid": true,
       "visible": true,
@@ -75,9 +75,9 @@
   
   "door": {
     "name": "Door",
-    "tileIndexBase": {"x": 21, "y": 8},
-    "tileIndexTop": {"x": 10, "y": 6},
-    "tileIndexTop_open": {"x": 13, "y": 8},
+    "tileIndexBase": "OPAQUE_MEDIUM_LIGHT_SHADE",
+    "tileIndexTop": "DOOR_TOP",
+    "tileIndexTop_open": "OPAQUE_DOOR_TOP",
     "attributes": {
       "solid": true,
       "visible": true,

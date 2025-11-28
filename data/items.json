@@ -1,7 +1,19 @@
 {
   "key": {
     "name": "Key",
-    "tileIndex": {"x": 10, "y": 0},
+    "tileIndex": "WHITE_KEY",
+    "attributes": {
+      "pickupable": true,
+      "visible": true,
+      "stackable": false,
+      "flammable": false
+    },
+    "use_effect": "unlock_paired_door"
+  },
+  
+  "black_key": {
+    "name": "Black Key",
+    "tileIndex": "BLACK_KEY",
     "attributes": {
       "pickupable": true,
       "visible": true,
@@ -13,7 +25,7 @@
   
   "bow": {
     "name": "Bow",
-    "tileIndex": {"x": 13, "y": 0},
+    "tileIndex": "BOW_AND_ARROW",
     "attributes": {
       "pickupable": true,
       "visible": true,
@@ -28,7 +40,7 @@
   
   "arrow": {
     "name": "Arrow",
-    "tileIndex": {"x": 3, "y": 1},
+    "tileIndex": "RIGHTWARDS_ARROW",
     "attributes": {
       "pickupable": true,
       "visible": true,
@@ -41,7 +53,7 @@
   
   "health_potion": {
     "name": "Health Potion",
-    "tileIndex": {"x": 15, "y": 0},
+    "tileIndex": "EXCLAMATION_MARK",
     "attributes": {
       "pickupable": true,
       "visible": true,
@@ -69,7 +81,7 @@
   
   "flower": {
     "name": "Flower",
-    "tileIndex": {"x": 11, "y": 10},
+    "tileIndex": "WHITE_FLORETTE",
     "attributes": {
       "pickupable": true,
       "visible": true,
@@ -81,7 +93,7 @@
   
   "mattock": {
     "name": "Mattock",
-    "tileIndex": {"x": 3, "y": 8},
+    "tileIndex": "MATTOCK",
     "attributes": {
       "pickupable": true,
       "visible": true,

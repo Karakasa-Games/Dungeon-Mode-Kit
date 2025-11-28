@@ -4,6 +4,85 @@
  */
 
 // ============================================================================
+// SPRITE LIBRARY
+// ============================================================================
+
+class SpriteLibrary {
+    constructor() {
+        this.tiles = null;
+        this.animations = null;
+    }
+    
+    async load() {
+        try {
+            const response = await fetch('./data/static-tiles.json');
+            const data = await response.json();
+            this.tiles = data.tiles;
+            
+            // Store animation metadata
+            this.animations = {
+                'fire': 'fire',
+                'smoke': 'smoke'
+            };
+            
+            console.log('Sprite library loaded with', Object.keys(this.tiles).length, 'tiles');
+        } catch (error) {
+            console.error('Failed to load sprite library:', error);
+            this.tiles = {};
+        }
+    }
+    
+    /**
+     * Get tile coordinates by name
+     * @param {string} name - Tile name from static-tiles.json (e.g. "WHITE_KEY", "SKULL")
+     * @returns {{x: number, y: number}|null} Tile coordinates or null if not found
+     */
+    getTileByName(name) {
+        if (!this.tiles) {
+            console.error('Sprite library not loaded');
+            return null;
+        }
+        
+        const coords = this.tiles[name.toUpperCase()];
+        if (!coords) {
+            console.warn(`Tile '${name}' not found in sprite library`);
+            return null;
+        }
+        
+        return { x: coords[0], y: coords[1] };
+    }
+    
+    /**
+     * Check if a name refers to an animated sprite
+     * @param {string} name - Animation name (e.g. "fire", "smoke")
+     * @returns {boolean} True if this is an animated sprite
+     */
+    isAnimation(name) {
+        return this.animations && this.animations.hasOwnProperty(name.toLowerCase());
+    }
+    
+    /**
+     * Resolve a tile reference - handles both direct coordinates and named tiles
+     * @param {Object|string} tileRef - Either {x, y} coords or a string name
+     * @returns {{x: number, y: number}|null} Resolved tile coordinates
+     */
+    resolveTile(tileRef) {
+        if (!tileRef) return null;
+        
+        if (typeof tileRef === 'object' && tileRef.x !== undefined && tileRef.y !== undefined) {
+            return tileRef;
+        }
+        
+        if (typeof tileRef === 'string') {
+            return this.getTileByName(tileRef);
+        }
+        
+        console.warn('Invalid tile reference:', tileRef);
+        return null;
+    }
+}
+
+// ============================================================================
 // CORE ENGINE CLASS
 // ============================================================================
 
@@ -16,6 +95,7 @@ class DungeonEngine {
         this.renderer = null;
         this.mapManager = null;
         this.entityManager = null;
+        this.spriteLibrary = new SpriteLibrary();
         
         // Game state
         this.currentPrototype = null;
@@ -37,6 +117,7 @@ class DungeonEngine {
     }
     
     async initialize() {
+        await this.spriteLibrary.load();
         await this.loadGlobalAssets();
         this.setupEventListeners();
         
@@ -44,13 +125,11 @@ class DungeonEngine {
     }
     
     async initializeRenderer() {
-        // Verify container exists
         const container = document.getElementById(this.config.containerId);
         if (!container) {
             throw new Error(`Container element #${this.config.containerId} not found`);
         }
-        
-        // Create PIXI application with exact pixel dimensions for the map
+
         try {
             this.app = new PIXI.Application({
                 width: this.canvasWidth,
@@ -61,14 +140,8 @@ class DungeonEngine {
             });
             
             this.app.stage.sortableChildren = true;
-            
-            // Create render layers
             this.renderer = new RenderSystem(this.app, this.mapManager.width, this.mapManager.height);
-            
-            // Add to DOM
             container.appendChild(this.app.view);
-            
-            // Apply CSS scaling for hi-DPI displays (50% scale)
             this.app.view.style.width = `${this.canvasWidth / 2}px`;
             this.app.view.style.height = `${this.canvasHeight / 2}px`;
             this.app.view.style.imageRendering = 'pixelated';
@@ -83,11 +156,9 @@ class DungeonEngine {
     }
     
     async loadGlobalAssets() {
-        // Load shared assets used across all prototypes
         try {
             await Promise.race([
                 new Promise((resolve, reject) => {
-                    // Add error handler first
                     PIXI.Loader.shared.onError.add((error) => {
                         console.error('Asset loading error:', error);
                         reject(error);
@@ -102,7 +173,6 @@ class DungeonEngine {
                             resolve();
                         });
                 }),
-                // 10 second timeout
                 new Promise((_, reject) => 
                     setTimeout(() => reject(new Error('Asset loading timeout')), 10000)
                 )
@@ -111,10 +181,10 @@ class DungeonEngine {
             console.log('Sprites loaded successfully');
         } catch (error) {
             console.error('Failed to load sprite assets:', error);
-            throw error; // Re-throw to stop initialization
+            throw error;
         }
         
-        // Load audio sprite with error handling
+
         try {
             const audioData = await fetch("./data/effects.json").then(r => r.json());
             this.audioManager = new AudioManager(audioData);
@@ -128,7 +198,6 @@ class DungeonEngine {
     }
     
     setupAnimationFrames() {
-        // Cache animated sprite frames
         this.animationFrames = {
             fire: [],
             smoke: []
@@ -146,7 +215,6 @@ class DungeonEngine {
     }
     
     setupEventListeners() {
-        // Setup CreateJS ticker for animations
         createjs.Ticker.framerate = 60;
         createjs.Ticker.addEventListener("tick", createjs.Tween);
         
@@ -155,18 +223,10 @@ class DungeonEngine {
     
     async loadPrototype(prototypeName) {
         console.log(`Loading prototype: ${prototypeName}`);
-        
-        // Load prototype configuration
         const prototypeConfig = await this.loadPrototypeConfig(prototypeName);
         this.currentPrototype = new Prototype(prototypeName, prototypeConfig, this);
-        
-        // Load prototype-specific assets
         await this.currentPrototype.loadAssets();
-        
-        // Initialize map manager (uses default size initially)
         this.mapManager = new MapManager(this);
-        
-        // Check for authored map, otherwise generate procedural
         const hasAuthoredMap = await this.checkForAuthoredMap(prototypeName);
         
         if (hasAuthoredMap) {
@@ -175,7 +235,6 @@ class DungeonEngine {
             this.mapManager.generateProceduralMap();
         }
         
-        // Now that we know map dimensions, create the renderer
         this.canvasWidth = this.mapManager.width * this.config.tileWidth;
         this.canvasHeight = this.mapManager.height * this.config.tileHeight;
         
@@ -278,27 +337,22 @@ class DungeonEngine {
     }
     
     cleanup() {
-        // Stop turn engine
+
         if (this.turnEngine) {
             this.turnEngine.lock();
         }
-        
-        // Clear scheduler
+
         if (this.scheduler) {
             this.scheduler.clear();
         }
         
-        // Remove all entities
         if (this.entityManager) {
             this.entityManager.cleanup();
         }
         
-        // Clear map
         if (this.mapManager) {
             this.mapManager.cleanup();
         }
-        
-        // Clear renderer
         if (this.renderer) {
             this.renderer.clear();
         }
@@ -318,15 +372,9 @@ class Prototype {
     }
     
     async loadAssets() {
-        // Load prototype-specific actors
         this.actors = await this.loadJSON('actors.json', {});
-        
-        // Load prototype-specific items
         this.items = await this.loadJSON('items.json', {});
-        
-        // Load personalities
         this.personalities = await this.loadJSON('personalities.json', {});
-        
         console.log(`Loaded assets for prototype: ${this.name}`);
     }
     
@@ -419,8 +467,10 @@ class Item extends Entity {
     constructor(x, y, type, data, engine) {
         super(x, y, type, engine);
         this.name = data.name || type;
-        this.tileIndex = data.tileIndex || {x: 0, y: 0};
-        this.height = 1; // Items are single-tile
+        
+        // Resolve tile index - support both {x, y} format and string names
+        this.tileIndex = engine.spriteLibrary.resolveTile(data.tileIndex) || {x: 0, y: 0};
+        this.height = 1;
         
         // Default item attributes
         this.setAttribute('pickupable', true);
@@ -445,8 +495,10 @@ class Actor extends Entity {
         super(x, y, type, engine);
         this.name = data.name || type;
         this.height = 2; // Actors are 2-tile (base + top)
-        this.tileIndexBase = data.tileIndexBase || {x: 0, y: 0};
-        this.tileIndexTop = data.tileIndexTop || {x: 0, y: 0};
+        
+        // Resolve tile indices - support both {x, y} format and string names
+        this.tileIndexBase = engine.spriteLibrary.resolveTile(data.tileIndexBase) || {x: 0, y: 0};
+        this.tileIndexTop = engine.spriteLibrary.resolveTile(data.tileIndexTop) || {x: 0, y: 0};
         
         // Sprite references (will be set by renderer)
         this.spriteBase = null;
@@ -498,7 +550,7 @@ class Actor extends Entity {
         }
     }
     
-    takeDamage(stat, amount) {
+    modify(stat, amount) {
         if (this.stats[stat]) {
             this.stats[stat].current -= amount;
             if (this.stats[stat].current <= 0) {
@@ -899,10 +951,11 @@ class MapManager {
     getWildcardType(tileId) {
         // Map tile IDs to wildcard types
         const wildcardTypes = {
-            100: 'maze',
-            101: 'room',
-            102: 'item_spawn',
-            103: 'actor_spawn'
+            209: 'maze',
+            142: 'room',
+            143: 'room',
+            13: 'item_spawn',
+            18: 'actor_spawn'
         };
         return wildcardTypes[tileId] || 'unknown';
     }
@@ -1254,4 +1307,4 @@ async function initializeGame() {
 
 // For debugging: expose initialization function to console
 window.initializeGame = initializeGame;
-console.log('🎮 Dungeon Mode Kit loaded. Call initializeGame() to start.');
+console.log('ðŸŽ® Dungeon Mode Kit loaded. Call initializeGame() to start.');
