@@ -7,15 +7,5 @@
       "solid": true,
       "visible": true
     }
-  },
-  "player": {
-    "name": "Player",
-    "tileIndexBase": { "x": 10, "y": 5 },
-    "tileIndexTop": { "x": 1, "y": 0 },
-    "attributes": {
-      "solid": true,
-      "visible": true,
-      "controlled": true
-    }
   }
 }

@@ -119,9 +119,37 @@ class DungeonEngine {
     async initialize() {
         await this.spriteLibrary.load();
         await this.loadGlobalAssets();
+        await this.loadGlobalData();
         this.setupEventListeners();
         
         console.log('Engine initialized (renderer will be created when map loads)');
+    }
+    
+    async loadGlobalData() {
+        try {
+            // Load global entity definitions
+            const [actorsRes, itemsRes, personalitiesRes] = await Promise.all([
+                fetch('./data/actors.json'),
+                fetch('./data/items.json'),
+                fetch('./data/personalities.json')
+            ]);
+            
+            this.globalActors = await actorsRes.json();
+            this.globalItems = await itemsRes.json();
+            this.globalPersonalities = await personalitiesRes.json();
+            
+            console.log('Global data loaded:', {
+                actors: Object.keys(this.globalActors).length,
+                items: Object.keys(this.globalItems).length,
+                personalities: Object.keys(this.globalPersonalities).length
+            });
+        } catch (error) {
+            console.error('Failed to load global data:', error);
+            // Set defaults so the game can still run
+            this.globalActors = {};
+            this.globalItems = {};
+            this.globalPersonalities = {};
+        }
     }
     
     async initializeRenderer() {
@@ -140,7 +168,7 @@ class DungeonEngine {
             });
             
             this.app.stage.sortableChildren = true;
-            this.renderer = new RenderSystem(this.app, this.mapManager.width, this.mapManager.height);
+            this.renderer = new RenderSystem(this.app, this.mapManager.width, this.mapManager.height, this);
             container.appendChild(this.app.view);
             this.app.view.style.width = `${this.canvasWidth / 2}px`;
             this.app.view.style.height = `${this.canvasHeight / 2}px`;
@@ -372,10 +400,20 @@ class Prototype {
     }
     
     async loadAssets() {
-        this.actors = await this.loadJSON('actors.json', {});
-        this.items = await this.loadJSON('items.json', {});
-        this.personalities = await this.loadJSON('personalities.json', {});
+        // Load prototype-specific overrides
+        const prototypeActors = await this.loadJSON('actors.json', {});
+        const prototypeItems = await this.loadJSON('items.json', {});
+        const prototypePersonalities = await this.loadJSON('personalities.json', {});
+        
+        // Merge with globals (prototype overrides global)
+        this.actors = { ...this.engine.globalActors, ...prototypeActors };
+        this.items = { ...this.engine.globalItems, ...prototypeItems };
+        this.personalities = { ...this.engine.globalPersonalities, ...prototypePersonalities };
+        
         console.log(`Loaded assets for prototype: ${this.name}`);
+        console.log(`  Actors: ${Object.keys(this.actors).length} (${Object.keys(prototypeActors).length} prototype-specific)`);
+        console.log(`  Items: ${Object.keys(this.items).length} (${Object.keys(prototypeItems).length} prototype-specific)`);
+        console.log(`  Personalities: ${Object.keys(this.personalities).length} (${Object.keys(prototypePersonalities).length} prototype-specific)`);
     }
     
     async loadJSON(filename, defaultValue) {
@@ -495,6 +533,13 @@ class Actor extends Entity {
         super(x, y, type, engine);
         this.name = data.name || type;
         this.height = 2; // Actors are 2-tile (base + top)
+        
+        // Check if this is an animated actor
+        this.animated = data.animated || false;
+        this.animationFrames = data.animation_frames || null;
+        
+        // Load tint value (default to white if not specified)
+        this.tint = data.tint !== undefined ? data.tint : 0xFFFFFF;
         
         // Resolve tile indices - support both {x, y} format and string names
         this.tileIndexBase = engine.spriteLibrary.resolveTile(data.tileIndexBase) || {x: 0, y: 0};
@@ -1069,10 +1114,11 @@ class MapManager {
 // ============================================================================
 
 class RenderSystem {
-    constructor(app, mapWidth, mapHeight) {
+    constructor(app, mapWidth, mapHeight, engine) {
         this.app = app;
         this.mapWidth = mapWidth;
         this.mapHeight = mapHeight;
+        this.engine = engine;
         
         // Create rendering containers
         this.backgroundContainer = new PIXI.Container();
@@ -1168,6 +1214,31 @@ class RenderSystem {
         for (const actor of entityManager.actors) {
             if (!actor.hasAttribute('visible')) continue;
             
+            // Check if this is an animated actor
+            if (actor.animated && actor.animationFrames && this.engine.animationFrames) {
+                // Create animated sprite
+                const animFrames = this.engine.animationFrames[actor.animationFrames];
+                if (animFrames && animFrames.length > 0) {
+                    const animSprite = new PIXI.AnimatedSprite(animFrames);
+                    animSprite.x = actor.x * globalVars.TILE_WIDTH;
+                    animSprite.y = actor.y * globalVars.TILE_HEIGHT;
+                    animSprite.animationSpeed = 0.1;
+                    animSprite.play();
+                    animSprite.zIndex = 10;
+                    
+                    // Apply tint
+                    animSprite.tint = actor.tint;
+                    
+                    this.entityContainer.addChild(animSprite);
+                    actor.spriteBase = animSprite;
+                    actor.spriteTop = null; // Animated actors don't have a top sprite
+                    
+                    actorsRendered++;
+                    console.log(`Rendered animated actor ${actor.name} at (${actor.x}, ${actor.y}) with tint 0x${actor.tint.toString(16)}`);
+                    continue;
+                }
+            }
+            
             // Render base tile (legs)
             const baseRect = new PIXI.Rectangle(
                 actor.tileIndexBase.x * globalVars.TILE_WIDTH,
@@ -1181,6 +1252,9 @@ class RenderSystem {
             baseSprite.x = actor.x * globalVars.TILE_WIDTH;
             baseSprite.y = actor.y * globalVars.TILE_HEIGHT;
             baseSprite.zIndex = 10; // Above floor tiles
+            
+            // Apply tint
+            baseSprite.tint = actor.tint;
             
             this.entityContainer.addChild(baseSprite);
             
@@ -1197,6 +1271,9 @@ class RenderSystem {
             topSprite.x = actor.x * globalVars.TILE_WIDTH;
             topSprite.y = (actor.y - 1) * globalVars.TILE_HEIGHT; // One tile above
             topSprite.zIndex = 11; // Above base tile
+            
+            // Apply tint to top sprite as well
+            topSprite.tint = actor.tint;
             
             this.entityContainer.addChild(topSprite);
             
@@ -1307,4 +1384,4 @@ async function initializeGame() {
 
 // For debugging: expose initialization function to console
 window.initializeGame = initializeGame;
-console.log('ðŸŽ® Dungeon Mode Kit loaded. Call initializeGame() to start.');
+console.log('Dungeon Mode Kit loaded. Call initializeGame() to start.');
