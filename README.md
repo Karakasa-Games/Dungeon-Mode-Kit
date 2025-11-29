@@ -142,13 +142,72 @@ prototypes/        # Game definitions
 
 **Not Yet Implemented:**
 
-- Input handling (keyboard/mouse/touch)
+- Input handling (keyboard/mouse/touch) - our game loop doesn't require an active player and becomes an animation of actor behaviors without one
 - Pathfinding (A*)
 - Field of view
 - Combat
 - Item interactions
 - Fog of war / darkness
 - UI (inventory, stats, messages)
+
+#### Tree
+
+.
+├── assets
+│   ├── audio
+│   │   ├── effects.ac3
+│   │   ├── effects.m4a
+│   │   ├── effects.mp3
+│   │   └── effects.ogg
+│   ├── favicon.ico
+│   ├── fonts
+│   │   ├── cmunrm-webfont.woff
+│   │   ├── cmunrm-webfont.woff2
+│   │   ├── courier_prime_code-webfont.woff
+│   │   └── courier_prime_code-webfont.woff2
+│   ├── main.css
+│   ├── main.css.map
+│   ├── scss
+│   │   ├── _base.scss
+│   │   ├──_game.scss
+│   │   ├── _typography.scss
+│   │   ├── main.css
+│   │   ├── main.css.map
+│   │   └── main.scss
+│   └── sprites
+│       ├── fire-animation.png
+│       ├── smoke-animation.png
+│       └── static-tiles.png
+├── data
+│   ├── actors.json
+│   ├── effects.json
+│   ├── items.json
+│   ├── personalities.json
+│   └── static-tiles.json
+├── DUNGEON_MODE_KIT_DESIGN.md
+├── engine.js
+├── globals.js
+├── index.html
+├── lib
+│   ├── howler.js
+│   ├── pixi.min.js
+│   ├── pixi.min.js.map
+│   ├── rot.js
+│   ├── rot.min.js
+│   ├── tweenjs.js
+│   └── tweenjs.min.js
+├── LICENSE.txt
+├── prototypes
+│   └── default
+│       ├── actors.json
+│       ├── map.tmj
+│       └── prototype.json
+├── README.md
+├── tiled
+│   ├── dungeonkit.tiled-project
+│   ├── dungeonkit.tiled-session
+│   └── static-tiles.tsj
+└── tree.txt
 
 ## License
 

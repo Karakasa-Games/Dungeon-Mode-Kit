@@ -30,9 +30,6 @@
 │   ├── items.json
 │   ├── personalities.json
 │   └── static-tiles.json
-├── debug.html
-├── deprecated
-│   └── game.js
 ├── DUNGEON_MODE_KIT_DESIGN.md
 ├── engine.js
 ├── globals.js
@@ -45,10 +42,13 @@
 │   ├── rot.min.js
 │   ├── tweenjs.js
 │   └── tweenjs.min.js
+├── LICENSE.txt
 ├── prototypes
 │   └── default
+│       ├── actors.json
 │       ├── map.tmj
 │       └── prototype.json
+├── README.md
 ├── tiled
 │   ├── dungeonkit.tiled-project
 │   ├── dungeonkit.tiled-session

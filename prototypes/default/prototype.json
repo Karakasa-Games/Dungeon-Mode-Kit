@@ -1,5 +1,6 @@
 {
   "name": "Default Test Prototype",
+  "loaded_sound": "tone3",
   "mechanics": {
     "fog_of_war": false,
     "darkness": false,

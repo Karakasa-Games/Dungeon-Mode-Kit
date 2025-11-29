@@ -249,6 +249,44 @@ class DungeonEngine {
         console.log('Event listeners initialized');
     }
     
+    // Audio helper methods
+    playSound(soundName) {
+        if (this.audioManager) {
+            this.audioManager.play(soundName);
+        }
+    }
+    
+    stopSound(soundName) {
+        if (this.audioManager) {
+            this.audioManager.stop(soundName);
+        }
+    }
+    
+    muteAudio() {
+        if (this.audioManager) {
+            this.audioManager.mute();
+        }
+    }
+    
+    unmuteAudio() {
+        if (this.audioManager) {
+            this.audioManager.unmute();
+        }
+    }
+    
+    setAudioVolume(volume) {
+        if (this.audioManager) {
+            this.audioManager.setVolume(volume);
+        }
+    }
+    
+    listAvailableSounds() {
+        if (this.audioManager) {
+            return this.audioManager.listSounds();
+        }
+        return [];
+    }
+    
     async loadPrototype(prototypeName) {
         console.log(`Loading prototype: ${prototypeName}`);
         const prototypeConfig = await this.loadPrototypeConfig(prototypeName);
@@ -280,6 +318,11 @@ class DungeonEngine {
         // Render the map and entities
         this.renderer.renderTestPattern(this.mapManager);
         this.renderer.renderActors(this.entityManager);
+        
+        // Play loaded sound if specified
+        if (prototypeConfig.loaded_sound) {
+            this.playSound(prototypeConfig.loaded_sound);
+        }
         
         console.log(`Prototype ${prototypeName} loaded successfully`);
         console.log(`Map size: ${this.mapManager.width}x${this.mapManager.height} tiles`);
@@ -1303,6 +1346,9 @@ class AudioManager {
     constructor(audioSpriteData) {
         this.audioSpriteData = audioSpriteData;
         this.sound = null;
+        this.muted = false;
+        this.volume = 1.0;
+        
         if (audioSpriteData) {
             this.initHowler();
         }
@@ -1310,16 +1356,39 @@ class AudioManager {
     
     initHowler() {
         try {
-            // Construct audio file paths from sprite data
-            const basePath = './assets/audio/effects';
-            const formats = ['ac3', 'm4a', 'mp3', 'ogg'];
-            const urls = formats.map(ext => `${basePath}.${ext}`);
+            // Use URLs from sprite data if available, otherwise construct default paths
+            let urls = this.audioSpriteData.urls;
+            
+            // If URLs are relative and start with /, make them relative to current directory
+            if (urls && urls.length > 0) {
+                urls = urls.map(url => {
+                    if (url.startsWith('/')) {
+                        return '.' + url; // Convert /assets/... to ./assets/...
+                    }
+                    return url;
+                });
+            } else {
+                // Fallback to default paths
+                const basePath = './assets/audio/effects';
+                const formats = ['mp3', 'ogg', 'm4a'];
+                urls = formats.map(ext => `${basePath}.${ext}`);
+            }
+            
+            console.log('Initializing audio with URLs:', urls);
             
             this.sound = new Howl({
                 src: urls,
                 sprite: this.audioSpriteData.sprite,
-                volume: 1
+                volume: this.volume,
+                onload: () => {
+                    console.log('Audio sprite loaded successfully');
+                },
+                onloaderror: (id, error) => {
+                    console.error('Audio loading error:', error);
+                }
             });
+            
+            console.log('Howler initialized with', Object.keys(this.audioSpriteData.sprite).length, 'sound effects');
         } catch (error) {
             console.error('Failed to initialize Howler:', error);
             this.sound = null;
@@ -1327,13 +1396,64 @@ class AudioManager {
     }
     
     play(soundName) {
+        if (!this.sound) {
+            console.warn('Audio system not initialized');
+            return;
+        }
+        
+        if (this.muted) {
+            return;
+        }
+        
+        try {
+            // Check if the sound exists in the sprite
+            if (!this.audioSpriteData.sprite[soundName]) {
+                console.warn(`Sound '${soundName}' not found in audio sprite`);
+                return;
+            }
+            
+            this.sound.play(soundName);
+        } catch (error) {
+            console.warn(`Failed to play sound '${soundName}':`, error);
+        }
+    }
+    
+    stop(soundName) {
         if (this.sound) {
             try {
-                this.sound.play(soundName);
+                this.sound.stop(soundName);
             } catch (error) {
-                console.warn(`Failed to play sound '${soundName}':`, error);
+                console.warn(`Failed to stop sound '${soundName}':`, error);
             }
         }
+    }
+    
+    mute() {
+        this.muted = true;
+        if (this.sound) {
+            this.sound.mute(true);
+        }
+    }
+    
+    unmute() {
+        this.muted = false;
+        if (this.sound) {
+            this.sound.mute(false);
+        }
+    }
+    
+    setVolume(volume) {
+        this.volume = Math.max(0, Math.min(1, volume)); // Clamp between 0 and 1
+        if (this.sound) {
+            this.sound.volume(this.volume);
+        }
+    }
+    
+    listSounds() {
+        if (!this.audioSpriteData) {
+            return [];
+        }
+        return Object.keys(this.audioSpriteData.sprite);
     }
 }
 
@@ -1384,4 +1504,69 @@ async function initializeGame() {
 
 // For debugging: expose initialization function to console
 window.initializeGame = initializeGame;
+
+// Audio debugging utilities
+window.audioDebug = {
+    play: (soundName) => {
+        if (!engine || !engine.audioManager) {
+            console.error('Engine not initialized. Run initializeGame() first.');
+            return;
+        }
+        engine.playSound(soundName);
+    },
+    
+    list: () => {
+        if (!engine || !engine.audioManager) {
+            console.error('Engine not initialized. Run initializeGame() first.');
+            return [];
+        }
+        const sounds = engine.listAvailableSounds();
+        console.table(sounds.map(name => ({ sound: name })));
+        return sounds;
+    },
+    
+    volume: (vol) => {
+        if (!engine || !engine.audioManager) {
+            console.error('Engine not initialized. Run initializeGame() first.');
+            return;
+        }
+        engine.setAudioVolume(vol);
+        console.log(`Volume set to ${vol * 100}%`);
+    },
+    
+    mute: () => {
+        if (!engine || !engine.audioManager) {
+            console.error('Engine not initialized. Run initializeGame() first.');
+            return;
+        }
+        engine.muteAudio();
+        console.log('Audio muted');
+    },
+    
+    unmute: () => {
+        if (!engine || !engine.audioManager) {
+            console.error('Engine not initialized. Run initializeGame() first.');
+            return;
+        }
+        engine.unmuteAudio();
+        console.log('Audio unmuted');
+    },
+    
+    test: () => {
+        if (!engine || !engine.audioManager) {
+            console.error('Engine not initialized. Run initializeGame() first.');
+            return;
+        }
+        console.log('Playing test sequence...');
+        const testSounds = ['feets', 'plunk1', 'tone1', 'bow', 'pickup'];
+        testSounds.forEach((sound, i) => {
+            setTimeout(() => {
+                console.log(`Playing: ${sound}`);
+                engine.playSound(sound);
+            }, i * 600);
+        });
+    }
+};
+
 console.log('Dungeon Mode Kit loaded. Call initializeGame() to start.');
+//console.log('Audio debugging: audioDebug.list(), audioDebug.play("soundName"), audioDebug.test()');
