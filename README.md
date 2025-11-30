@@ -4,7 +4,7 @@ A modular web-based roguelike framework built on rot.js and pixi.js
 
 ### Core Architecture
 
-#### DungeonEngine (Lines 10-306)
+#### DungeonEngine (Lines 10- ~306)
 
 The main orchestrator that coordinates all subsystems:
 
@@ -18,7 +18,7 @@ Methods:
 - `loadPrototype(name)` - Loads a complete game definition
 - `transitionToPrototype()` / `returnToPreviousPrototype()` - Level transitions with state preservation
 
-#### Entity System (Lines 360-553)
+#### Entity System
 
 A hierarchical, attribute-based system:
 
@@ -40,7 +40,7 @@ A hierarchical, attribute-based system:
    stats are totally data driven and can be different for each prototype, could be anything.
 - Methods: `modify()`, `die()`, `pickUpItem()`, `act()`
 
-#### Personality System (Lines 559-617)
+#### Personality System
 
 Data-driven AI behaviors loaded from JSON:
 
@@ -52,7 +52,7 @@ Personality → behaviors[] → BehaviorLibrary
 - BehaviorLibrary contains pluggable routines: `patrol`, `pursue_target`, `random_walk`, `attack_adjacent`
 - `execute(actor)` runs behaviors in order until one succeeds
 
-#### MapManager (Lines 781-1012)
+#### MapManager
 
 Handles map loading and procedural generation:
 
@@ -63,7 +63,7 @@ Handles map loading and procedural generation:
   - `item_spawn` / `actor_spawn` - Placeholder for random placement
 - **Procedural Fallback**: Uses ROT.js Uniform algorithm if no `map.tmj` exists
 
-#### RenderSystem (Lines 1018-1166)
+#### RenderSystem
 
 PIXI.js rendering with layered containers:
 
@@ -74,7 +74,7 @@ PIXI.js rendering with layered containers:
 
 Actors render as two sprites stacked vertically (base at position, top one tile above).
 
-#### EntityManager (Lines 623-775)
+#### EntityManager
 
 Tracks and queries all game entities:
 
@@ -82,7 +82,7 @@ Tracks and queries all game entities:
 - Provides lookup methods: `getEntityAt()`, `getActorAt()`, `findNearestPlayer()`
 - Handles serialization for state saves
 
-#### AudioManager (Lines 1172-1208)
+#### AudioManager
 
 Howler.js wrapper for audio sprite playback with multi-format support.
 
@@ -121,7 +121,7 @@ prototypes/        # Game definitions
 
 ---
 
-## Current Implementation Status
+## Current Implementation Status (after these I'll 1.0 it and switch to a changelog)
 
 **Completed:**
 
@@ -129,12 +129,12 @@ prototypes/        # Game definitions
 - Entity system with attributes
 - PIXI.js rendering pipeline
 - Tiled map loading
+- Audio sprite support
+- Prototype loading system
 
 **In Progress:**
 
 - ROT.js maze generation
-- Audio sprite support
-- Prototype loading system
 - Multi-level state stack
 - Turn engine (framework exists, not fully wired)
 - AI behaviors (structure exists, behaviors are stubs)
@@ -149,6 +149,10 @@ prototypes/        # Game definitions
 - Item interactions
 - Fog of war / darkness
 - UI (inventory, stats, messages)
+
+**Pie in the Sky**
+
+- Dreaming of: once a minimal rogulike is achieved, adding optional panes for a pseudo3d first person view based on a playable actor position on the map and a verbose text description of turns, letting us experiment with different genre features
 
 #### Tree
 
