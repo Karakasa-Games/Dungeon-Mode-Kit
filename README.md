@@ -156,6 +156,7 @@ prototypes/        # Game definitions
 
 #### Tree
 
+```
 .
 ├── assets
 │   ├── audio
@@ -212,6 +213,7 @@ prototypes/        # Game definitions
 │   ├── dungeonkit.tiled-session
 │   └── static-tiles.tsj
 └── tree.txt
+```
 
 ## License
 
