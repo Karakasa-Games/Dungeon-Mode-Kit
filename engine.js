@@ -314,7 +314,10 @@ class DungeonEngine {
         
         // Process wildcards
         await this.mapManager.processWildcards();
-        
+
+        // Spawn any actors created by wildcard processing (e.g., room walls)
+        this.mapManager.spawnPendingWalls();
+
         // Render the map and entities
         this.renderer.renderTestPattern(this.mapManager);
         this.renderer.renderActors(this.entityManager);
@@ -1039,11 +1042,11 @@ class MapManager {
     getWildcardType(tileId) {
         // Map tile IDs to wildcard types
         const wildcardTypes = {
-            209: 'maze',
-            142: 'room',
+            210: 'maze',
             143: 'room',
-            13: 'item_spawn',
-            18: 'actor_spawn'
+            144: 'room',
+            12: 'item_spawn',
+            3: 'actor_spawn'
         };
         return wildcardTypes[tileId] || 'unknown';
     }
@@ -1065,24 +1068,66 @@ class MapManager {
     }
     
     async processWildcards() {
-        // Process wildcard tiles and replace with generated content
+        // Find contiguous wildcard regions and process each once
+        const processed = new Set();
+
         for (let y = 0; y < this.height; y++) {
             for (let x = 0; x < this.width; x++) {
+                const key = `${x},${y}`;
+                if (processed.has(key)) continue;
+
                 const wildcard = this.wildcardMap[y][x];
-                if (wildcard) {
-                    await this.generateWildcardContent(x, y, wildcard.type);
+                if (wildcard && wildcard.type !== 'unknown') {
+                    // Find the bounding box of this contiguous wildcard region
+                    const region = this.findWildcardRegion(x, y, wildcard.type, processed);
+                    await this.generateWildcardContent(region, wildcard.type);
                 }
             }
         }
     }
-    
-    async generateWildcardContent(x, y, type) {
+
+    findWildcardRegion(startX, startY, type, processed) {
+        // Find bounding box of contiguous wildcard tiles of the same type
+        let minX = startX, maxX = startX, minY = startY, maxY = startY;
+        const stack = [{x: startX, y: startY}];
+
+        while (stack.length > 0) {
+            const {x, y} = stack.pop();
+            const key = `${x},${y}`;
+
+            if (processed.has(key)) continue;
+            if (x < 0 || x >= this.width || y < 0 || y >= this.height) continue;
+
+            const wildcard = this.wildcardMap[y][x];
+            if (!wildcard || wildcard.type !== type) continue;
+
+            processed.add(key);
+            minX = Math.min(minX, x);
+            maxX = Math.max(maxX, x);
+            minY = Math.min(minY, y);
+            maxY = Math.max(maxY, y);
+
+            // Check 4-connected neighbors
+            stack.push({x: x+1, y}, {x: x-1, y}, {x, y: y+1}, {x, y: y-1});
+        }
+
+        return {
+            x: minX,
+            y: minY,
+            width: maxX - minX + 1,
+            height: maxY - minY + 1
+        };
+    }
+
+    async generateWildcardContent(region, type) {
+        console.log(`Generating ${type} at (${region.x}, ${region.y}) size ${region.width}x${region.height}`);
+
         switch (type) {
             case 'maze':
-                this.generateMazeAt(x, y, 10, 10);
+                this.generateMazeAt(region.x, region.y, region.width, region.height);
                 break;
             case 'room':
-                this.generateRoomAt(x, y, 5, 5);
+                this.generateRoomAt(region.x, region.y, region.width, region.height);
                 break;
             case 'item_spawn':
                 // Spawn random item
@@ -1092,34 +1137,82 @@ class MapManager {
                 break;
         }
     }
-    
+
     generateMazeAt(startX, startY, width, height) {
-        const maze = new ROT.Map.Maze(width, height);
+        const maze = new ROT.Map.EllerMaze(width, height);
         maze.create((x, y, value) => {
             const worldX = startX + x;
             const worldY = startY + y;
-            
+
             if (worldX < this.width && worldY < this.height) {
+                // Only generate where there's actually a wildcard tile
+                const wildcard = this.wildcardMap[worldY][worldX];
+                if (!wildcard || wildcard.type !== 'maze') {
+                    return; // Skip non-wildcard areas (preserve authored content)
+                }
+
                 if (value === 0) {
-                    this.floorMap[worldY][worldX] = { value: 157 };
+                    // Passable floor
+                    this.floorMap[worldY][worldX] = { tileId: 158, layer: 'floor' };
                     this.walkableTiles.push({x: worldX, y: worldY});
+                } else {
+                    // Wall
+                    this.floorMap[worldY][worldX] = { tileId: 217, layer: 'floor' };
                 }
             }
         });
     }
-    
+
     generateRoomAt(startX, startY, width, height) {
+        const wallPositions = [];
+
         for (let y = 0; y < height; y++) {
             for (let x = 0; x < width; x++) {
                 const worldX = startX + x;
                 const worldY = startY + y;
-                
+
                 if (worldX < this.width && worldY < this.height) {
-                    this.floorMap[worldY][worldX] = { value: 157 };
-                    this.walkableTiles.push({x: worldX, y: worldY});
+                    const isPerimeter = (x === 0 || x === width - 1 || y === 0 || y === height - 1);
+
+                    if (isPerimeter) {
+                        // Mark for wall actor placement (need +1 for actor's 2-tile height)
+                        // Only place wall if there's room for the top sprite
+                        if (worldY > 0) {
+                            wallPositions.push({x: worldX, y: worldY});
+                        }
+                        // Still put a floor tile under walls
+                        this.floorMap[worldY][worldX] = { tileId: 158, layer: 'floor' };
+                    } else {
+                        // Interior floor
+                        this.floorMap[worldY][worldX] = { tileId: 158, layer: 'floor' };
+                        this.walkableTiles.push({x: worldX, y: worldY});
+                    }
                 }
             }
         }
+
+        // Spawn wall actors - needs to happen after EntityManager exists
+        // Store for later processing
+        this.pendingWallSpawns = this.pendingWallSpawns || [];
+        this.pendingWallSpawns.push(...wallPositions);
+    }
+
+    spawnPendingWalls() {
+        if (!this.pendingWallSpawns || this.pendingWallSpawns.length === 0) return;
+
+        const actorData = this.engine.currentPrototype.getActorData('wall');
+        if (!actorData) {
+            console.warn('No wall actor data found');
+            return;
+        }
+
+        for (const pos of this.pendingWallSpawns) {
+            const wall = new Actor(pos.x, pos.y, 'wall', actorData, this.engine);
+            this.engine.entityManager.addEntity(wall);
+        }
+
+        console.log(`Spawned ${this.pendingWallSpawns.length} wall actors`);
+        this.pendingWallSpawns = [];
     }
     
     getRandomWalkableTile() {

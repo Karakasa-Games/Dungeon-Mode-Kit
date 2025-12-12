@@ -4,28 +4,30 @@ A modular web-based roguelike framework built on rot.js and pixi.js
 
 ### Core Architecture
 
-#### DungeonEngine (Lines 10- ~306)
+#### DungeonEngine
 
 The main orchestrator that coordinates all subsystems:
 
 - **Initialization**: Loads global assets (sprites, audio), sets up PIXI.js renderer with exact pixel dimensions for the current map
 - **Prototype Loading**: Loads game configurations from `prototypes/{name}/`, checking for authored Tiled maps or falling back to procedural generation
-- **State Management**: Maintains a `prototypeStack` for multi-level navigation (stairs), with save/restore capabilities for transitioning between levels
+- **State Management**: Maintains a `prototypeStack` for multi-level navigation (stairs), with save/restore capabilities for transitioning between levels. This is a stub that might not get used, since it's not actually important to me yet to have persistence between levels, rather they just load like totally new games.
 
 Methods:
 
 - `initialize()` - One-time setup of assets and animation ticker
 - `loadPrototype(name)` - Loads a complete game definition
-- `transitionToPrototype()` / `returnToPreviousPrototype()` - Level transitions with state preservation
+- `transitionToPrototype()` / `returnToPreviousPrototype()` - Level transitions
 
 #### Entity System
 
 A hierarchical, attribute-based system:
 
-**Entity (Base)** - Any object with position, a sprite, and semantic attributes
+**Entity (Base)** - Any object with position, optional sprite, and semantic attributes
 
 - Attributes stored in a Map: `solid`, `pushable`, `flammable`, `breakable`, `visible`, etc.
 - Methods: `setAttribute()`, `getAttribute()`, `hasAttribute()`
+- Sprites are optional (`this.sprite = null` by default) - useful for invisible triggers, shadows, etc.
+- Floors are **not** entities - they're tile data in `MapManager.floorMap`
 
 **Item (extends Entity)** - Single-tile pickupable objects (keys, potions, weapons)
 
@@ -33,7 +35,7 @@ A hierarchical, attribute-based system:
 - Default attribute: `pickupable: true`
 - In the future items will have a data file similar to actor's personality files that will add effects and verbs
 
-**Actor (extends Entity)** - Interactive 2-tile entities (player, monsters, doors)
+**Actor (extends Entity)** - Interactive 2-tile entities (player, monsters, doors, walls)
 
 - Height: 2 tiles (base sprite + top sprite)
 - Has `stats`, `inventory`, and `personality`
@@ -57,22 +59,32 @@ Personality → behaviors[] → BehaviorLibrary
 Handles map loading and procedural generation:
 
 - **Tiled Integration**: Loads `.tmj` files with floor, background, and object layers for actors and items.
-- **Wildcard System**: Special tiles trigger procedural content
-  - `maze` - Generates ROT.js maze at location
-  - `room` - Creates rectangular room
-  - `item_spawn` / `actor_spawn` - Placeholder for random placement
+- **Wildcard System**: Special tiles in the `wildcards` layer trigger procedural content generation. Wildcards detect contiguous regions and generate content sized to fit, preserving any authored content within gaps.
+  - `maze` (tile 210) - Generates ROT.js EllerMaze, only filling wildcard tiles
+  - `room` (tiles 143, 144) - Creates rectangular room with wall actors on perimeter
+  - `item_spawn` / `actor_spawn` - Placeholder for random placement (not yet implemented)
 - **Procedural Fallback**: Uses ROT.js Uniform algorithm if no `map.tmj` exists
+
+Note: Tiled tile IDs are 1-indexed, so tile 210 in Tiled maps to ID 210 in `getWildcardType()`.
 
 #### RenderSystem
 
 PIXI.js rendering with layered containers:
 
-1. `backgroundContainer` - Auto-generated shadows
-2. `floorContainer` - Floor tiles
+1. `backgroundContainer` - Background tiles from Tiled `background` layer
+2. `floorContainer` - Floor tiles from Tiled `floor` layer
 3. `entityContainer` - Actors (2-tile) and items
 4. `uiContainer` - UI elements
 
 Actors render as two sprites stacked vertically (base at position, top one tile above).
+
+**Tiled Layer Names:**
+
+- `background` (tilelayer) - Walls, shadows, decoration behind floor
+- `floor` (tilelayer) - Walkable floor tiles (tracked in `walkableTiles`)
+- `wildcards` (tilelayer) - Special tiles that trigger procedural generation
+- `actors` (objectgroup) - Objects with `type` or `class` matching actor definitions
+- `items` (objectgroup) - Objects with `type` matching item definitions
 
 #### EntityManager
 
@@ -99,6 +111,7 @@ Howler.js wrapper for audio sprite playback with multi-format support.
            ├─> initializeRenderer()
            ├─> EntityManager.spawnEntities()
            ├─> MapManager.processWildcards()
+           ├─> MapManager.spawnPendingWalls()
            └─> RenderSystem.renderTestPattern() + renderActors()
 ```
 
@@ -131,14 +144,16 @@ prototypes/        # Game definitions
 - Tiled map loading
 - Audio sprite support
 - Prototype loading system
+- Wildcard system with region detection
+- ROT.js maze generation (EllerMaze)
+- Room generation with wall actors
 
 **In Progress:**
 
-- ROT.js maze generation
 - Multi-level state stack
 - Turn engine (framework exists, not fully wired)
 - AI behaviors (structure exists, behaviors are stubs)
-- Wildcard processing (detection works, spawn stubs empty)
+- Wildcard item/actor spawning (stubs exist)
 
 **Not Yet Implemented:**
 
