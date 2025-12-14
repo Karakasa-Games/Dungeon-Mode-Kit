@@ -150,9 +150,9 @@ prototypes/        # Game definitions
 
 **In Progress:**
 
-- Input handling (keyboard/mouse/touch) - our game loop doesn't require an active player and becomes an animation of actor behaviors without one
+- Input handling (keyboard/mouse/touch) - basic version works (arrow keys, wasd)
 - Multi-level state stack
-- Turn engine (framework exists, not fully wired)
+- Turn engine (active, can switch to observer mode when there's no controlled actor)
 - AI behaviors (structure exists, behaviors are stubs)
 - Wildcard item/actor spawning (stubs exist)
 

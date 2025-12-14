@@ -285,7 +285,83 @@ class DungeonEngine {
 
         console.log('Event listeners initialized');
     }
-    
+
+    /**
+     * Initialize the turn-based engine using ROT.js
+     * Uses Simple scheduler - all actors get one turn per round
+     */
+    initializeTurnEngine() {
+        this.scheduler = new ROT.Scheduler.Simple();
+        this.turnEngine = new ROT.Engine(this.scheduler);
+
+        // Track if there are any player-controlled actors
+        this.hasControlledActor = false;
+
+        // Only schedule actors that take turns (have personality or are player-controlled)
+        for (const actor of this.entityManager.actors) {
+            if (actor.personality || actor.hasAttribute('controlled')) {
+                this.scheduler.add(actor, true);
+                if (actor.hasAttribute('controlled')) {
+                    this.hasControlledActor = true;
+                }
+            }
+        }
+
+        // Get turn speed from prototype config (default 50ms)
+        this.turnSpeed = this.currentPrototype?.config.turn_speed ?? 50;
+
+        // Observer mode state (for play/pause when no controlled actors)
+        this.observerPaused = false;
+
+        console.log(`Turn engine initialized with ${this.scheduler._queue._events.length} scheduled actors`);
+        console.log(`Observer mode: ${!this.hasControlledActor}, turn speed: ${this.turnSpeed}ms`);
+
+        // Start the engine
+        this.turnEngine.start();
+
+        // In observer mode, start auto-advancing turns
+        if (!this.hasControlledActor) {
+            this.advanceObserverTurn();
+        }
+    }
+
+    /**
+     * Advance one turn in observer mode (no player-controlled actors)
+     */
+    advanceObserverTurn() {
+        if (this.observerPaused || this.hasControlledActor) return;
+
+        // Unlock to let one round of AI turns happen
+        this.turnEngine.unlock();
+
+        // Schedule next turn after delay
+        setTimeout(() => this.advanceObserverTurn(), this.turnSpeed);
+    }
+
+    /**
+     * Toggle play/pause in observer mode
+     */
+    toggleObserverPause() {
+        if (this.hasControlledActor) return;
+
+        this.observerPaused = !this.observerPaused;
+        console.log(`Observer mode ${this.observerPaused ? 'paused' : 'playing'}`);
+
+        if (!this.observerPaused) {
+            this.advanceObserverTurn();
+        }
+    }
+
+    /**
+     * Reload the current prototype
+     */
+    async reloadPrototype() {
+        const prototypeName = this.currentPrototype?.name || 'default';
+        console.log(`Reloading prototype: ${prototypeName}`);
+        this.cleanup();
+        await this.loadPrototype(prototypeName);
+    }
+
     // Audio helper methods
     playSound(soundName) {
         if (this.audioManager) {
@@ -360,11 +436,14 @@ class DungeonEngine {
         this.renderer.renderItems(this.entityManager);
         this.renderer.renderActors(this.entityManager);
 
+        // Initialize turn engine
+        this.initializeTurnEngine();
+
         // Play loaded sound if specified
         if (prototypeConfig.loaded_sound) {
             this.playSound(prototypeConfig.loaded_sound);
         }
-        
+
         console.log(`Prototype ${prototypeName} loaded successfully`);
         console.log(`Map size: ${this.mapManager.width}x${this.mapManager.height} tiles`);
         console.log(`Canvas size: ${this.canvasWidth}x${this.canvasHeight}px`);
@@ -681,11 +760,28 @@ class Actor extends Entity {
         }
     }
     
+    /**
+     * Execute turn-based action (called by ROT.Engine)
+     * @returns {Promise} Resolves when action is complete
+     */
     act() {
-        // Turn-based action
+        // Player-controlled actors lock the engine and wait for input
+        if (this.hasAttribute('controlled')) {
+            this.engine.turnEngine.lock();
+            return Promise.resolve();
+        }
+
+        // AI actors execute their personality behaviors
         if (this.personality) {
             this.personality.execute(this);
         }
+
+        // In observer mode, lock after each AI turn to allow paced playback
+        if (!this.engine.hasControlledActor) {
+            this.engine.turnEngine.lock();
+        }
+
+        return Promise.resolve();
     }
     
     modify(stat, amount) {
@@ -1737,11 +1833,15 @@ class InputManager {
             'n': 'move_down_right',
             // Other actions
             '.': 'wait',
-            ' ': 'wait',
             'g': 'pickup',
             ',': 'pickup',
-            'i': 'inventory',
-            'Escape': 'cancel'
+            'i': 'inventory'
+        };
+
+        // Global keys (work regardless of player state)
+        this.globalKeyMap = {
+            ' ': 'toggle_pause',
+            'Escape': 'reload'
         };
 
         // Direction vectors for movement actions
@@ -1766,6 +1866,15 @@ class InputManager {
     handleKeyDown(event) {
         if (!this.enabled) return;
 
+        // Check global keys first (work regardless of player state)
+        const globalAction = this.globalKeyMap[event.key] || this.globalKeyMap[event.code];
+        if (globalAction) {
+            event.preventDefault();
+            this.executeGlobalAction(globalAction);
+            return;
+        }
+
+        // Player-specific actions require a living player
         const player = this.engine.entityManager?.player;
         if (!player || player.isDead) return;
 
@@ -1776,6 +1885,18 @@ class InputManager {
         event.preventDefault();
 
         this.executeAction(action, player);
+    }
+
+    executeGlobalAction(action) {
+        switch (action) {
+            case 'toggle_pause':
+                this.engine.toggleObserverPause();
+                break;
+
+            case 'reload':
+                this.engine.reloadPrototype();
+                break;
+        }
     }
 
     executeAction(action, player) {
@@ -1811,17 +1932,14 @@ class InputManager {
             case 'inventory':
                 console.log('Inventory:', player.inventory.map(i => i.name).join(', ') || '(empty)');
                 break;
-
-            case 'cancel':
-                console.log('Cancel/Escape pressed');
-                break;
         }
     }
 
     onPlayerAction() {
-        // Called after player takes an action - can trigger AI turns here
-        // For now, just log
-        console.log('Player action completed');
+        // Called after player takes an action - unlock the turn engine to let AI act
+        if (this.engine.turnEngine) {
+            this.engine.turnEngine.unlock();
+        }
     }
 
     enable() {
