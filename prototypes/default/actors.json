@@ -6,7 +6,8 @@
     "tileIndexTop": { "x": 9, "y": 7 },
     "attributes": {
       "solid": true,
-      "visible": true
+      "visible": true,
+      "sighted": true
     }
   }
 }

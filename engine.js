@@ -819,6 +819,61 @@ class Actor extends Entity {
         return true;
     }
 
+    /**
+     * Check if a tile has a floor (is not a void/pit)
+     */
+    hasFloorAt(x, y) {
+        if (x < 0 || x >= this.engine.mapManager.width ||
+            y < 0 || y >= this.engine.mapManager.height) {
+            return false;
+        }
+        const tile = this.engine.mapManager.floorMap[y][x];
+        return tile && tile.tileId;
+    }
+
+    /**
+     * Get valid movement directions for sighted actors
+     * Filters out directions that would lead to void tiles or blocking actors
+     */
+    getValidMoveDirections() {
+        const allDirections = [
+            {dx: -1, dy: 0}, {dx: 1, dy: 0},
+            {dx: 0, dy: -1}, {dx: 0, dy: 1}
+        ];
+
+        return allDirections.filter(dir => {
+            const newX = this.x + dir.dx;
+            const newY = this.y + dir.dy;
+
+            // Check bounds
+            if (newX < 0 || newX >= this.engine.mapManager.width ||
+                newY < 0 || newY >= this.engine.mapManager.height) {
+                return false;
+            }
+
+            // Check for blocking actors
+            const actorAtTarget = this.engine.entityManager.getActorAt(newX, newY);
+            if (actorAtTarget && actorAtTarget.hasAttribute('solid')) {
+                return false;
+            }
+
+            // Check for floor tile
+            if (!this.hasFloorAt(newX, newY)) {
+                return false;
+            }
+
+            return true;
+        });
+    }
+
+    /**
+     * Called when actor falls into a void tile
+     */
+    fall() {
+        console.log(`${this.name} fell into the void!`);
+        this.die();
+    }
+
     // Movement methods
     tryMove(newX, newY) {
         // Check bounds
@@ -835,10 +890,14 @@ class Actor extends Entity {
             return false;
         }
 
-        // Check for walkable tile
-        const tile = this.engine.mapManager.floorMap[newY][newX];
-        if (!tile || !tile.tileId) {
-            return false;
+        // Check for floor tile - if no floor, actor falls
+        if (!this.hasFloorAt(newX, newY)) {
+            // Move to the void tile first (so we can see them fall)
+            this.x = newX;
+            this.y = newY;
+            this.updateSpritePosition();
+            this.fall();
+            return true; // Move happened, actor just died
         }
 
         // Move successful
@@ -931,8 +990,19 @@ const BehaviorLibrary = {
         return false;
     },
     
-    random_walk: (actor, data) => {
-        // Move randomly
+    random_walk: (actor) => {
+        // Sighted actors only consider valid moves (avoids pits, walls, etc.)
+        if (actor.hasAttribute('sighted')) {
+            const validDirs = actor.getValidMoveDirections();
+            if (validDirs.length === 0) {
+                return false; // No valid moves available
+            }
+            const dir = validDirs[Math.floor(Math.random() * validDirs.length)];
+            actor.tryMove(actor.x + dir.dx, actor.y + dir.dy);
+            return true;
+        }
+
+        // Non-sighted actors pick randomly (may fall into pits)
         const directions = [
             {dx: -1, dy: 0}, {dx: 1, dy: 0},
             {dx: 0, dy: -1}, {dx: 0, dy: 1}
