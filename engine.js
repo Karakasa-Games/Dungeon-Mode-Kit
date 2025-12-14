@@ -83,6 +83,39 @@ class SpriteLibrary {
 }
 
 // ============================================================================
+// UTILITY FUNCTIONS
+// ============================================================================
+
+/**
+ * Parse a tint value from various formats
+ * @param {number|string|undefined} value - Tint value as number, hex string ("#FF0000"), or undefined
+ * @param {number} defaultValue - Default tint if value is undefined (default: 0xFFFFFF white)
+ * @returns {number} Parsed tint as integer
+ */
+function parseTint(value, defaultValue = 0xFFFFFF) {
+    if (value === undefined || value === null) {
+        return defaultValue;
+    }
+
+    if (typeof value === 'number') {
+        return value;
+    }
+
+    if (typeof value === 'string') {
+        // Remove # prefix if present
+        let hex = value.startsWith('#') ? value.slice(1) : value;
+        // Parse as hexadecimal
+        const parsed = parseInt(hex, 16);
+        if (!isNaN(parsed)) {
+            return parsed;
+        }
+    }
+
+    console.warn('Invalid tint value:', value);
+    return defaultValue;
+}
+
+// ============================================================================
 // CORE ENGINE CLASS
 // ============================================================================
 
@@ -95,6 +128,7 @@ class DungeonEngine {
         this.renderer = null;
         this.mapManager = null;
         this.entityManager = null;
+        this.inputManager = null;
         this.spriteLibrary = new SpriteLibrary();
         
         // Game state
@@ -245,7 +279,10 @@ class DungeonEngine {
     setupEventListeners() {
         createjs.Ticker.framerate = 60;
         createjs.Ticker.addEventListener("tick", createjs.Tween);
-        
+
+        // Initialize input handling
+        this.inputManager = new InputManager(this);
+
         console.log('Event listeners initialized');
     }
     
@@ -320,8 +357,9 @@ class DungeonEngine {
 
         // Render the map and entities
         this.renderer.renderTestPattern(this.mapManager);
+        this.renderer.renderItems(this.entityManager);
         this.renderer.renderActors(this.entityManager);
-        
+
         // Play loaded sound if specified
         if (prototypeConfig.loaded_sound) {
             this.playSound(prototypeConfig.loaded_sound);
@@ -332,6 +370,7 @@ class DungeonEngine {
         console.log(`Canvas size: ${this.canvasWidth}x${this.canvasHeight}px`);
         console.log(`Walkable tiles: ${this.mapManager.walkableTiles.length}`);
         console.log(`Actors spawned: ${this.entityManager.actors.length}`);
+        console.log(`Items spawned: ${this.entityManager.items.length}`);
     }
     
     async loadPrototypeConfig(prototypeName) {
@@ -551,15 +590,18 @@ class Item extends Entity {
     constructor(x, y, type, data, engine) {
         super(x, y, type, engine);
         this.name = data.name || type;
-        
+
         // Resolve tile index - support both {x, y} format and string names
         this.tileIndex = engine.spriteLibrary.resolveTile(data.tileIndex) || {x: 0, y: 0};
         this.height = 1;
-        
+
+        // Load tint value (supports number or "#RRGGBB" string format)
+        this.tint = parseTint(data.tint);
+
         // Default item attributes
         this.setAttribute('pickupable', true);
         this.setAttribute('visible', true);
-        
+
         // Apply data attributes
         if (data.attributes) {
             Object.entries(data.attributes).forEach(([key, value]) => {
@@ -579,18 +621,23 @@ class Actor extends Entity {
         super(x, y, type, engine);
         this.name = data.name || type;
         this.height = 2; // Actors are 2-tile (base + top)
-        
-        // Check if this is an animated actor
-        this.animated = data.animated || false;
-        this.animationFrames = data.animation_frames || null;
-        
-        // Load tint value (default to white if not specified)
-        this.tint = data.tint !== undefined ? data.tint : 0xFFFFFF;
-        
-        // Resolve tile indices - support both {x, y} format and string names
-        this.tileIndexBase = engine.spriteLibrary.resolveTile(data.tileIndexBase) || {x: 0, y: 0};
-        this.tileIndexTop = engine.spriteLibrary.resolveTile(data.tileIndexTop) || {x: 0, y: 0};
-        
+
+        // Load tint value (supports number or "#RRGGBB" string format)
+        this.tint = parseTint(data.tint);
+
+        // Base tile - can be static (tileIndexBase) or animated (animationBase)
+        this.tileIndexBase = engine.spriteLibrary.resolveTile(data.tileIndexBase) || null;
+        this.animationBase = data.animationBase || null;
+
+        // Top tile - can be static (tileIndexTop) or animated (animationTop)
+        this.tileIndexTop = engine.spriteLibrary.resolveTile(data.tileIndexTop) || null;
+        this.animationTop = data.animationTop || null;
+
+        // Legacy support: if 'animated' is true with 'animation_frames', treat as animationBase
+        if (data.animated && data.animation_frames) {
+            this.animationBase = data.animation_frames;
+        }
+
         // Sprite references (will be set by renderer)
         this.spriteBase = null;
         this.spriteTop = null;
@@ -669,13 +716,64 @@ class Actor extends Entity {
             console.log(`${this.name}'s inventory is full`);
             return false;
         }
-        
+
         this.inventory.push(item);
         this.engine.entityManager.removeEntity(item);
         console.log(`${this.name} picked up ${item.name}`);
         return true;
     }
-    
+
+    // Movement methods
+    tryMove(newX, newY) {
+        // Check bounds
+        if (newX < 0 || newX >= this.engine.mapManager.width ||
+            newY < 0 || newY >= this.engine.mapManager.height) {
+            return false;
+        }
+
+        // Check for blocking actors
+        const actorAtTarget = this.engine.entityManager.getActorAt(newX, newY);
+        if (actorAtTarget && actorAtTarget.hasAttribute('solid')) {
+            // Could trigger interaction here (combat, door opening, etc.)
+            console.log(`${this.name} blocked by ${actorAtTarget.name}`);
+            return false;
+        }
+
+        // Check for walkable tile
+        const tile = this.engine.mapManager.floorMap[newY][newX];
+        if (!tile || !tile.tileId) {
+            return false;
+        }
+
+        // Move successful
+        this.x = newX;
+        this.y = newY;
+        this.updateSpritePosition();
+
+        // Check for items to pick up
+        const itemAtTarget = this.engine.entityManager.getItemAt(newX, newY);
+        if (itemAtTarget && itemAtTarget.hasAttribute('pickupable')) {
+            this.pickUpItem(itemAtTarget);
+        }
+
+        return true;
+    }
+
+    moveBy(dx, dy) {
+        return this.tryMove(this.x + dx, this.y + dy);
+    }
+
+    updateSpritePosition() {
+        if (this.spriteBase) {
+            this.spriteBase.x = this.x * globalVars.TILE_WIDTH;
+            this.spriteBase.y = this.y * globalVars.TILE_HEIGHT;
+        }
+        if (this.spriteTop) {
+            this.spriteTop.x = this.x * globalVars.TILE_WIDTH;
+            this.spriteTop.y = (this.y - 1) * globalVars.TILE_HEIGHT;
+        }
+    }
+
     serialize() {
         return {
             ...super.serialize(),
@@ -789,19 +887,11 @@ class EntityManager {
     
     spawnActorsFromLayer(layer) {
         console.log(`Processing actors layer with ${layer.objects.length} objects`);
-        
+
         for (const obj of layer.objects) {
-            // Get actor type from Tiled's built-in class property, then type, then name
+            // Get actor type from Tiled's class property (newer) or type property (older), then name as fallback
             let actorType = obj.class || obj.type || obj.name;
-            
-            // Fallback: Check custom properties for "Type" or "type"
-            if (!actorType && obj.properties) {
-                const typeProp = obj.properties.find(p => p.name === 'Type' || p.name === 'type');
-                if (typeProp) {
-                    actorType = typeProp.value;
-                }
-            }
-            
+
             if (!actorType) {
                 console.warn('Object has no class, type, or name, skipping:', obj);
                 continue;
@@ -828,9 +918,10 @@ class EntityManager {
     
     spawnItemsFromLayer(layer) {
         console.log(`Processing items layer with ${layer.objects.length} objects`);
-        
+
         for (const obj of layer.objects) {
-            const itemType = obj.type || obj.name;
+            // Get item type from Tiled's class property (newer) or type property (older), then name as fallback
+            const itemType = obj.class || obj.type || obj.name;
             if (!itemType) continue;
             
             const tileX = Math.floor(obj.x / this.engine.config.tileWidth);
@@ -851,9 +942,14 @@ class EntityManager {
     
     addEntity(entity) {
         this.entities.push(entity);
-        
+
         if (entity instanceof Actor) {
             this.actors.push(entity);
+            // Track player if this actor has the controlled attribute
+            if (entity.hasAttribute('controlled')) {
+                this.player = entity;
+                console.log(`Player set: ${entity.name} at (${entity.x}, ${entity.y})`);
+            }
         } else if (entity instanceof Item) {
             this.items.push(entity);
         }
@@ -1337,92 +1433,138 @@ class RenderSystem {
     
     renderActors(entityManager) {
         console.log('Rendering actors...');
-        
+
         const tileset = PIXI.Loader.shared.resources.tiles;
         if (!tileset) {
             console.error('Tileset not loaded');
             return;
         }
-        
+
         let actorsRendered = 0;
-        
+
         // Render all actors
         for (const actor of entityManager.actors) {
             if (!actor.hasAttribute('visible')) continue;
-            
-            // Check if this is an animated actor
-            if (actor.animated && actor.animationFrames && this.engine.animationFrames) {
-                // Create animated sprite
-                const animFrames = this.engine.animationFrames[actor.animationFrames];
-                if (animFrames && animFrames.length > 0) {
-                    const animSprite = new PIXI.AnimatedSprite(animFrames);
-                    animSprite.x = actor.x * globalVars.TILE_WIDTH;
-                    animSprite.y = actor.y * globalVars.TILE_HEIGHT;
-                    animSprite.animationSpeed = 0.1;
-                    animSprite.play();
-                    animSprite.zIndex = 10;
-                    
-                    // Apply tint
-                    animSprite.tint = actor.tint;
-                    
-                    this.entityContainer.addChild(animSprite);
-                    actor.spriteBase = animSprite;
-                    actor.spriteTop = null; // Animated actors don't have a top sprite
-                    
-                    actorsRendered++;
-                    console.log(`Rendered animated actor ${actor.name} at (${actor.x}, ${actor.y}) with tint 0x${actor.tint.toString(16)}`);
-                    continue;
-                }
-            }
-            
-            // Render base tile (legs)
-            const baseRect = new PIXI.Rectangle(
-                actor.tileIndexBase.x * globalVars.TILE_WIDTH,
-                actor.tileIndexBase.y * globalVars.TILE_HEIGHT,
-                globalVars.TILE_WIDTH,
-                globalVars.TILE_HEIGHT
+
+            // Render base sprite (static or animated)
+            actor.spriteBase = this.createActorSprite(
+                actor,
+                actor.tileIndexBase,
+                actor.animationBase,
+                actor.x * globalVars.TILE_WIDTH,
+                actor.y * globalVars.TILE_HEIGHT,
+                10 // zIndex
             );
-            const baseTexture = new PIXI.Texture(tileset.texture.baseTexture, baseRect);
-            const baseSprite = new PIXI.Sprite(baseTexture);
-            
-            baseSprite.x = actor.x * globalVars.TILE_WIDTH;
-            baseSprite.y = actor.y * globalVars.TILE_HEIGHT;
-            baseSprite.zIndex = 10; // Above floor tiles
-            
-            // Apply tint
-            baseSprite.tint = actor.tint;
-            
-            this.entityContainer.addChild(baseSprite);
-            
-            // Render top tile (skull/head) - one tile above
-            const topRect = new PIXI.Rectangle(
-                actor.tileIndexTop.x * globalVars.TILE_WIDTH,
-                actor.tileIndexTop.y * globalVars.TILE_HEIGHT,
-                globalVars.TILE_WIDTH,
-                globalVars.TILE_HEIGHT
+
+            // Render top sprite (static or animated) - one tile above
+            actor.spriteTop = this.createActorSprite(
+                actor,
+                actor.tileIndexTop,
+                actor.animationTop,
+                actor.x * globalVars.TILE_WIDTH,
+                (actor.y - 1) * globalVars.TILE_HEIGHT,
+                11 // zIndex
             );
-            const topTexture = new PIXI.Texture(tileset.texture.baseTexture, topRect);
-            const topSprite = new PIXI.Sprite(topTexture);
-            
-            topSprite.x = actor.x * globalVars.TILE_WIDTH;
-            topSprite.y = (actor.y - 1) * globalVars.TILE_HEIGHT; // One tile above
-            topSprite.zIndex = 11; // Above base tile
-            
-            // Apply tint to top sprite as well
-            topSprite.tint = actor.tint;
-            
-            this.entityContainer.addChild(topSprite);
-            
-            // Store sprite references on the actor
-            actor.spriteBase = baseSprite;
-            actor.spriteTop = topSprite;
-            
+
             actorsRendered++;
         }
-        
+
         console.log(`Rendered ${actorsRendered} actors`);
     }
-    
+
+    /**
+     * Create a sprite for an actor tile (base or top)
+     * @param {Actor} actor - The actor this sprite belongs to
+     * @param {Object|null} tileIndex - Static tile coordinates {x, y} or null
+     * @param {string|null} animationName - Animation name (e.g., 'fire') or null
+     * @param {number} x - Pixel x position
+     * @param {number} y - Pixel y position
+     * @param {number} zIndex - Render layer
+     * @returns {PIXI.Sprite|PIXI.AnimatedSprite|null} The created sprite or null
+     */
+    createActorSprite(actor, tileIndex, animationName, x, y, zIndex) {
+        const tileset = PIXI.Loader.shared.resources.tiles;
+
+        // Check for animated sprite first
+        if (animationName && this.engine.animationFrames) {
+            const animFrames = this.engine.animationFrames[animationName];
+            if (animFrames && animFrames.length > 0) {
+                const animSprite = new PIXI.AnimatedSprite(animFrames);
+                animSprite.x = x;
+                animSprite.y = y;
+                animSprite.animationSpeed = 0.1;
+                animSprite.play();
+                animSprite.zIndex = zIndex;
+                animSprite.tint = actor.tint;
+
+                this.entityContainer.addChild(animSprite);
+                return animSprite;
+            }
+        }
+
+        // Fall back to static sprite
+        if (tileIndex) {
+            const rect = new PIXI.Rectangle(
+                tileIndex.x * globalVars.TILE_WIDTH,
+                tileIndex.y * globalVars.TILE_HEIGHT,
+                globalVars.TILE_WIDTH,
+                globalVars.TILE_HEIGHT
+            );
+            const texture = new PIXI.Texture(tileset.texture.baseTexture, rect);
+            const sprite = new PIXI.Sprite(texture);
+
+            sprite.x = x;
+            sprite.y = y;
+            sprite.zIndex = zIndex;
+            sprite.tint = actor.tint;
+
+            this.entityContainer.addChild(sprite);
+            return sprite;
+        }
+
+        // No sprite to render
+        return null;
+    }
+
+    renderItems(entityManager) {
+        console.log('Rendering items...');
+
+        const tileset = PIXI.Loader.shared.resources.tiles;
+        if (!tileset) {
+            console.error('Tileset not loaded');
+            return;
+        }
+
+        let itemsRendered = 0;
+
+        for (const item of entityManager.items) {
+            if (!item.hasAttribute('visible')) continue;
+
+            if (item.tileIndex) {
+                const rect = new PIXI.Rectangle(
+                    item.tileIndex.x * globalVars.TILE_WIDTH,
+                    item.tileIndex.y * globalVars.TILE_HEIGHT,
+                    globalVars.TILE_WIDTH,
+                    globalVars.TILE_HEIGHT
+                );
+                const texture = new PIXI.Texture(tileset.texture.baseTexture, rect);
+                const sprite = new PIXI.Sprite(texture);
+
+                sprite.x = item.x * globalVars.TILE_WIDTH;
+                sprite.y = item.y * globalVars.TILE_HEIGHT;
+                sprite.zIndex = 5; // Below actors but above floor
+                sprite.tint = item.tint;
+
+                this.entityContainer.addChild(sprite);
+                item.sprite = sprite;
+
+                itemsRendered++;
+            }
+        }
+
+        console.log(`Rendered ${itemsRendered} items`);
+    }
+
     clear() {
         this.backgroundContainer.removeChildren();
         this.floorContainer.removeChildren();
@@ -1547,6 +1689,147 @@ class AudioManager {
             return [];
         }
         return Object.keys(this.audioSpriteData.sprite);
+    }
+}
+
+// ============================================================================
+// INPUT MANAGER
+// ============================================================================
+
+class InputManager {
+    constructor(engine) {
+        this.engine = engine;
+        this.enabled = true;
+
+        // Key mappings (supports multiple keys per action)
+        this.keyMap = {
+            // Arrow keys and WASD for movement
+            'ArrowUp': 'move_up',
+            'ArrowDown': 'move_down',
+            'ArrowLeft': 'move_left',
+            'ArrowRight': 'move_right',
+            'w': 'move_up',
+            'W': 'move_up',
+            's': 'move_down',
+            'S': 'move_down',
+            'a': 'move_left',
+            'A': 'move_left',
+            'd': 'move_right',
+            'D': 'move_right',
+            // Numpad for 8-directional movement
+            'Numpad8': 'move_up',
+            'Numpad2': 'move_down',
+            'Numpad4': 'move_left',
+            'Numpad6': 'move_right',
+            'Numpad7': 'move_up_left',
+            'Numpad9': 'move_up_right',
+            'Numpad1': 'move_down_left',
+            'Numpad3': 'move_down_right',
+            'Numpad5': 'wait',
+            // Vi keys
+            'k': 'move_up',
+            'j': 'move_down',
+            'h': 'move_left',
+            'l': 'move_right',
+            'y': 'move_up_left',
+            'u': 'move_up_right',
+            'b': 'move_down_left',
+            'n': 'move_down_right',
+            // Other actions
+            '.': 'wait',
+            ' ': 'wait',
+            'g': 'pickup',
+            ',': 'pickup',
+            'i': 'inventory',
+            'Escape': 'cancel'
+        };
+
+        // Direction vectors for movement actions
+        this.directions = {
+            'move_up': { dx: 0, dy: -1 },
+            'move_down': { dx: 0, dy: 1 },
+            'move_left': { dx: -1, dy: 0 },
+            'move_right': { dx: 1, dy: 0 },
+            'move_up_left': { dx: -1, dy: -1 },
+            'move_up_right': { dx: 1, dy: -1 },
+            'move_down_left': { dx: -1, dy: 1 },
+            'move_down_right': { dx: 1, dy: 1 }
+        };
+
+        this.setupListeners();
+    }
+
+    setupListeners() {
+        document.addEventListener('keydown', (e) => this.handleKeyDown(e));
+    }
+
+    handleKeyDown(event) {
+        if (!this.enabled) return;
+
+        const player = this.engine.entityManager?.player;
+        if (!player || player.isDead) return;
+
+        const action = this.keyMap[event.key] || this.keyMap[event.code];
+        if (!action) return;
+
+        // Prevent default for game keys (don't scroll page with arrows, etc.)
+        event.preventDefault();
+
+        this.executeAction(action, player);
+    }
+
+    executeAction(action, player) {
+        // Handle movement actions
+        if (this.directions[action]) {
+            const dir = this.directions[action];
+            const moved = player.moveBy(dir.dx, dir.dy);
+            if (moved) {
+                this.engine.playSound('feets');
+                this.onPlayerAction();
+            }
+            return;
+        }
+
+        // Handle other actions
+        switch (action) {
+            case 'wait':
+                console.log(`${player.name} waits.`);
+                this.onPlayerAction();
+                break;
+
+            case 'pickup':
+                const item = this.engine.entityManager.getItemAt(player.x, player.y);
+                if (item) {
+                    player.pickUpItem(item);
+                    this.engine.playSound('pickup');
+                    this.onPlayerAction();
+                } else {
+                    console.log('Nothing to pick up here.');
+                }
+                break;
+
+            case 'inventory':
+                console.log('Inventory:', player.inventory.map(i => i.name).join(', ') || '(empty)');
+                break;
+
+            case 'cancel':
+                console.log('Cancel/Escape pressed');
+                break;
+        }
+    }
+
+    onPlayerAction() {
+        // Called after player takes an action - can trigger AI turns here
+        // For now, just log
+        console.log('Player action completed');
+    }
+
+    enable() {
+        this.enabled = true;
+    }
+
+    disable() {
+        this.enabled = false;
     }
 }
 

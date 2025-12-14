@@ -1,7 +1,8 @@
 {
   "key": {
-    "name": "Key",
+    "name": "Gold Key",
     "tileIndex": "WHITE_KEY",
+    "tint": "#FFD700",
     "attributes": {
       "pickupable": true,
       "visible": true,

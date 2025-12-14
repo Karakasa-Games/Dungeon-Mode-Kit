@@ -150,6 +150,7 @@ prototypes/        # Game definitions
 
 **In Progress:**
 
+- Input handling (keyboard/mouse/touch) - our game loop doesn't require an active player and becomes an animation of actor behaviors without one
 - Multi-level state stack
 - Turn engine (framework exists, not fully wired)
 - AI behaviors (structure exists, behaviors are stubs)
@@ -157,7 +158,6 @@ prototypes/        # Game definitions
 
 **Not Yet Implemented:**
 
-- Input handling (keyboard/mouse/touch) - our game loop doesn't require an active player and becomes an animation of actor behaviors without one
 - Pathfinding (A*)
 - Field of view
 - Combat

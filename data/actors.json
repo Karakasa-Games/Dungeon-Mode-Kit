@@ -107,5 +107,17 @@
     "damage_per_turn": 10,
     "spread_chance": 0.3,
     "lifetime": 5
+  },
+
+  "brazier": {
+    "name": "Brazier",
+    "tileIndexBase": "OPAQUE_DOOR_BOTTOM",
+    "animationTop": "fire",
+    "tint": 16737569,
+    "attributes": {
+      "solid": true,
+      "visible": true,
+      "light_source": true
+    }
   }
 }
