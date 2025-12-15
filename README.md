@@ -147,13 +147,19 @@ prototypes/        # Game definitions
 - Wildcard system with region detection
 - ROT.js maze generation (EllerMaze)
 - Room generation with wall actors
+- Maze-room passageway detection (walls omitted where maze paths meet room perimeters)
+- Turn engine with ROT.js Scheduler.Simple
+- Observer mode (auto-advance turns when no controlled actors, play/pause with space, reload with escape)
+- Diagonal shadow rendering under floor tiles (addBaseAndShadows)
+- Actor falling into void (removes from play, transitions to observer mode if player dies)
+- Item pickup and per-actor inventory system (inventory attribute determines capacity)
+- Sighted attribute for actors to avoid void tiles
 
 **In Progress:**
 
 - Input handling (keyboard/mouse/touch) - basic version works (arrow keys, wasd)
 - Multi-level state stack
-- Turn engine (active, can switch to observer mode when there's no controlled actor)
-- AI behaviors (structure exists, behaviors are stubs)
+- AI behaviors (structure exists, random_walk works, others are stubs)
 - Wildcard item/actor spawning (stubs exist)
 
 **Not Yet Implemented:**
@@ -161,9 +167,10 @@ prototypes/        # Game definitions
 - Pathfinding (A*)
 - Field of view
 - Combat
-- Item interactions
+- Item use/effects
 - Fog of war / darkness
 - UI (inventory, stats, messages)
+- Item drops on death
 
 **Pie in the Sky**
 

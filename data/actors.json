@@ -7,7 +7,8 @@
       "controlled": true,
       "solid": true,
       "visible": true,
-      "flammable": true
+      "flammable": true,
+      "inventory": 5
     },
     "stats": {
       "health": 100,
@@ -24,7 +25,8 @@
       "hostile": true,
       "solid": true,
       "visible": true,
-      "flammable": true
+      "flammable": true,
+      "inventory": 1
     },
     "stats": {
       "health": 30,

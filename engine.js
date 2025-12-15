@@ -1,6 +1,6 @@
 /**
  * Dungeon Mode Kit - Core Engine
- * A modular roguelike engine supporting multiple prototypes with mixed authored/procedural content
+ * A modular roguelike engine supporting multiple prototypes with mixed authored/procedural content, built on rot.js and pixi.js
  */
 
 // ============================================================================
@@ -353,6 +353,33 @@ class DungeonEngine {
     }
 
     /**
+     * Called when a controlled actor dies - transition to observer mode
+     */
+    onControlledActorDied() {
+        console.log('Controlled actor died - transitioning to observer mode');
+        this.hasControlledActor = false;
+
+        // Unlock the engine (it was locked waiting for player input)
+        if (this.turnEngine) {
+            this.turnEngine.unlock();
+        }
+
+        // Check if there are any actors with behaviors still in the scheduler
+        const hasActorsWithBehaviors = this.entityManager.actors.some(
+            actor => !actor.isDead && actor.personality
+        );
+
+        if (hasActorsWithBehaviors) {
+            // Start observer mode auto-advance
+            this.observerPaused = false;
+            setTimeout(() => this.advanceObserverTurn(), this.turnSpeed);
+        } else {
+            console.log('No actors with behaviors remaining - game over');
+            // Could trigger a game over state here
+        }
+    }
+
+    /**
      * Reload the current prototype
      */
     async reloadPrototype() {
@@ -430,6 +457,11 @@ class DungeonEngine {
 
         // Spawn any actors created by wildcard processing (e.g., room walls)
         this.mapManager.spawnPendingWalls();
+
+        // Add diagonal shadows beneath floor tiles (only when darkness is disabled)
+        if (!prototypeConfig.mechanics?.darkness) {
+            this.mapManager.addBaseAndShadows();
+        }
 
         // Render the map and entities
         this.renderer.renderTestPattern(this.mapManager);
@@ -625,7 +657,8 @@ class Entity {
     }
     
     getAttribute(key) {
-        return this.attributes.get(key) || false;
+        if (!this.attributes.has(key)) return undefined;
+        return this.attributes.get(key);
     }
     
     hasAttribute(key) {
@@ -729,9 +762,9 @@ class Actor extends Entity {
             });
         }
         
-        // Inventory
+        // Inventory - uses the 'inventory' attribute to determine max capacity
+        // If no inventory attribute, actor cannot pick up items
         this.inventory = [];
-        this.maxInventory = engine.currentPrototype?.config.inventory?.max_items || 10;
         
         // Personality (for AI actors)
         this.personality = null;
@@ -805,10 +838,22 @@ class Actor extends Entity {
         if (this.engine.scheduler) {
             this.engine.scheduler.remove(this);
         }
+
+        // If this was the controlled actor, transition to observer mode
+        if (this.hasAttribute('controlled')) {
+            this.engine.onControlledActorDied();
+        }
     }
     
     pickUpItem(item) {
-        if (this.inventory.length >= this.maxInventory) {
+        // Check if actor has inventory capacity (inventory attribute)
+        const maxInventory = this.getAttribute('inventory');
+        if (maxInventory === undefined || maxInventory <= 0) {
+            // Actor cannot carry items
+            return false;
+        }
+
+        if (this.inventory.length >= maxInventory) {
             console.log(`${this.name}'s inventory is full`);
             return false;
         }
@@ -1122,9 +1167,24 @@ class EntityManager {
     }
     
     removeEntity(entity) {
+        // Remove from arrays
         this.entities = this.entities.filter(e => e !== entity);
         this.actors = this.actors.filter(a => a !== entity);
         this.items = this.items.filter(i => i !== entity);
+
+        // Clean up sprites
+        if (entity.spriteBase) {
+            entity.spriteBase.destroy();
+            entity.spriteBase = null;
+        }
+        if (entity.spriteTop) {
+            entity.spriteTop.destroy();
+            entity.spriteTop = null;
+        }
+        if (entity.sprite) {
+            entity.sprite.destroy();
+            entity.sprite = null;
+        }
     }
     
     getEntityAt(x, y) {
@@ -1189,19 +1249,116 @@ class MapManager {
         // Default dimensions (will be updated when map loads)
         this.width = 30;
         this.height = 30;
-        
+
         // Map layers
+        this.backgroundMap = this.createEmptyMap();
         this.floorMap = this.createEmptyMap();
         this.wallMap = this.createEmptyMap();
         this.wildcardMap = this.createEmptyMap();
-        
+
         this.walkableTiles = [];
     }
-    
+
     createEmptyMap() {
-        return Array.from({length: this.height}, () => 
+        return Array.from({length: this.height}, () =>
             Array.from({length: this.width}, () => null)
         );
+    }
+
+    /**
+     * Get a map layer by name
+     * @param {string} layerName - 'background', 'floor', 'wall', or 'wildcard'
+     * @returns {Array|null} The 2D map array or null if invalid
+     */
+    getLayer(layerName) {
+        const layers = {
+            'background': this.backgroundMap,
+            'floor': this.floorMap,
+            'wall': this.wallMap,
+            'wildcard': this.wildcardMap
+        };
+        return layers[layerName] || null;
+    }
+
+    /**
+     * Get tile ID at position on a layer
+     * @param {string} layerName - Layer to query
+     * @param {number} x - X coordinate
+     * @param {number} y - Y coordinate
+     * @returns {number|null} Tile ID or null if empty/out of bounds
+     */
+    getTile(layerName, x, y) {
+        if (x < 0 || x >= this.width || y < 0 || y >= this.height) {
+            return null;
+        }
+        const layer = this.getLayer(layerName);
+        if (!layer) return null;
+
+        const tile = layer[y][x];
+        return tile ? tile.tileId : null;
+    }
+
+    /**
+     * Set tile ID at position on a layer
+     * @param {string} layerName - Layer to modify
+     * @param {number} x - X coordinate
+     * @param {number} y - Y coordinate
+     * @param {number|null} tileId - Tile ID to set, or null to clear
+     */
+    setTile(layerName, x, y, tileId) {
+        if (x < 0 || x >= this.width || y < 0 || y >= this.height) {
+            return;
+        }
+        const layer = this.getLayer(layerName);
+        if (!layer) return;
+
+        if (tileId === null) {
+            layer[y][x] = null;
+        } else {
+            layer[y][x] = { tileId, layer: layerName };
+        }
+    }
+
+    /**
+     * Get neighboring tile IDs (8-directional)
+     * @param {string} layerName - Layer to query
+     * @param {number} x - X coordinate
+     * @param {number} y - Y coordinate
+     * @returns {Object} Object with n, s, e, w, ne, nw, se, sw tile IDs (null if empty/OOB)
+     */
+    getNeighbors(layerName, x, y) {
+        return {
+            n:  this.getTile(layerName, x, y - 1),
+            s:  this.getTile(layerName, x, y + 1),
+            e:  this.getTile(layerName, x + 1, y),
+            w:  this.getTile(layerName, x - 1, y),
+            ne: this.getTile(layerName, x + 1, y - 1),
+            nw: this.getTile(layerName, x - 1, y - 1),
+            se: this.getTile(layerName, x + 1, y + 1),
+            sw: this.getTile(layerName, x - 1, y + 1)
+        };
+    }
+
+    /**
+     * Iterate over all tiles in a layer
+     * @param {string} layerName - Layer to iterate
+     * @param {Function} callback - Called with (x, y, tileId) for each tile
+     * @param {boolean} includeEmpty - If true, calls callback for empty tiles too (default false)
+     */
+    forEach(layerName, callback, includeEmpty = false) {
+        const layer = this.getLayer(layerName);
+        if (!layer) return;
+
+        for (let y = 0; y < this.height; y++) {
+            for (let x = 0; x < this.width; x++) {
+                const tile = layer[y][x];
+                const tileId = tile ? tile.tileId : null;
+
+                if (includeEmpty || tileId !== null) {
+                    callback(x, y, tileId);
+                }
+            }
+        }
     }
     
     async loadTiledMap(mapPath) {
@@ -1220,6 +1377,7 @@ class MapManager {
             this.tileHeight = tiledData.tileheight;
             
             // Recreate maps with correct dimensions
+            this.backgroundMap = this.createEmptyMap();
             this.floorMap = this.createEmptyMap();
             this.wallMap = this.createEmptyMap();
             this.wildcardMap = this.createEmptyMap();
@@ -1260,12 +1418,9 @@ class MapManager {
             for (let x = 0; x < layer.width; x++) {
                 const index = y * layer.width + x;
                 const tileId = layer.data[index];
-                
+
                 if (tileId > 0) {
-                    // Store the tile ID for rendering
-                    if (!this.floorMap[y][x]) {
-                        this.floorMap[y][x] = { tileId, layer: 'background' };
-                    }
+                    this.backgroundMap[y][x] = { tileId, layer: 'background' };
                 }
             }
         }
@@ -1277,10 +1432,11 @@ class MapManager {
             for (let x = 0; x < layer.width; x++) {
                 const index = y * layer.width + x;
                 const tileId = layer.data[index];
-                
+
                 if (tileId > 0) {
-                    // Floor layer takes priority over background
+                    // Floor layer takes priority - clear background behind it
                     this.floorMap[y][x] = { tileId, layer: 'floor' };
+                    this.backgroundMap[y][x] = null;
                     // Track as walkable
                     this.walkableTiles.push({x, y});
                 }
@@ -1330,7 +1486,8 @@ class MapManager {
     }
     
     async processWildcards() {
-        // Find contiguous wildcard regions and process each once
+        // Find all wildcard regions first
+        const regions = [];
         const processed = new Set();
 
         for (let y = 0; y < this.height; y++) {
@@ -1342,9 +1499,18 @@ class MapManager {
                 if (wildcard && wildcard.type !== 'unknown') {
                     // Find the bounding box of this contiguous wildcard region
                     const region = this.findWildcardRegion(x, y, wildcard.type, processed);
-                    await this.generateWildcardContent(region, wildcard.type);
+                    regions.push({ region, type: wildcard.type });
                 }
             }
+        }
+
+        // Process mazes first, then rooms (so rooms can detect maze intersections)
+        const mazes = regions.filter(r => r.type === 'maze');
+        const rooms = regions.filter(r => r.type === 'room');
+        const others = regions.filter(r => r.type !== 'maze' && r.type !== 'room');
+
+        for (const { region, type } of [...mazes, ...rooms, ...others]) {
+            await this.generateWildcardContent(region, type);
         }
     }
 
@@ -1414,13 +1580,12 @@ class MapManager {
                 }
 
                 if (value === 0) {
-                    // Passable floor
+                    // Passable floor - clear background and place floor tile
+                    this.backgroundMap[worldY][worldX] = null;
                     this.floorMap[worldY][worldX] = { tileId: 158, layer: 'floor' };
                     this.walkableTiles.push({x: worldX, y: worldY});
-                } else {
-                    // Wall
-                    this.floorMap[worldY][worldX] = { tileId: 217, layer: 'floor' };
                 }
+                // value === 1 is void - leave background intact (black), no floor tile
             }
         });
     }
@@ -1428,15 +1593,35 @@ class MapManager {
     generateRoomAt(startX, startY, width, height) {
         const wallPositions = [];
 
+        // Helper to check if a position has a maze floor tile
+        const hasMazeFloor = (wx, wy) => {
+            if (wx < 0 || wx >= this.width || wy < 0 || wy >= this.height) return false;
+            const floor = this.floorMap[wy][wx];
+            return floor && floor.tileId === 158;
+        };
+
         for (let y = 0; y < height; y++) {
             for (let x = 0; x < width; x++) {
                 const worldX = startX + x;
                 const worldY = startY + y;
 
                 if (worldX < this.width && worldY < this.height) {
+                    // Clear background behind generated tiles
+                    this.backgroundMap[worldY][worldX] = null;
+
                     const isPerimeter = (x === 0 || x === width - 1 || y === 0 || y === height - 1);
 
+                    // Check if a maze path is adjacent to this perimeter tile (just outside the room)
+                    let hasAdjacentMazePath = false;
                     if (isPerimeter) {
+                        // Check the tile just outside the room perimeter
+                        if (x === 0 && hasMazeFloor(worldX - 1, worldY)) hasAdjacentMazePath = true;
+                        if (x === width - 1 && hasMazeFloor(worldX + 1, worldY)) hasAdjacentMazePath = true;
+                        if (y === 0 && hasMazeFloor(worldX, worldY - 1)) hasAdjacentMazePath = true;
+                        if (y === height - 1 && hasMazeFloor(worldX, worldY + 1)) hasAdjacentMazePath = true;
+                    }
+
+                    if (isPerimeter && !hasAdjacentMazePath) {
                         // Mark for wall actor placement (need +1 for actor's 2-tile height)
                         // Only place wall if there's room for the top sprite
                         if (worldY > 0) {
@@ -1444,6 +1629,11 @@ class MapManager {
                         }
                         // Still put a floor tile under walls
                         this.floorMap[worldY][worldX] = { tileId: 158, layer: 'floor' };
+                    } else if (isPerimeter && hasAdjacentMazePath) {
+                        // Maze path adjacent to room perimeter - this is a passageway
+                        // Place floor and make walkable (no wall)
+                        this.floorMap[worldY][worldX] = { tileId: 158, layer: 'floor' };
+                        this.walkableTiles.push({x: worldX, y: worldY});
                     } else {
                         // Interior floor
                         this.floorMap[worldY][worldX] = { tileId: 158, layer: 'floor' };
@@ -1481,10 +1671,101 @@ class MapManager {
         if (this.walkableTiles.length === 0) return {x: 0, y: 0};
         return this.walkableTiles[Math.floor(Math.random() * this.walkableTiles.length)];
     }
-    
+
     isWalkable(x, y) {
         if (x < 0 || x >= this.width || y < 0 || y >= this.height) return false;
         return this.floorMap[y][x]?.value === 157;
+    }
+
+    /**
+     * Add diagonal shadow beneath floor tiles
+     * Creates the appearance of a base with hard diagonal shadow
+     *
+     * Tile IDs (1-indexed for Tiled):
+     * - BLACK_SQUARE: 142 (3,6 -> 6*23+3+1)
+     * - DARK_SHADE: 178 (16,7 -> 7*23+16+1)
+     * - BLACK_LOWER_LEFT_TRIANGLE_WITH_DARK_SHADE_UPPER_RIGHT_TRIANGLE: 128 (12,5 -> 5*23+12+1)
+     */
+    addBaseAndShadows() {
+        // Tile IDs (1-indexed for Tiled):
+        // FULL_BLOCK [9,9] = 9*23+9+1 = 217 (the black background tile)
+        // DARK_SHADE [16,7] = 7*23+16+1 = 178
+        // BLACK_LOWER_LEFT_TRIANGLE_WITH_DARK_SHADE_UPPER_RIGHT_TRIANGLE [12,5] = 5*23+12+1 = 128
+        const BLACK_TILE = 217;
+        const DARK_SHADE = 178;
+        const SHADOW_DIAGONAL = 128;
+
+        // Helper: check if position has a floor tile
+        const hasFloor = (x, y) => {
+            if (x < 0 || x >= this.width || y < 0 || y >= this.height) return false;
+            const floorTile = this.getTile('floor', x, y);
+            return floorTile !== null && floorTile !== BLACK_TILE;
+        };
+
+        // Helper: check if background tile at position equals value
+        const bgEquals = (x, y, value) => {
+            if (x < 0 || x >= this.width || y < 0 || y >= this.height) return false;
+            return this.getTile('background', x, y) === value;
+        };
+
+        // Helper: check if floor is above (at y-1)
+        const isFloorAbove = (x, y) => hasFloor(x, y - 1);
+
+        // Helper: check if floor is to the left (at x-1)
+        const isFloorLeft = (x, y) => hasFloor(x - 1, y);
+
+        // Helper: check if floor is at upper-left (at x-1, y-1)
+        const isFloorUpperLeft = (x, y) => hasFloor(x - 1, y - 1);
+
+        // Helper: check if diagonal is to the left
+        const isDiagonalLeft = (x, y) => bgEquals(x - 1, y, SHADOW_DIAGONAL);
+
+        // Helper: check if diagonal is at upper-left
+        const isDiagonalUpperLeft = (x, y) => bgEquals(x - 1, y - 1, SHADOW_DIAGONAL);
+
+        // Helper: check if dark shade is above
+        const isDarkShadeAbove = (x, y) => bgEquals(x, y - 1, DARK_SHADE);
+
+        // Single pass through all tiles
+        for (let y = 0; y < this.height; y++) {
+            for (let x = 0; x < this.width; x++) {
+                // Only process black void tiles
+                if (!bgEquals(x, y, BLACK_TILE)) continue;
+
+                // Skip if this position has a floor tile
+                if (hasFloor(x, y)) continue;
+
+                // Condition 1: Place diagonal if floor above and either:
+                // - floor to the left (left floor casts the black shadow), OR
+                // - no floor at upper-left (this is the left edge of floor above)
+                if (isFloorAbove(x, y) && (isFloorLeft(x, y) || !isFloorUpperLeft(x, y))) {
+                    this.setTile('background', x, y, SHADOW_DIAGONAL);
+                    continue;
+                }
+
+                // Condition 2: Place diagonal if there's a diagonal at upper-left and dark shade above
+                // (continuing a diagonal line down-right)
+                if (isDiagonalUpperLeft(x, y) && isDarkShadeAbove(x, y)) {
+                    this.setTile('background', x, y, SHADOW_DIAGONAL);
+                    continue;
+                }
+
+                // Condition 3: Fill with dark shade if diagonal is to the left and
+                // there's floor or dark shade above (horizontal shadow fill)
+                if (isDiagonalLeft(x, y) && (isFloorAbove(x, y) || isDarkShadeAbove(x, y))) {
+                    // Fill horizontally to the right while conditions hold
+                    let xPos = x;
+                    while (xPos < this.width &&
+                           bgEquals(xPos, y, BLACK_TILE) &&
+                           !hasFloor(xPos, y) &&
+                           (hasFloor(xPos, y - 1) || bgEquals(xPos, y - 1, DARK_SHADE))) {
+                        this.setTile('background', xPos, y, DARK_SHADE);
+                        xPos++;
+                    }
+                    continue;
+                }
+            }
+        }
     }
     
     serializeMap() {
@@ -1500,6 +1781,7 @@ class MapManager {
     }
     
     cleanup() {
+        this.backgroundMap = this.createEmptyMap();
         this.floorMap = this.createEmptyMap();
         this.wallMap = this.createEmptyMap();
         this.wildcardMap = this.createEmptyMap();
@@ -1528,7 +1810,13 @@ class RenderSystem {
         this.floorContainer.sortableChildren = true;
         this.entityContainer.sortableChildren = true;
         this.uiContainer.sortableChildren = true;
-        
+
+        // Set explicit zIndex to ensure correct layer order
+        this.backgroundContainer.zIndex = 0;
+        this.floorContainer.zIndex = 1;
+        this.entityContainer.zIndex = 2;
+        this.uiContainer.zIndex = 3;
+
         app.stage.addChild(this.backgroundContainer);
         app.stage.addChild(this.floorContainer);
         app.stage.addChild(this.entityContainer);
@@ -1542,59 +1830,66 @@ class RenderSystem {
     
     renderTestPattern(mapManager) {
         console.log('Rendering Tiled map...');
-        
+
         const tileset = PIXI.Loader.shared.resources.tiles;
         if (!tileset) {
             console.error('Tileset not loaded');
             return;
         }
-        
+
         // Clear existing content
         this.clear();
-        
-        let tilesRendered = 0;
-        
-        // Render tiles from the Tiled map
-        for (let y = 0; y < mapManager.height; y++) {
-            for (let x = 0; x < mapManager.width; x++) {
-                const tile = mapManager.floorMap[y][x];
-                
+
+        // Render background layer
+        this.renderLayer(mapManager.backgroundMap, this.backgroundContainer, tileset);
+
+        // Render floor layer
+        this.renderLayer(mapManager.floorMap, this.floorContainer, tileset);
+
+        console.log(`Rendered tiles:`);
+        console.log(`  Background: ${this.backgroundContainer.children.length} tiles`);
+        console.log(`  Floor: ${this.floorContainer.children.length} tiles`);
+    }
+
+    /**
+     * Render a single map layer to a container
+     */
+    renderLayer(layerMap, container, tileset) {
+        for (let y = 0; y < this.mapHeight; y++) {
+            for (let x = 0; x < this.mapWidth; x++) {
+                const tile = layerMap[y]?.[x];
+
                 if (tile && tile.tileId > 0) {
-                    // Convert Tiled tile ID (1-indexed) to spritesheet coordinates
-                    const tileIndex = tile.tileId - 1; // Make 0-indexed
-                    const tileX = tileIndex % globalVars.SPRITESHEET_COLS;
-                    const tileY = Math.floor(tileIndex / globalVars.SPRITESHEET_COLS);
-                    
-                    // Create texture from spritesheet coordinates
-                    const rect = new PIXI.Rectangle(
-                        tileX * globalVars.TILE_WIDTH,
-                        tileY * globalVars.TILE_HEIGHT,
-                        globalVars.TILE_WIDTH,
-                        globalVars.TILE_HEIGHT
-                    );
-                    
-                    const texture = new PIXI.Texture(tileset.texture.baseTexture, rect);
-                    const sprite = new PIXI.Sprite(texture);
-                    
-                    // Position sprite on canvas
-                    sprite.x = x * globalVars.TILE_WIDTH;
-                    sprite.y = y * globalVars.TILE_HEIGHT;
-                    
-                    // Add to appropriate layer
-                    if (tile.layer === 'background') {
-                        this.backgroundContainer.addChild(sprite);
-                    } else {
-                        this.floorContainer.addChild(sprite);
-                    }
-                    
-                    tilesRendered++;
+                    const sprite = this.createTileSprite(tile.tileId, x, y, tileset);
+                    container.addChild(sprite);
                 }
             }
         }
-        
-        console.log(`Rendered ${tilesRendered} tiles`);
-        console.log(`  Background: ${this.backgroundContainer.children.length} tiles`);
-        console.log(`  Floor: ${this.floorContainer.children.length} tiles`);
+    }
+
+    /**
+     * Create a sprite for a tile ID at a position
+     */
+    createTileSprite(tileId, x, y, tileset) {
+        // Convert Tiled tile ID (1-indexed) to spritesheet coordinates
+        const tileIndex = tileId - 1;
+        const tileX = tileIndex % globalVars.SPRITESHEET_COLS;
+        const tileY = Math.floor(tileIndex / globalVars.SPRITESHEET_COLS);
+
+        const rect = new PIXI.Rectangle(
+            tileX * globalVars.TILE_WIDTH,
+            tileY * globalVars.TILE_HEIGHT,
+            globalVars.TILE_WIDTH,
+            globalVars.TILE_HEIGHT
+        );
+
+        const texture = new PIXI.Texture(tileset.texture.baseTexture, rect);
+        const sprite = new PIXI.Sprite(texture);
+
+        sprite.x = x * globalVars.TILE_WIDTH;
+        sprite.y = y * globalVars.TILE_HEIGHT;
+
+        return sprite;
     }
     
     renderActors(entityManager) {
