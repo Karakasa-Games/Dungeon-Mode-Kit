@@ -3,11 +3,13 @@
     "name": "Player",
     "tileIndexBase": "LEG",
     "tileIndexTop": "OPAQUE_DARK_SMILING_FACE",
+    "vision_range": 20,
     "attributes": {
       "controlled": true,
       "solid": true,
       "visible": true,
       "flammable": true,
+      "sighted": true,
       "inventory": 5
     },
     "stats": {

@@ -548,8 +548,7 @@ class DungeonEngine {
             mechanics: {
                 fog_of_war: false,
                 darkness: false,
-                turn_based: true,
-                line_of_sight: false
+                turn_based: true
             },
             stats: {
                 health: { max: 100, current: 100 }
@@ -776,6 +775,9 @@ class Actor extends Entity {
         // Load tint value (supports number or "#RRGGBB" string format)
         this.tint = parseTint(data.tint);
         this.flickerTint = data.flickerTint || false;
+
+        // Vision range for FOV calculation
+        this.visionRange = data.vision_range ?? 8;
 
         // Base tile - can be static (tileIndexBase) or animated (animationBase)
         this.tileIndexBase = engine.spriteLibrary.resolveTile(data.tileIndexBase) || null;
@@ -1964,7 +1966,11 @@ class LightingManager {
         this.playerLightRadius = config.player_light_radius ?? 6;
 
         this.lightMap = Array.from({ length: height }, () =>
-            Array.from({ length: width }, () => 0)
+            Array.from({ length: width }, () => ({ intensity: 0, r: 0, g: 0, b: 0 }))
+        );
+
+        this.visibilityMap = Array.from({ length: height }, () =>
+            Array.from({ length: width }, () => false)
         );
 
         this.exploredMap = Array.from({ length: height }, () =>
@@ -1972,6 +1978,25 @@ class LightingManager {
         );
 
         this.fov = new ROT.FOV.PreciseShadowcasting((x, y) => this.lightPasses(x, y));
+        this.visionFov = new ROT.FOV.PreciseShadowcasting((x, y) => this.visionPasses(x, y));
+    }
+
+    visionPasses(x, y) {
+        if (x < 0 || x >= this.width || y < 0 || y >= this.height) {
+            return false;
+        }
+
+        const wallTile = this.engine.mapManager.wallMap[y][x];
+        if (wallTile !== null) {
+            return false;
+        }
+
+        const actorAtTile = this.engine.entityManager.getActorAt(x, y);
+        if (actorAtTile && actorAtTile.hasAttribute('solid') && !actorAtTile.hasAttribute('controlled')) {
+            return false;
+        }
+
+        return true;
     }
 
     lightPasses(x, y) {
@@ -2026,35 +2051,63 @@ class LightingManager {
     }
 
     computeLighting() {
+        // Reset light and visibility maps
         for (let y = 0; y < this.height; y++) {
             for (let x = 0; x < this.width; x++) {
-                this.lightMap[y][x] = this.ambientLight;
+                this.lightMap[y][x] = { intensity: this.ambientLight, r: 0, g: 0, b: 0 };
+                this.visibilityMap[y][x] = false;
             }
         }
 
+        // Compute visibility for all controlled actors
+        this.computeVisibility();
+
+        // Compute lighting from all light sources
         const sources = this.getLightSources();
 
         for (const source of sources) {
             this.currentSource = source;
+
+            const sr = (source.color >> 16) & 0xFF;
+            const sg = (source.color >> 8) & 0xFF;
+            const sb = source.color & 0xFF;
+
             this.fov.compute(source.x, source.y, source.radius, (x, y, r, visibility) => {
                 if (x < 0 || x >= this.width || y < 0 || y >= this.height) return;
+                if (visibility <= 0) return;
 
-                const falloff = 1 - (r / source.radius);
-                const lightLevel = visibility * falloff * source.intensity;
+                const falloff = Math.max(0, 1 - (r / source.radius));
+                const lightLevel = falloff * source.intensity;
 
-                this.lightMap[y][x] = Math.min(1, this.lightMap[y][x] + lightLevel);
-
-                if (lightLevel > 0.1) {
-                    this.exploredMap[y][x] = true;
-                }
+                const tile = this.lightMap[y][x];
+                tile.intensity = Math.min(1, tile.intensity + lightLevel);
+                tile.r = Math.min(255, tile.r + sr * lightLevel);
+                tile.g = Math.min(255, tile.g + sg * lightLevel);
+                tile.b = Math.min(255, tile.b + sb * lightLevel);
             });
         }
         this.currentSource = null;
     }
 
+    computeVisibility() {
+        const controlledActors = this.engine.entityManager.actors.filter(
+            a => a.hasAttribute('controlled') && !a.isDead
+        );
+
+        for (const actor of controlledActors) {
+            this.visionFov.compute(actor.x, actor.y, actor.visionRange, (x, y, r, visibility) => {
+                if (x < 0 || x >= this.width || y < 0 || y >= this.height) return;
+                if (visibility > 0) {
+                    this.visibilityMap[y][x] = true;
+                    this.exploredMap[y][x] = true;
+                }
+            });
+        }
+    }
+
     getLightLevel(x, y) {
         if (x < 0 || x >= this.width || y < 0 || y >= this.height) {
-            return 0;
+            return { intensity: 0, r: 0, g: 0, b: 0 };
         }
         return this.lightMap[y][x];
     }
@@ -2066,10 +2119,25 @@ class LightingManager {
         return this.exploredMap[y][x];
     }
 
+    isVisible(x, y) {
+        if (x < 0 || x >= this.width || y < 0 || y >= this.height) {
+            return false;
+        }
+        return this.visibilityMap[y][x];
+    }
+
+    hasControlledActors() {
+        return this.engine.entityManager.actors.some(
+            a => a.hasAttribute('controlled') && !a.isDead
+        );
+    }
+
     reset() {
         this.lightMap = [];
+        this.visibilityMap = [];
         this.exploredMap = [];
         this.fov = null;
+        this.visionFov = null;
     }
 }
 
@@ -2088,12 +2156,14 @@ class RenderSystem {
         this.backgroundContainer = new PIXI.Container();
         this.floorContainer = new PIXI.Container();
         this.entityContainer = new PIXI.Container();
+        this.lightColorContainer = new PIXI.Container();
         this.darknessContainer = new PIXI.Container();
         this.uiContainer = new PIXI.Container();
 
         this.backgroundContainer.sortableChildren = true;
         this.floorContainer.sortableChildren = true;
         this.entityContainer.sortableChildren = true;
+        this.lightColorContainer.sortableChildren = true;
         this.darknessContainer.sortableChildren = true;
         this.uiContainer.sortableChildren = true;
 
@@ -2101,16 +2171,21 @@ class RenderSystem {
         this.backgroundContainer.zIndex = 0;
         this.floorContainer.zIndex = 1;
         this.entityContainer.zIndex = 2;
-        this.darknessContainer.zIndex = 3;
-        this.uiContainer.zIndex = 4;
+        this.lightColorContainer.zIndex = 3;
+        this.darknessContainer.zIndex = 4;
+        this.uiContainer.zIndex = 5;
 
         app.stage.addChild(this.backgroundContainer);
         app.stage.addChild(this.floorContainer);
         app.stage.addChild(this.entityContainer);
+        app.stage.addChild(this.lightColorContainer);
         app.stage.addChild(this.darknessContainer);
         app.stage.addChild(this.uiContainer);
 
         this.darknessSprites = [];
+        this.lightColorSprites = [];
+        this.floorSprites = [];
+        this.backgroundSprites = [];
     }
     
     render() {
@@ -2130,11 +2205,19 @@ class RenderSystem {
         // Clear existing content
         this.clear();
 
+        // Initialize sprite tracking arrays
+        this.backgroundSprites = Array.from({ length: this.mapHeight }, () =>
+            Array.from({ length: this.mapWidth }, () => null)
+        );
+        this.floorSprites = Array.from({ length: this.mapHeight }, () =>
+            Array.from({ length: this.mapWidth }, () => null)
+        );
+
         // Render background layer
-        this.renderLayer(mapManager.backgroundMap, this.backgroundContainer, tileset);
+        this.renderLayer(mapManager.backgroundMap, this.backgroundContainer, tileset, this.backgroundSprites);
 
         // Render floor layer
-        this.renderLayer(mapManager.floorMap, this.floorContainer, tileset);
+        this.renderLayer(mapManager.floorMap, this.floorContainer, tileset, this.floorSprites);
 
         console.log(`Rendered tiles:`);
         console.log(`  Background: ${this.backgroundContainer.children.length} tiles`);
@@ -2144,7 +2227,7 @@ class RenderSystem {
     /**
      * Render a single map layer to a container
      */
-    renderLayer(layerMap, container, tileset) {
+    renderLayer(layerMap, container, tileset, spriteArray = null) {
         for (let y = 0; y < this.mapHeight; y++) {
             for (let x = 0; x < this.mapWidth; x++) {
                 const tile = layerMap[y]?.[x];
@@ -2152,6 +2235,9 @@ class RenderSystem {
                 if (tile && tile.tileId > 0) {
                     const sprite = this.createTileSprite(tile.tileId, x, y, tileset);
                     container.addChild(sprite);
+                    if (spriteArray) {
+                        spriteArray[y][x] = sprite;
+                    }
                 }
             }
         }
@@ -2332,41 +2418,59 @@ class RenderSystem {
         this.backgroundContainer.removeChildren();
         this.floorContainer.removeChildren();
         this.entityContainer.removeChildren();
+        this.lightColorContainer.removeChildren();
         this.darknessContainer.removeChildren();
         this.uiContainer.removeChildren();
         this.darknessSprites = [];
+        this.lightColorSprites = [];
+        this.floorSprites = [];
+        this.backgroundSprites = [];
     }
 
     initializeDarkness(width, height) {
         this.darknessContainer.removeChildren();
+        this.lightColorContainer.removeChildren();
         this.darknessSprites = [];
+        this.lightColorSprites = [];
 
         const tileset = PIXI.Loader.shared.resources.tiles;
         if (!tileset) return;
 
         const rect = new PIXI.Rectangle(
-            9 * globalVars.TILE_WIDTH,
-            9 * globalVars.TILE_HEIGHT,
+            0 * globalVars.TILE_WIDTH,
+            10 * globalVars.TILE_HEIGHT,
             globalVars.TILE_WIDTH,
             globalVars.TILE_HEIGHT
         );
         this.darkTexture = new PIXI.Texture(tileset.texture.baseTexture, rect);
+        this.solidDarkTexture = this.darkTexture;
 
-        const solidGraphics = new PIXI.Graphics();
-        solidGraphics.beginFill(0x000000);
-        solidGraphics.drawRect(0, 0, globalVars.TILE_WIDTH, globalVars.TILE_HEIGHT);
-        solidGraphics.endFill();
-        this.solidDarkTexture = this.app.renderer.generateTexture(solidGraphics);
-        solidGraphics.destroy();
+        const whiteGraphics = new PIXI.Graphics();
+        whiteGraphics.beginFill(0xFFFFFF);
+        whiteGraphics.drawRect(0, 0, globalVars.TILE_WIDTH, globalVars.TILE_HEIGHT);
+        whiteGraphics.endFill();
+        this.lightColorTexture = this.app.renderer.generateTexture(whiteGraphics);
+        whiteGraphics.destroy();
 
         for (let y = 0; y < height; y++) {
             this.darknessSprites[y] = [];
+            this.lightColorSprites[y] = [];
             for (let x = 0; x < width; x++) {
+                // Light color overlay (multiply blend)
+                const lightSprite = new PIXI.Sprite(this.lightColorTexture);
+                lightSprite.x = x * globalVars.TILE_WIDTH;
+                lightSprite.y = y * globalVars.TILE_HEIGHT;
+                lightSprite.alpha = 0;
+                lightSprite.tint = 0xFFFFFF;
+                lightSprite.blendMode = PIXI.BLEND_MODES.MULTIPLY;
+                this.lightColorContainer.addChild(lightSprite);
+                this.lightColorSprites[y][x] = lightSprite;
+
+                // Darkness overlay
                 const sprite = new PIXI.Sprite(this.solidDarkTexture);
                 sprite.x = x * globalVars.TILE_WIDTH;
                 sprite.y = y * globalVars.TILE_HEIGHT;
                 sprite.alpha = 1.0;
-                sprite.tint = 0x000000;
 
                 sprite.anchor.set(0.5, 0.5);
                 sprite.x += globalVars.TILE_WIDTH / 2;
@@ -2383,27 +2487,191 @@ class RenderSystem {
     updateDarkness(lightingManager, fogOfWar = false) {
         if (!this.darknessSprites.length) return;
 
+        const hasControlled = lightingManager.hasControlledActors();
+
         for (let y = 0; y < lightingManager.height; y++) {
             for (let x = 0; x < lightingManager.width; x++) {
-                const sprite = this.darknessSprites[y]?.[x];
-                if (!sprite) continue;
+                const darkSprite = this.darknessSprites[y]?.[x];
+                const lightColorSprite = this.lightColorSprites[y]?.[x];
 
-                const lightLevel = lightingManager.getLightLevel(x, y);
+                const light = lightingManager.getLightLevel(x, y);
+                const visible = lightingManager.isVisible(x, y);
                 const explored = lightingManager.isExplored(x, y);
 
-                if (lightLevel > 0 && lightLevel < 1) {
-                    sprite.texture = this.darkTexture;
-                    sprite.alpha = 1.0 - lightLevel;
-                } else if (lightLevel >= 1) {
-                    sprite.alpha = 0;
-                } else if (fogOfWar && explored) {
-                    sprite.texture = this.darkTexture;
-                    sprite.alpha = 0.7;
-                } else {
-                    sprite.texture = this.solidDarkTexture;
-                    sprite.alpha = 1.0;
+                // Calculate light tint color
+                let lightTint = 0xFFFFFF;
+                if (light.intensity > 0 && (light.r > 0 || light.g > 0 || light.b > 0)) {
+                    const maxComponent = Math.max(light.r, light.g, light.b, 1);
+                    const r = Math.floor((light.r / maxComponent) * 255);
+                    const g = Math.floor((light.g / maxComponent) * 255);
+                    const b = Math.floor((light.b / maxComponent) * 255);
+                    lightTint = (r << 16) | (g << 8) | b;
+                }
+
+                // Apply colored light overlay using multiply blend
+                if (lightColorSprite) {
+                    if (visible && light.intensity > 0 && lightTint !== 0xFFFFFF) {
+                        lightColorSprite.tint = lightTint;
+                        lightColorSprite.alpha = Math.min(0.5, light.intensity * 0.5);
+                    } else if (!hasControlled && light.intensity > 0 && lightTint !== 0xFFFFFF) {
+                        // Observer mode: show light color where illuminated
+                        lightColorSprite.tint = lightTint;
+                        lightColorSprite.alpha = Math.min(0.5, light.intensity * 0.5);
+                    } else {
+                        lightColorSprite.alpha = 0;
+                    }
+                }
+
+                // Update darkness overlay based on visibility and light
+                if (darkSprite) {
+                    if (!hasControlled) {
+                        // Observer mode: show based on illumination only
+                        if (light.intensity > 0 && light.intensity < 1) {
+                            darkSprite.texture = this.darkTexture;
+                            darkSprite.alpha = 1.0 - light.intensity;
+                        } else if (light.intensity >= 1) {
+                            darkSprite.alpha = 0;
+                        } else {
+                            darkSprite.texture = this.solidDarkTexture;
+                            darkSprite.alpha = 1.0;
+                        }
+                    } else if (visible) {
+                        // Visible to a controlled actor
+                        // Alpha progression: 0 (full light) -> 0.85 (no light) -> 0.92 (remembered)
+                        if (light.intensity >= 1) {
+                            darkSprite.alpha = 0;
+                        } else if (light.intensity > 0) {
+                            // Scale from 0 to 0.85 as intensity goes from 1 to 0
+                            darkSprite.texture = this.darkTexture;
+                            darkSprite.alpha = 0.85 * (1.0 - light.intensity);
+                        } else {
+                            // Visible but no light
+                            darkSprite.texture = this.darkTexture;
+                            darkSprite.alpha = 0.85;
+                        }
+                    } else if (fogOfWar && explored) {
+                        // Not visible but previously explored - darker than visible unlit
+                        darkSprite.texture = this.darkTexture;
+                        darkSprite.alpha = 0.92;
+                    } else {
+                        // Not visible and not explored
+                        darkSprite.texture = this.solidDarkTexture;
+                        darkSprite.alpha = 1.0;
+                    }
                 }
             }
+        }
+
+        // Update actor and item tints based on lighting
+        this.updateEntityLighting(lightingManager);
+    }
+
+    updateEntityLighting(lightingManager) {
+        const hasControlled = lightingManager.hasControlledActors();
+        const fogOfWar = this.engine.currentPrototype?.config?.mechanics?.fog_of_war;
+
+        for (const actor of this.engine.entityManager.actors) {
+            const light = lightingManager.getLightLevel(actor.x, actor.y);
+            const visible = lightingManager.isVisible(actor.x, actor.y);
+            const explored = lightingManager.isExplored(actor.x, actor.y);
+
+            if (hasControlled) {
+                const shouldShow = visible || (fogOfWar && explored);
+                if (actor.spriteBase) actor.spriteBase.visible = shouldShow;
+                if (actor.spriteTop) actor.spriteTop.visible = shouldShow;
+
+                this.setAnimationPlaying(actor.spriteBase, visible);
+                this.setAnimationPlaying(actor.spriteTop, visible);
+
+                if (!shouldShow) continue;
+            } else {
+                if (actor.spriteBase) actor.spriteBase.visible = true;
+                if (actor.spriteTop) actor.spriteTop.visible = true;
+                this.setAnimationPlaying(actor.spriteBase, true);
+                this.setAnimationPlaying(actor.spriteTop, true);
+            }
+
+            if (actor.hasAttribute('light_source')) continue;
+
+            let lightTint = 0xFFFFFF;
+            if (light.intensity > 0 && (light.r > 0 || light.g > 0 || light.b > 0)) {
+                const maxComponent = Math.max(light.r, light.g, light.b, 1);
+                const r = Math.floor((light.r / maxComponent) * 255);
+                const g = Math.floor((light.g / maxComponent) * 255);
+                const b = Math.floor((light.b / maxComponent) * 255);
+                lightTint = (r << 16) | (g << 8) | b;
+            }
+
+            if (hasControlled && !visible && fogOfWar && explored) {
+                lightTint = 0x333333;
+            }
+
+            if (actor.spriteBase) {
+                actor.spriteBase.tint = this.blendTints(actor.tint, lightTint);
+            }
+            if (actor.spriteTop) {
+                actor.spriteTop.tint = this.blendTints(actor.tint, lightTint);
+            }
+        }
+
+        for (const item of this.engine.entityManager.items) {
+            const light = lightingManager.getLightLevel(item.x, item.y);
+            const visible = lightingManager.isVisible(item.x, item.y);
+            const explored = lightingManager.isExplored(item.x, item.y);
+
+            if (hasControlled) {
+                const shouldShow = visible || (fogOfWar && explored);
+                if (item.sprite) item.sprite.visible = shouldShow;
+                this.setAnimationPlaying(item.sprite, visible);
+                if (!shouldShow) continue;
+            } else {
+                if (item.sprite) item.sprite.visible = true;
+                this.setAnimationPlaying(item.sprite, true);
+            }
+
+            let lightTint = 0xFFFFFF;
+            if (light.intensity > 0 && (light.r > 0 || light.g > 0 || light.b > 0)) {
+                const maxComponent = Math.max(light.r, light.g, light.b, 1);
+                const r = Math.floor((light.r / maxComponent) * 255);
+                const g = Math.floor((light.g / maxComponent) * 255);
+                const b = Math.floor((light.b / maxComponent) * 255);
+                lightTint = (r << 16) | (g << 8) | b;
+            }
+
+            if (hasControlled && !visible && fogOfWar && explored) {
+                lightTint = 0x333333;
+            }
+
+            if (item.sprite) {
+                item.sprite.tint = this.blendTints(item.tint, lightTint);
+            }
+        }
+    }
+
+    blendTints(baseTint, lightTint) {
+        const br = (baseTint >> 16) & 0xFF;
+        const bg = (baseTint >> 8) & 0xFF;
+        const bb = baseTint & 0xFF;
+
+        const lr = (lightTint >> 16) & 0xFF;
+        const lg = (lightTint >> 8) & 0xFF;
+        const lb = lightTint & 0xFF;
+
+        const r = Math.floor((br * lr) / 255);
+        const g = Math.floor((bg * lg) / 255);
+        const b = Math.floor((bb * lb) / 255);
+
+        return (r << 16) | (g << 8) | b;
+    }
+
+    setAnimationPlaying(sprite, shouldPlay) {
+        if (!sprite) return;
+        if (!(sprite instanceof PIXI.AnimatedSprite)) return;
+
+        if (shouldPlay && !sprite.playing) {
+            sprite.play();
+        } else if (!shouldPlay && sprite.playing) {
+            sprite.stop();
         }
     }
 }

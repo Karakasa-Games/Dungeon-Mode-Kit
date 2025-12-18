@@ -162,8 +162,7 @@ Each prototype is a JSON file defining complete game rules:
   "mechanics": {
     "fog_of_war": false,
     "darkness": false,
-    "turn_based": true,
-    "line_of_sight": false
+    "turn_based": true
   },
   "stats": {
     "strength": {
