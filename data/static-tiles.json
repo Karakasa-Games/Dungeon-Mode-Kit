@@ -1,7 +1,5 @@
 {
     "spritesheetPath": "libuse40x30-cp437.png",
-    "fireSpritesheetPath": "fire.png",
-    "smokeSpritesheetPath": "smoke.png",
     "audioSpritesheetPath": "./data/effects.json",
     "tilePixelWidth": 40,
     "tilePixelHeight": 30,

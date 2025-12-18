@@ -22,7 +22,8 @@ class SpriteLibrary {
             // Store animation metadata
             this.animations = {
                 'fire': 'fire',
-                'smoke': 'smoke'
+                'smoke': 'smoke',
+                'fluid': 'fluid'
             };
             
             console.log('Sprite library loaded with', Object.keys(this.tiles).length, 'tiles');
@@ -230,6 +231,7 @@ class DungeonEngine {
                         .add('tiles', globalVars.SPRITESHEET_PATH)
                         .add('fire', './assets/sprites/fire-animation.png')
                         .add('smoke', './assets/sprites/smoke-animation.png')
+                        .add('fluid', './assets/sprites/fluid-animation.png')
                         .load(() => {
                             this.setupAnimationFrames();
                             resolve();
@@ -260,19 +262,20 @@ class DungeonEngine {
     }
     
     setupAnimationFrames() {
-        this.animationFrames = {
-            fire: [],
-            smoke: []
-        };
-        
-        for (let i = 0; i < 7; i++) {
-            let rect = new PIXI.Rectangle(i * globalVars.TILE_WIDTH, 0, globalVars.TILE_WIDTH, globalVars.TILE_HEIGHT);
-            this.animationFrames.fire.push(
-                new PIXI.Texture(PIXI.Loader.shared.resources.fire.texture.baseTexture, rect)
-            );
-            this.animationFrames.smoke.push(
-                new PIXI.Texture(PIXI.Loader.shared.resources.smoke.texture.baseTexture, rect)
-            );
+        this.animationFrames = {};
+
+        // Define animation sources - frame count calculated from texture width
+        const animations = ['fire', 'smoke', 'fluid'];
+
+        for (const name of animations) {
+            this.animationFrames[name] = [];
+            const baseTexture = PIXI.Loader.shared.resources[name].texture.baseTexture;
+            const frameCount = Math.floor(baseTexture.width / globalVars.TILE_WIDTH);
+
+            for (let i = 0; i < frameCount; i++) {
+                let rect = new PIXI.Rectangle(i * globalVars.TILE_WIDTH, 0, globalVars.TILE_WIDTH, globalVars.TILE_HEIGHT);
+                this.animationFrames[name].push(new PIXI.Texture(baseTexture, rect));
+            }
         }
     }
     
@@ -1464,7 +1467,9 @@ class MapManager {
             143: 'room',
             144: 'room',
             12: 'item_spawn',
-            3: 'actor_spawn'
+            3: 'actor_spawn',
+            9: 'fire',
+            135: 'sewage'
         };
         return wildcardTypes[tileId] || 'unknown';
     }
@@ -1563,6 +1568,30 @@ class MapManager {
             case 'actor_spawn':
                 // Spawn random actor
                 break;
+            case 'fire':
+                this.spawnActorsAt(region, 'fire');
+                break;
+            case 'sewage':
+                this.spawnActorsAt(region, 'sewage');
+                break;
+        }
+    }
+
+    spawnActorsAt(region, actorType) {
+        const actorData = this.engine.currentPrototype.getActorData(actorType);
+        if (!actorData) {
+            console.warn(`No actor data found for wildcard type '${actorType}'`);
+            return;
+        }
+
+        for (let y = region.y; y < region.y + region.height; y++) {
+            for (let x = region.x; x < region.x + region.width; x++) {
+                const wildcard = this.wildcardMap[y][x];
+                if (wildcard && wildcard.type === actorType) {
+                    const actor = new Actor(x, y, actorType, actorData, this.engine);
+                    this.engine.entityManager.addEntity(actor);
+                }
+            }
         }
     }
 

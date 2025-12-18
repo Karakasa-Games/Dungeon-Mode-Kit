@@ -65,8 +65,8 @@
   
   "pushable_wall": {
     "name": "Pushable Wall",
-    "tileIndexBase": "OPAQUE_DARK_SHADE",
-    "tileIndexTop": "OPAQUE_MEDIUM_LIGHT_SHADE",
+    "tileIndexBase": "MEDIUM_SHADE",
+    "tileIndexTop": "LIGHT_SHADE",
     "attributes": {
       "solid": true,
       "visible": true,
@@ -74,12 +74,12 @@
       "breakable": false
     }
   },
-  
   "door": {
     "name": "Door",
-    "tileIndexBase": "OPAQUE_MEDIUM_LIGHT_SHADE",
+    "tileIndexBase": "OPAQUE_DOOR_BOTTOM",
     "tileIndexTop": "DOOR_TOP",
-    "tileIndexTop_open": "OPAQUE_DOOR_TOP",
+    "tileIndexTop_open": "OPAQUE_MEDIUM_LIGHT_SHADE_RIGHT_ONE_FIFTH_BLOCK",
+    "tileIndexBase_open": "OPAQUE_MEDIUM_LIGHT_SHADE_RIGHT_ONE_FIFTH_BLOCK",
     "attributes": {
       "solid": true,
       "visible": true,
@@ -91,14 +91,28 @@
       "locked": false
     }
   },
-  
+  "sewage": {
+    "name": "Sewage",
+    "tileIndexBase": "BLANK",
+    "tileIndexTop": "BLANK",
+    "animated": true,
+    "animation_frames": "fluid",
+    "tint": "#CAD49D",
+    "attributes": {
+      "solid": false,
+      "visible": true,
+      "damages": false,
+      "spreads": false,
+      "ignites": true
+    }
+  },
   "fire": {
     "name": "Fire",
     "tileIndexBase": "BLANK",
     "tileIndexTop": "BLANK",
     "animated": true,
     "animation_frames": "fire",
-    "tint": 16737569,
+    "tint": "#EC7505",
     "attributes": {
       "solid": false,
       "visible": true,
@@ -115,7 +129,7 @@
     "name": "Brazier",
     "tileIndexBase": "OPAQUE_DOOR_BOTTOM",
     "animationTop": "fire",
-    "tint": 16737569,
+    "tint": "#EC7505",
     "attributes": {
       "solid": true,
       "visible": true,
