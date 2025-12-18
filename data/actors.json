@@ -113,6 +113,7 @@
     "animated": true,
     "animation_frames": "fire",
     "tint": "#EC7505",
+    "flickerTint": true,
     "attributes": {
       "solid": false,
       "visible": true,
@@ -130,6 +131,7 @@
     "tileIndexBase": "OPAQUE_DOOR_BOTTOM",
     "animationTop": "fire",
     "tint": "#EC7505",
+    "flickerTint": true,
     "attributes": {
       "solid": true,
       "visible": true,

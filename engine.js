@@ -116,6 +116,21 @@ function parseTint(value, defaultValue = 0xFFFFFF) {
     return defaultValue;
 }
 
+function generateColorVariation(baseColor, variation = 0x101008) {
+    const r = (baseColor >> 16) & 0xFF;
+    const g = (baseColor >> 8) & 0xFF;
+    const b = baseColor & 0xFF;
+
+    const vr = (variation >> 16) & 0xFF;
+    const vg = (variation >> 8) & 0xFF;
+    const vb = variation & 0xFF;
+
+    return {
+        lighter: ((Math.min(255, r + vr) << 16) | (Math.min(255, g + vg) << 8) | Math.min(255, b + vb)),
+        darker: ((Math.max(0, r - vr) << 16) | (Math.max(0, g - vg) << 8) | Math.max(0, b - vb * 0.5))
+    };
+}
+
 // ============================================================================
 // CORE ENGINE CLASS
 // ============================================================================
@@ -739,6 +754,7 @@ class Actor extends Entity {
 
         // Load tint value (supports number or "#RRGGBB" string format)
         this.tint = parseTint(data.tint);
+        this.flickerTint = data.flickerTint || false;
 
         // Base tile - can be static (tileIndexBase) or animated (animationBase)
         this.tileIndexBase = engine.spriteLibrary.resolveTile(data.tileIndexBase) || null;
@@ -1986,6 +2002,18 @@ class RenderSystem {
                 animSprite.play();
                 animSprite.zIndex = zIndex;
                 animSprite.tint = actor.tint;
+
+                if (actor.flickerTint) {
+                    const colors = generateColorVariation(actor.tint, 0x181808);
+                    const tween = new createjs.Tween.get(animSprite, { loop: true })
+                        .to({ tint: colors.lighter }, 80)
+                        .wait(150)
+                        .to({ tint: actor.tint }, 200)
+                        .wait(300)
+                        .to({ tint: colors.darker }, 60)
+                        .wait(100);
+                    animSprite._flickerTween = tween;
+                }
 
                 this.entityContainer.addChild(animSprite);
                 return animSprite;
