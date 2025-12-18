@@ -254,6 +254,17 @@
                  "width":40,
                  "x":760,
                  "y":120
+                }, 
+                {
+                 "height":30,
+                 "id":16,
+                 "name":"brazier1",
+                 "rotation":0,
+                 "type":"brazier",
+                 "visible":true,
+                 "width":40,
+                 "x":880,
+                 "y":150
                 }],
          "opacity":1,
          "type":"objectgroup",
@@ -284,7 +295,7 @@
          "y":0
         }],
  "nextlayerid":7,
- "nextobjectid":15,
+ "nextobjectid":19,
  "orientation":"orthogonal",
  "renderorder":"right-down",
  "tiledversion":"1.11.2",

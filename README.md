@@ -134,49 +134,9 @@ prototypes/        # Game definitions
 
 ---
 
-## Current Implementation Status (after these I'll 1.0 it and switch to a changelog)
+See [CHANGELOG.md](CHANGELOG.md) for version history and implementation status.
 
-**Completed:**
-
-- Core engine architecture with major classes
-- Entity system with attributes
-- PIXI.js rendering pipeline
-- Tiled map loading
-- Audio sprite support
-- Prototype loading system
-- Wildcard system with region detection
-- ROT.js maze generation (EllerMaze)
-- Room generation with wall actors
-- Maze-room passageway detection (walls omitted where maze paths meet room perimeters)
-- Turn engine with ROT.js Scheduler.Simple
-- Observer mode (auto-advance turns when no controlled actors, play/pause with space, reload with escape)
-- Diagonal shadow rendering under floor tiles (addBaseAndShadows)
-- Actor falling into void (removes from play, transitions to observer mode if player dies)
-- Item pickup and per-actor inventory system (inventory attribute determines capacity)
-- Sighted attribute for actors to avoid void tiles
-
-**In Progress:**
-
-- Input handling (keyboard/mouse/touch) - basic version works (arrow keys, wasd)
-- Multi-level state stack
-- AI behaviors (structure exists, random_walk works, others are stubs)
-- Wildcard item/actor spawning (stubs exist)
-
-**Not Yet Implemented:**
-
-- Pathfinding (A*)
-- Field of view
-- Combat
-- Item use/effects
-- Fog of war / darkness
-- UI (inventory, stats, messages)
-- Item drops on death
-
-**Pie in the Sky**
-
-- Dreaming of: once a minimal rogulike is achieved, adding optional panes for a pseudo3d first person view based on a playable actor position on the map and a verbose text description of turns, letting us experiment with different genre features
-
-#### Tree
+### File Tree
 
 ```
 .
@@ -194,19 +154,20 @@ prototypes/        # Game definitions
 │   │   └── courier_prime_code-webfont.woff2
 │   ├── main.css
 │   ├── main.css.map
+│   ├── main.scss
 │   ├── scss
 │   │   ├── _base.scss
-│   │   ├──_game.scss
-│   │   ├── _typography.scss
-│   │   ├── main.css
-│   │   ├── main.css.map
-│   │   └── main.scss
+│   │   ├── _game.scss
+│   │   └── _typography.scss
 │   └── sprites
 │       ├── fire-animation.png
+│       ├── fluid-animation.png
 │       ├── smoke-animation.png
 │       └── static-tiles.png
+├── CHANGELOG.md
 ├── data
 │   ├── actors.json
+│   ├── colors.json
 │   ├── effects.json
 │   ├── items.json
 │   ├── personalities.json
@@ -227,6 +188,7 @@ prototypes/        # Game definitions
 ├── prototypes
 │   └── default
 │       ├── actors.json
+│       ├── items.json
 │       ├── map.tmj
 │       └── prototype.json
 ├── README.md
@@ -237,6 +199,4 @@ prototypes/        # Game definitions
 └── tree.txt
 ```
 
-## License
-
-Anti-Capitalist Software License (v1.4) - Free for individuals, non-profits, educational institutions, and co-ops.
+See [LICENSE.txt](LICENSE.txt) for license info
