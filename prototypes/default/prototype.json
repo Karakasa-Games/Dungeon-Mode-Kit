@@ -4,7 +4,7 @@
   "turn_speed": 50,
   "mechanics": {
     "fog_of_war": false,
-    "darkness": false,
+    "darkness": true,
     "turn_based": false,
     "line_of_sight": false
   },

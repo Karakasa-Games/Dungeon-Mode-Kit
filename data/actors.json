@@ -119,7 +119,8 @@
       "visible": true,
       "damages": true,
       "spreads": true,
-      "ignites": true
+      "ignites": true,
+      "light_source": true
     },
     "damage_per_turn": 10,
     "spread_chance": 0.3,
