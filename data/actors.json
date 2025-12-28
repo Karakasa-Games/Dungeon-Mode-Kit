@@ -140,5 +140,32 @@
       "visible": true,
       "light_source": true
     }
+  },
+
+  "down_stairway": {
+    "name": "Stairs Down",
+    "tileIndexBase": "DOWNWARDS_ARROW_ON_LIGHT_SHADE",
+    "tileIndexTop": "OPAQUE_QUADRANT_UPPER_LEFT_AND_LOWER_LEFT_AND_LOWER_RIGHT",
+    "flipTopV": true,
+    "tint": "#84DCCF",
+    "attributes": {
+      "solid": false,
+      "visible": true,
+      "stairway": "down"
+    }
+  },
+
+  "up_stairway": {
+    "name": "Stairs Up",
+    "tileIndexBase": "UPWARDS_ARROW_ON_LIGHT_SHADE",
+    "tileIndexTop": "OPAQUE_QUADRANT_UPPER_LEFT_AND_LOWER_LEFT_AND_LOWER_RIGHT",
+    "flipTopV": true,
+    "tint": "#EC7505",
+    "attributes": {
+      "solid": false,
+      "visible": true,
+      "stairway": "up"
+    }
   }
+ 
 }

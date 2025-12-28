@@ -399,10 +399,11 @@ class DungeonEngine {
     }
 
     /**
-     * Reload the current prototype
+     * Reload the current prototype or load a different one
+     * @param {string} [newPrototypeName] - Optional name of prototype to load (defaults to current)
      */
-    async reloadPrototype() {
-        const prototypeName = this.currentPrototype?.name || 'default';
+    async reloadPrototype(newPrototypeName) {
+        const prototypeName = newPrototypeName || this.currentPrototype?.name || 'default';
         console.log(`Reloading prototype: ${prototypeName}`);
         this.cleanup();
         await this.loadPrototype(prototypeName);
@@ -454,36 +455,41 @@ class DungeonEngine {
         return [];
     }
     
-    async loadPrototype(prototypeName) {
-        console.log(`Loading prototype: ${prototypeName}`);
+    async loadPrototype(prototypeName, entryDirection = null) {
+        console.log(`Loading prototype: ${prototypeName}, entry: ${entryDirection || 'direct'}`);
         const prototypeConfig = await this.loadPrototypeConfig(prototypeName);
         this.currentPrototype = new Prototype(prototypeName, prototypeConfig, this);
         await this.currentPrototype.loadAssets();
         this.mapManager = new MapManager(this);
         const hasAuthoredMap = await this.checkForAuthoredMap(prototypeName);
-        
+
+        // Load authored map or generate procedural map
         if (hasAuthoredMap) {
             await this.mapManager.loadTiledMap(`prototypes/${prototypeName}/map.tmj`);
         } else {
             this.mapManager.generateProceduralMap();
         }
-        
+
         this.canvasWidth = this.mapManager.width * this.config.tileWidth;
         this.canvasHeight = this.mapManager.height * this.config.tileHeight;
-        
+
         await this.initializeRenderer();
-        
+
         // Initialize entity manager
         this.entityManager = new EntityManager(this);
-        
-        // Spawn entities from Tiled object layers
-        await this.entityManager.spawnEntities(this.currentPrototype.config);
-        
-        // Process wildcards
+
+        // Spawn entities from Tiled object layers (but skip player if we'll spawn at stairway)
+        await this.entityManager.spawnEntities(this.currentPrototype.config, entryDirection);
+
+        // Process wildcards (spawns actors for fire, sewage, wall tiles, etc.)
         await this.mapManager.processWildcards();
 
-        // Spawn any actors created by wildcard processing (e.g., room walls)
+        // Spawn player at appropriate stairway based on entry direction
+        this.spawnPlayerAtStairway(entryDirection);
+
+        // Spawn any actors created by wildcard/labyrinth processing (e.g., room walls, dungeon doors)
         this.mapManager.spawnPendingWalls();
+        this.mapManager.spawnPendingDoors();
 
         // Add diagonal shadows beneath floor tiles (only when darkness is disabled)
         if (!prototypeConfig.mechanics?.darkness) {
@@ -560,16 +566,16 @@ class DungeonEngine {
         };
     }
     
-    transitionToPrototype(prototypeName, saveState = true) {
+    transitionToPrototype(prototypeName, saveState = true, entryDirection = null) {
         if (saveState) {
             this.prototypeStack.push({
                 name: this.currentPrototype.name,
                 state: this.saveGameState()
             });
         }
-        
+
         this.cleanup();
-        this.loadPrototype(prototypeName);
+        this.loadPrototype(prototypeName, entryDirection);
     }
     
     returnToPreviousPrototype() {
@@ -577,13 +583,83 @@ class DungeonEngine {
             console.warn('No previous prototype to return to');
             return;
         }
-        
+
         const previous = this.prototypeStack.pop();
         this.cleanup();
         this.loadPrototype(previous.name);
         this.restoreGameState(previous.state);
     }
-    
+
+    /**
+     * Use a stairway to transition to another level
+     * @param {string} direction - 'up' or 'down'
+     */
+    useStairway(direction) {
+        const config = this.currentPrototype.config;
+        let targetLevel = null;
+
+        if (direction === 'down' && config.next_level) {
+            targetLevel = config.next_level;
+        } else if (direction === 'up' && config.previous_level) {
+            targetLevel = config.previous_level;
+        }
+
+        if (targetLevel) {
+            console.log(`Using stairway ${direction} to ${targetLevel}`);
+            this.playSound('levelout');
+            // Pass entry direction: descending means entering from above, ascending means entering from below
+            const entryDirection = direction === 'down' ? 'from_above' : 'from_below';
+            this.transitionToPrototype(targetLevel, true, entryDirection);
+        } else {
+            console.log(`No ${direction === 'down' ? 'next' : 'previous'} level configured`);
+        }
+    }
+
+    /**
+     * Spawn the player at the appropriate stairway based on entry direction
+     * @param {string|null} entryDirection - 'from_above', 'from_below', or null for direct load
+     */
+    spawnPlayerAtStairway(entryDirection) {
+        // If player was already spawned from the map, don't spawn another
+        if (this.entityManager.player) {
+            console.log('Player already exists from map, skipping stairway spawn');
+            return;
+        }
+
+        // Determine which stairway to spawn at
+        // from_above (descended) = spawn at up_stairway (the stairs leading back up)
+        // from_below (ascended) = spawn at down_stairway (the stairs leading back down)
+        // direct load = spawn at up_stairway if it exists
+        let targetStairwayType;
+        if (entryDirection === 'from_above') {
+            targetStairwayType = 'up';
+        } else if (entryDirection === 'from_below') {
+            targetStairwayType = 'down';
+        } else {
+            // Direct load - try up_stairway first
+            targetStairwayType = 'up';
+        }
+
+        // Find the stairway actor
+        const stairway = this.entityManager.findActorByAttribute('stairway', targetStairwayType);
+
+        if (stairway) {
+            console.log(`Spawning player at ${targetStairwayType} stairway (${stairway.x}, ${stairway.y})`);
+            const playerData = this.currentPrototype.getActorData('player');
+            if (playerData) {
+                const player = new Actor(stairway.x, stairway.y, 'player', playerData, this);
+                this.entityManager.addEntity(player);
+            } else {
+                console.error('No player actor data found in prototype');
+            }
+        } else if (entryDirection === null) {
+            // Direct load with no up stairway - player should be in the map
+            console.log('No up stairway found, expecting player to be placed in map');
+        } else {
+            console.warn(`No ${targetStairwayType} stairway found to spawn player at`);
+        }
+    }
+
     saveGameState() {
         return {
             player: this.entityManager.player.serialize(),
@@ -607,16 +683,29 @@ class DungeonEngine {
         if (this.scheduler) {
             this.scheduler.clear();
         }
-        
+
         if (this.entityManager) {
             this.entityManager.cleanup();
         }
-        
+
         if (this.mapManager) {
             this.mapManager.cleanup();
         }
+
         if (this.renderer) {
             this.renderer.clear();
+        }
+
+        // Destroy the PIXI application and remove the canvas
+        if (this.app) {
+            this.app.destroy(true, { children: true, texture: false, baseTexture: false });
+            this.app = null;
+            this.renderer = null;
+        }
+
+        // Clear lighting manager
+        if (this.lightingManager) {
+            this.lightingManager = null;
         }
     }
 }
@@ -791,6 +880,12 @@ class Actor extends Entity {
         if (data.animated && data.animation_frames) {
             this.animationBase = data.animation_frames;
         }
+
+        // Flip properties for base and top sprites
+        this.flipBaseH = data.flipBaseH || false;
+        this.flipBaseV = data.flipBaseV || false;
+        this.flipTopH = data.flipTopH || false;
+        this.flipTopV = data.flipTopV || false;
 
         // Sprite references (will be set by renderer)
         this.spriteBase = null;
@@ -1075,6 +1170,15 @@ class Actor extends Entity {
             this.pickUpItem(itemAtTarget);
         }
 
+        // Check for stairway actors (only for player-controlled actors)
+        if (this.hasAttribute('controlled')) {
+            const stairway = this.engine.entityManager.getOtherActorAt(newX, newY, this);
+            if (stairway && stairway.hasAttribute('stairway')) {
+                const direction = stairway.getAttribute('stairway');
+                this.engine.useStairway(direction);
+            }
+        }
+
         // Update lighting if this actor affects it
         if (this.hasAttribute('controlled') || this.hasAttribute('light_source')) {
             this.engine.updateLighting();
@@ -1095,6 +1199,38 @@ class Actor extends Entity {
         if (this.spriteTop) {
             this.spriteTop.x = this.x * globalVars.TILE_WIDTH;
             this.spriteTop.y = (this.y - 1) * globalVars.TILE_HEIGHT;
+        }
+    }
+
+    /**
+     * Check if this actor can see the target (simple distance check)
+     * @param {Entity} target - The target to check visibility for
+     * @returns {boolean} True if target is within vision range
+     */
+    canSeeTarget(target) {
+        if (!target) return false;
+        const dx = target.x - this.x;
+        const dy = target.y - this.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        return distance <= this.visionRange;
+    }
+
+    /**
+     * Move toward a target position
+     * @param {number} targetX - Target X coordinate
+     * @param {number} targetY - Target Y coordinate
+     */
+    moveToward(targetX, targetY) {
+        const dx = Math.sign(targetX - this.x);
+        const dy = Math.sign(targetY - this.y);
+
+        // Try to move in both directions, prefer the larger distance
+        if (Math.abs(targetX - this.x) > Math.abs(targetY - this.y)) {
+            if (dx !== 0 && this.tryMove(this.x + dx, this.y)) return;
+            if (dy !== 0 && this.tryMove(this.x, this.y + dy)) return;
+        } else {
+            if (dy !== 0 && this.tryMove(this.x, this.y + dy)) return;
+            if (dx !== 0 && this.tryMove(this.x + dx, this.y)) return;
         }
     }
 
@@ -1205,22 +1341,22 @@ class EntityManager {
         this.player = null;
     }
     
-    async spawnEntities(prototypeConfig) {
+    async spawnEntities(prototypeConfig, entryDirection = null) {
         // Process object layers from Tiled map if available
         if (this.engine.mapManager.objectLayers) {
             for (const layer of this.engine.mapManager.objectLayers) {
                 if (layer.name === 'actors') {
-                    this.spawnActorsFromLayer(layer);
+                    this.spawnActorsFromLayer(layer, entryDirection);
                 } else if (layer.name === 'items') {
                     this.spawnItemsFromLayer(layer);
                 }
             }
         }
-        
+
         console.log(`Entities spawned: ${this.actors.length} actors, ${this.items.length} items`);
     }
     
-    spawnActorsFromLayer(layer) {
+    spawnActorsFromLayer(layer, entryDirection = null) {
         console.log(`Processing actors layer with ${layer.objects.length} objects`);
 
         for (const obj of layer.objects) {
@@ -1231,22 +1367,28 @@ class EntityManager {
                 console.warn('Object has no class, type, or name, skipping:', obj);
                 continue;
             }
-            
+
+            // Skip player actors when entering via stairway (player will be spawned at stairway)
+            if (entryDirection && actorType === 'player') {
+                console.log('Skipping player spawn from map (will spawn at stairway)');
+                continue;
+            }
+
             // Convert pixel position to tile position
             const tileX = Math.floor(obj.x / this.engine.config.tileWidth);
             const tileY = Math.floor(obj.y / this.engine.config.tileHeight);
-            
+
             // Get actor data from prototype
             const actorData = this.engine.currentPrototype.getActorData(actorType);
             if (!actorData) {
                 console.warn(`No actor data found for type '${actorType}'`);
                 continue;
             }
-            
+
             // Create and add actor
             const actor = new Actor(tileX, tileY, actorType, actorData, this.engine);
             this.addEntity(actor);
-            
+
             console.log(`Spawned ${actorType} at tile (${tileX}, ${tileY}) from pixel (${obj.x}, ${obj.y})`);
         }
     }
@@ -1318,11 +1460,19 @@ class EntityManager {
     getActorAt(x, y) {
         return this.actors.find(a => a.x === x && a.y === y);
     }
-    
+
+    getOtherActorAt(x, y, excludeActor) {
+        return this.actors.find(a => a.x === x && a.y === y && a !== excludeActor);
+    }
+
     getItemAt(x, y) {
         return this.items.find(i => i.x === x && i.y === y);
     }
-    
+
+    findActorByAttribute(attributeName, attributeValue) {
+        return this.actors.find(a => a.getAttribute(attributeName) === attributeValue);
+    }
+
     findNearestPlayer(fromActor) {
         // For now, just return the player
         return this.player;
@@ -1485,40 +1635,41 @@ class MapManager {
         }
     }
     
-    async loadTiledMap(mapPath) {
+    async loadTiledMap(mapPath, options = {}) {
         console.log(`Loading Tiled map: ${mapPath}`);
-        
+
         try {
             const response = await fetch(mapPath);
             const tiledData = await response.json();
-            
+
             // Store map dimensions
             this.width = tiledData.width;
             this.height = tiledData.height;
-            
+
             // Store tileset info for converting IDs
             this.tileWidth = tiledData.tilewidth;
             this.tileHeight = tiledData.tileheight;
-            
+
             // Recreate maps with correct dimensions
             this.backgroundMap = this.createEmptyMap();
             this.floorMap = this.createEmptyMap();
             this.wallMap = this.createEmptyMap();
             this.wildcardMap = this.createEmptyMap();
-            
+
             // Store object layers for entity spawning
             this.objectLayers = [];
-            
+
             console.log(`Map dimensions: ${this.width}x${this.height}`);
-            
+
             // Process layers
             for (const layer of tiledData.layers) {
                 if (layer.type === 'tilelayer') {
-                    if (layer.name === 'floor') {
+                    if (layer.name === 'floor' && !options.skipFloorLayer) {
                         this.processFloorLayer(layer);
                     } else if (layer.name === 'background') {
                         this.processBackgroundLayer(layer);
-                    } else if (layer.name === 'wildcards') {
+                    } else if (layer.name === 'wildcards' && !options.skipFloorLayer) {
+                        // Skip wildcards too when skipping floor (labyrinth mode)
                         this.processWildcardLayer(layer);
                     }
                 } else if (layer.type === 'objectgroup') {
@@ -1526,7 +1677,7 @@ class MapManager {
                     this.objectLayers.push(layer);
                 }
             }
-            
+
             console.log(`Tiled map loaded successfully`);
             console.log(`Walkable tiles: ${this.walkableTiles.length}`);
             console.log(`Object layers: ${this.objectLayers.length}`);
@@ -1585,12 +1736,14 @@ class MapManager {
         // Map tile IDs to wildcard types
         const wildcardTypes = {
             210: 'maze',
+            10: 'dungeon',   // OPAQUE_INVERSE_DIAMOND_SUITE - ROT.js Digger dungeon with walls and doors
             143: 'room',
             144: 'room',
             12: 'item_spawn',
             3: 'actor_spawn',
             9: 'fire',
-            135: 'sewage'
+            135: 'sewage',
+            132: 'wall'      // Spawns wall actors
         };
         return wildcardTypes[tileId] || 'unknown';
     }
@@ -1680,6 +1833,9 @@ class MapManager {
             case 'maze':
                 this.generateMazeAt(region.x, region.y, region.width, region.height);
                 break;
+            case 'dungeon':
+                this.generateDungeonAt(region.x, region.y, region.width, region.height);
+                break;
             case 'room':
                 this.generateRoomAt(region.x, region.y, region.width, region.height);
                 break;
@@ -1694,6 +1850,9 @@ class MapManager {
                 break;
             case 'sewage':
                 this.spawnActorsAt(region, 'sewage');
+                break;
+            case 'wall':
+                this.spawnActorsAt(region, 'wall');
                 break;
         }
     }
@@ -1738,6 +1897,110 @@ class MapManager {
                 // value === 1 is void - leave background intact (black), no floor tile
             }
         });
+    }
+
+    generateDungeonAt(startX, startY, width, height) {
+        // Use ROT.js Digger for a more complex dungeon with rooms and corridors
+        const dungeon = new ROT.Map.Digger(width, height, {
+            roomWidth: [3, 7],
+            roomHeight: [3, 5],
+            corridorLength: [2, 5],
+            dugPercentage: 0.3
+        });
+
+        // Track which cells are floors for wall placement
+        const floorCells = new Set();
+        const wallPositions = [];
+        const doorPositions = [];
+
+        // Generate the dungeon and place floor tiles
+        dungeon.create((x, y, value) => {
+            const worldX = startX + x;
+            const worldY = startY + y;
+
+            if (worldX < this.width && worldY < this.height) {
+                // Only generate where there's actually a wildcard tile
+                const wildcard = this.wildcardMap[worldY][worldX];
+                if (!wildcard || wildcard.type !== 'dungeon') {
+                    return; // Skip non-wildcard areas (preserve authored content)
+                }
+
+                if (value === 0) {
+                    // Passable floor - clear background and place floor tile
+                    this.backgroundMap[worldY][worldX] = null;
+                    this.floorMap[worldY][worldX] = { tileId: 158, layer: 'floor' };
+                    this.walkableTiles.push({x: worldX, y: worldY});
+                    floorCells.add(`${x},${y}`);
+                }
+                // value === 1 is wall/void - leave background intact (black), no floor tile
+            }
+        });
+
+        // Helper to check if a local coordinate has a floor
+        const hasFloor = (lx, ly) => floorCells.has(`${lx},${ly}`);
+
+        // Helper to check if a local coordinate is within bounds
+        const inBounds = (lx, ly) => lx >= 0 && lx < width && ly >= 0 && ly < height;
+
+        // Find wall positions: cells adjacent to floors but not floors themselves
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                if (hasFloor(x, y)) continue; // Skip floor cells
+
+                const worldX = startX + x;
+                const worldY = startY + y;
+
+                // Check if within map bounds
+                if (worldX >= this.width || worldY >= this.height) continue;
+
+                // Check if this is within the wildcard region
+                const wildcard = this.wildcardMap[worldY][worldX];
+                if (!wildcard || wildcard.type !== 'dungeon') continue;
+
+                // Check if adjacent to any floor (8-directional, includes corners)
+                const adjacentToFloor =
+                    (inBounds(x-1, y) && hasFloor(x-1, y)) ||
+                    (inBounds(x+1, y) && hasFloor(x+1, y)) ||
+                    (inBounds(x, y-1) && hasFloor(x, y-1)) ||
+                    (inBounds(x, y+1) && hasFloor(x, y+1)) ||
+                    (inBounds(x-1, y-1) && hasFloor(x-1, y-1)) ||  // top-left
+                    (inBounds(x+1, y-1) && hasFloor(x+1, y-1)) ||  // top-right
+                    (inBounds(x-1, y+1) && hasFloor(x-1, y+1)) ||  // bottom-left
+                    (inBounds(x+1, y+1) && hasFloor(x+1, y+1));    // bottom-right
+
+                if (adjacentToFloor && worldY > 0) {
+                    wallPositions.push({x: worldX, y: worldY});
+                    // Place floor tile under walls
+                    this.backgroundMap[worldY][worldX] = null;
+                    this.floorMap[worldY][worldX] = { tileId: 158, layer: 'floor' };
+                }
+            }
+        }
+
+        // Get doors from rooms - these are where corridors connect to rooms
+        const rooms = dungeon.getRooms();
+        for (const room of rooms) {
+            room.getDoors((x, y) => {
+                const worldX = startX + x;
+                const worldY = startY + y;
+
+                if (worldX < this.width && worldY < this.height && worldY > 0) {
+                    const wildcard = this.wildcardMap[worldY][worldX];
+                    if (wildcard && wildcard.type === 'dungeon') {
+                        doorPositions.push({x: worldX, y: worldY});
+                    }
+                }
+            });
+        }
+
+        // Store wall and door positions for later spawning (after EntityManager exists)
+        this.pendingWallSpawns = this.pendingWallSpawns || [];
+        this.pendingWallSpawns.push(...wallPositions);
+
+        this.pendingDoorSpawns = this.pendingDoorSpawns || [];
+        this.pendingDoorSpawns.push(...doorPositions);
+
+        console.log(`Dungeon generated: ${floorCells.size} floor tiles, ${wallPositions.length} walls, ${doorPositions.length} doors`);
     }
 
     generateRoomAt(startX, startY, width, height) {
@@ -1816,7 +2079,25 @@ class MapManager {
         console.log(`Spawned ${this.pendingWallSpawns.length} wall actors`);
         this.pendingWallSpawns = [];
     }
-    
+
+    spawnPendingDoors() {
+        if (!this.pendingDoorSpawns || this.pendingDoorSpawns.length === 0) return;
+
+        const actorData = this.engine.currentPrototype.getActorData('door');
+        if (!actorData) {
+            console.warn('No door actor data found');
+            return;
+        }
+
+        for (const pos of this.pendingDoorSpawns) {
+            const door = new Actor(pos.x, pos.y, 'door', actorData, this.engine);
+            this.engine.entityManager.addEntity(door);
+        }
+
+        console.log(`Spawned ${this.pendingDoorSpawns.length} door actors`);
+        this.pendingDoorSpawns = [];
+    }
+
     getRandomWalkableTile() {
         if (this.walkableTiles.length === 0) return {x: 0, y: 0};
         return this.walkableTiles[Math.floor(Math.random() * this.walkableTiles.length)];
@@ -2090,7 +2371,8 @@ class RenderSystem {
                 actor.animationBase,
                 actor.x * globalVars.TILE_WIDTH,
                 actor.y * globalVars.TILE_HEIGHT,
-                10 // zIndex
+                10, // zIndex
+                { flipH: actor.flipBaseH, flipV: actor.flipBaseV }
             );
 
             // Render top sprite (static or animated) - one tile above
@@ -2100,7 +2382,8 @@ class RenderSystem {
                 actor.animationTop,
                 actor.x * globalVars.TILE_WIDTH,
                 (actor.y - 1) * globalVars.TILE_HEIGHT,
-                11 // zIndex
+                11, // zIndex
+                { flipH: actor.flipTopH, flipV: actor.flipTopV }
             );
 
             actorsRendered++;
@@ -2117,9 +2400,10 @@ class RenderSystem {
      * @param {number} x - Pixel x position
      * @param {number} y - Pixel y position
      * @param {number} zIndex - Render layer
+     * @param {Object} options - Additional options {flipH: boolean, flipV: boolean}
      * @returns {PIXI.Sprite|PIXI.AnimatedSprite|null} The created sprite or null
      */
-    createActorSprite(actor, tileIndex, animationName, x, y, zIndex) {
+    createActorSprite(actor, tileIndex, animationName, x, y, zIndex, options = {}) {
         const tileset = PIXI.Loader.shared.resources.tiles;
 
         // Check for animated sprite first
@@ -2162,10 +2446,25 @@ class RenderSystem {
             const texture = new PIXI.Texture(tileset.texture.baseTexture, rect);
             const sprite = new PIXI.Sprite(texture);
 
-            sprite.x = x;
-            sprite.y = y;
             sprite.zIndex = zIndex;
             sprite.tint = actor.tint;
+
+            // Apply horizontal/vertical flip using anchor and scale
+            // Set anchor to center for flipping, then adjust position
+            if (options.flipH || options.flipV) {
+                sprite.anchor.set(0.5, 0.5);
+                sprite.x = x + globalVars.TILE_WIDTH / 2;
+                sprite.y = y + globalVars.TILE_HEIGHT / 2;
+                if (options.flipH) {
+                    sprite.scale.x = -1;
+                }
+                if (options.flipV) {
+                    sprite.scale.y = -1;
+                }
+            } else {
+                sprite.x = x;
+                sprite.y = y;
+            }
 
             this.entityContainer.addChild(sprite);
             return sprite;
@@ -2869,5 +3168,49 @@ window.audioDebug = {
     }
 };
 
+// Level loading utilities for developer console
+// Levels ordered by depth (index = depth number)
+const levelsByDepth = [
+    { name: 'default', description: 'Default Test Prototype' },
+    { name: 'labyrinth', description: 'Cretan Labyrinth' }
+];
+
+window.loadLevel = async (levelIdentifier) => {
+    if (!engine) {
+        console.error('Engine not initialized. Run initializeGame() first.');
+        return;
+    }
+
+    let prototypeName;
+
+    // Check if it's a number (depth) or string (name)
+    if (typeof levelIdentifier === 'number') {
+        const depth = levelIdentifier;
+        if (depth < 0 || depth >= levelsByDepth.length) {
+            console.error(`Invalid depth: ${depth}. Valid range: 0-${levelsByDepth.length - 1}`);
+            listLevels();
+            return;
+        }
+        prototypeName = levelsByDepth[depth].name;
+        console.log(`Loading depth ${depth}: ${prototypeName}`);
+    } else {
+        prototypeName = levelIdentifier;
+        console.log(`Loading level: ${prototypeName}`);
+    }
+
+    await engine.reloadPrototype(prototypeName);
+};
+
+window.listLevels = () => {
+    const levels = levelsByDepth.map((level, depth) => ({
+        depth,
+        name: level.name,
+        description: level.description
+    }));
+    console.table(levels);
+    console.log('Use loadLevel(depth) or loadLevel("name") to load a level');
+    return levels;
+};
+
 console.log('Dungeon Mode Kit loaded. Call initializeGame() to start.');
-//console.log('Audio debugging: audioDebug.list(), audioDebug.play("soundName"), audioDebug.test()');
+console.log('Level utilities: listLevels(), loadLevel("prototypeName")');

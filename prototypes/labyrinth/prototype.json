@@ -1,21 +1,21 @@
 {
-  "name": "Default Test Prototype",
-  "loaded_sound": "tone3",
-  "depth": 1,
+  "name": "Cretan Labyrinth",
+  "loaded_sound": "levelout",
+  "depth": 2,
   "turn_speed": 50,
-  "next_level": "labyrinth",
+  "previous_level": "default",
   "mechanics": {
     "fog_of_war": false,
     "darkness": false
   },
   "stats": {
-    "health": {
+    "strength": {
       "max": 100,
       "current": 100
     }
   },
   "inventory": {
-    "max_items": 10
+    "max_items": 1
   },
   "available_items": [],
   "available_actors": [],
