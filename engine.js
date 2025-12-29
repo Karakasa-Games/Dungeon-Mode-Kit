@@ -425,7 +425,13 @@ class DungeonEngine {
             this.audioManager.play(soundName);
         }
     }
-    
+
+    playSoundVaried(soundName, volumeBase, volumeVariance, rateBase, rateVariance) {
+        if (this.audioManager) {
+            this.audioManager.playVaried(soundName, volumeBase, volumeVariance, rateBase, rateVariance);
+        }
+    }
+
     stopSound(soundName) {
         if (this.audioManager) {
             this.audioManager.stop(soundName);
@@ -2797,7 +2803,7 @@ class InputManager {
             const dir = this.directions[action];
             const moved = player.moveBy(dir.dx, dir.dy);
             if (moved) {
-                this.engine.playSound('feets');
+                this.engine.playSoundVaried('feets', 0.4, 0.1, 1.0, 0.06);
                 this.onPlayerAction();
             }
             return;

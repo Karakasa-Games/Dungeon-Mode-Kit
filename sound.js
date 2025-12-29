@@ -56,7 +56,7 @@ class AudioManager {
         }
     }
 
-    play(soundName) {
+    play(soundName, options = {}) {
         if (!this.sound) {
             console.warn('Audio system not initialized');
             return;
@@ -73,10 +73,27 @@ class AudioManager {
                 return;
             }
 
-            this.sound.play(soundName);
+            const id = this.sound.play(soundName);
+
+            // Apply optional volume adjustment
+            if (options.volume !== undefined) {
+                this.sound.volume(options.volume * this.volume, id);
+            }
+
+            // Apply optional pitch/rate adjustment
+            if (options.rate !== undefined) {
+                this.sound.rate(options.rate, id);
+            }
         } catch (error) {
             console.warn(`Failed to play sound '${soundName}':`, error);
         }
+    }
+
+    playVaried(soundName, volumeBase = 0.5, volumeVariance = 0.15, rateBase = 1.0, rateVariance = 0.08) {
+        // Play a sound with randomized volume and pitch for variety
+        const volume = volumeBase + (Math.random() * 2 - 1) * volumeVariance;
+        const rate = rateBase + (Math.random() * 2 - 1) * rateVariance;
+        this.play(soundName, { volume, rate });
     }
 
     stop(soundName) {
