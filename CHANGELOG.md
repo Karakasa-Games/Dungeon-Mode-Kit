@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Planned
+
 - Pathfinding (A*)
 - Combat system
 - Item use/effects
@@ -17,13 +18,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Verbose text description of turns (experimental)
 
 ### In Progress
+
 - Multi-level state stack
 - AI behaviors (structure exists, random_walk works, others are stubs)
 - Wildcard item/actor spawning (stubs exist)
 
+## [0.2a] - 2025-12-29
+
+### Added
+
+- Up and down stairway actors for level transitions
+- Level linking via next_level and previous_level prototype config attributes
+- Player spawns at appropriate stairway when transitioning between levels
+- Minotaur actor
+- Wall wildcard tile (132) for manual wall placement in Tiled maps
+- Tile flip support (flipBaseH, flipBaseV, flipTopH, flipTopV) for actor sprites
+- Audio variation system with randomized volume and pitch
+
+### Changed
+
+- Lighting system now shows actor top tiles even when their base casts a shadow
+- Footstep audio plays at lower volume with slight randomization for natural feel
+- Refactored lighting logic into lighting.js helper methods
+- Refactored audio code into separate sound.js module
+
+### Fixed
+
+- Turn engine no longer errors when unlocking an already-unlocked engine
+
 ## [0.1a] - 2025-12-18
 
 ### Added
+
 - Core engine architecture with DungeonEngine orchestrating all subsystems
 - Entity system with hierarchical Entity > Item/Actor classes
 - Attribute-based entity properties (solid, pushable, flammable, breakable, visible, etc.)
@@ -56,9 +82,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configurable ambient light and player light radius in prototype config
 
 ### Changed
+
 - Animation frame loading now calculates frame count from texture width rather than hardcoding to 7
 
 ### Fixed
+
 - Animated sprites no longer error when spritesheet has fewer than 7 frames
 - Light sources no longer block their own light emission
-

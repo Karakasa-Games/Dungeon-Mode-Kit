@@ -2422,7 +2422,9 @@ class RenderSystem {
                 animSprite.x = x;
                 animSprite.y = y;
                 animSprite.animationSpeed = 0.1;
-                animSprite.play();
+                // Start on a random frame so multiple instances aren't in sync
+                const startFrame = Math.floor(Math.random() * animFrames.length);
+                animSprite.gotoAndPlay(startFrame);
                 animSprite.zIndex = zIndex;
                 animSprite.tint = actor.tint;
 
