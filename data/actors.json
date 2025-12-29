@@ -52,6 +52,24 @@
       "strength": 8
     }
   },
+
+   "minotaur": {
+    "name": "Asterion",
+    "tileIndexBase": "DOOR_TOP",
+    "tileIndexTop": "CABESA_DE_VACA",
+    "personality": "aggressive_melee",
+    "attributes": {
+      "hostile": true,
+      "solid": true,
+      "visible": true,
+      "flammable": true,
+      "inventory": 1
+    },
+    "stats": {
+      "health": 30,
+      "strength": 8
+    }
+  },
   
   "wall": {
     "name": "Wall",
@@ -79,7 +97,7 @@
   "door": {
     "name": "Door",
     "tileIndexBase": "OPAQUE_DOOR_BOTTOM",
-    "tileIndexTop": "DOOR_TOP",
+    "tileIndexTop": "OPAQUE_DOOR_TOP",
     "tileIndexTop_open": "OPAQUE_MEDIUM_LIGHT_SHADE_RIGHT_ONE_FIFTH_BLOCK",
     "tileIndexBase_open": "OPAQUE_MEDIUM_LIGHT_SHADE_RIGHT_ONE_FIFTH_BLOCK",
     "attributes": {

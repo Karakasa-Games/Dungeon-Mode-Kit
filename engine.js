@@ -351,7 +351,9 @@ class DungeonEngine {
         if (this.observerPaused || this.hasControlledActor) return;
 
         // Unlock to let one round of AI turns happen
-        this.turnEngine.unlock();
+        if (this.turnEngine && this.turnEngine._lock) {
+            this.turnEngine.unlock();
+        }
 
         // Schedule next turn after delay
         setTimeout(() => this.advanceObserverTurn(), this.turnSpeed);
@@ -379,7 +381,7 @@ class DungeonEngine {
         this.hasControlledActor = false;
 
         // Unlock the engine (it was locked waiting for player input)
-        if (this.turnEngine) {
+        if (this.turnEngine && this.turnEngine._lock) {
             this.turnEngine.unlock();
         }
 
@@ -961,7 +963,7 @@ class Actor extends Entity {
             );
             this.spriteTop.texture = new PIXI.Texture(tileset.texture.baseTexture, rect);
         }
-
+        this.engine.playSound('plunk3');
         console.log(`${this.name} opened`);
     }
 
@@ -2586,77 +2588,23 @@ class RenderSystem {
     updateDarkness(lightingManager, fogOfWar = false) {
         if (!this.darknessSprites.length) return;
 
-        const hasControlled = lightingManager.hasControlledActors();
-
         for (let y = 0; y < lightingManager.height; y++) {
             for (let x = 0; x < lightingManager.width; x++) {
                 const darkSprite = this.darknessSprites[y]?.[x];
                 const lightColorSprite = this.lightColorSprites[y]?.[x];
 
-                const light = lightingManager.getLightLevel(x, y);
-                const visible = lightingManager.isVisible(x, y);
-                const explored = lightingManager.isExplored(x, y);
-
-                // Calculate light tint color
-                let lightTint = 0xFFFFFF;
-                if (light.intensity > 0 && (light.r > 0 || light.g > 0 || light.b > 0)) {
-                    const maxComponent = Math.max(light.r, light.g, light.b, 1);
-                    const r = Math.floor((light.r / maxComponent) * 255);
-                    const g = Math.floor((light.g / maxComponent) * 255);
-                    const b = Math.floor((light.b / maxComponent) * 255);
-                    lightTint = (r << 16) | (g << 8) | b;
-                }
-
-                // Apply colored light overlay using multiply blend
+                // Apply colored light overlay
                 if (lightColorSprite) {
-                    if (visible && light.intensity > 0 && lightTint !== 0xFFFFFF) {
-                        lightColorSprite.tint = lightTint;
-                        lightColorSprite.alpha = Math.min(0.5, light.intensity * 0.5);
-                    } else if (!hasControlled && light.intensity > 0 && lightTint !== 0xFFFFFF) {
-                        // Observer mode: show light color where illuminated
-                        lightColorSprite.tint = lightTint;
-                        lightColorSprite.alpha = Math.min(0.5, light.intensity * 0.5);
-                    } else {
-                        lightColorSprite.alpha = 0;
-                    }
+                    const colorOverlay = lightingManager.getLightColorOverlay(x, y);
+                    lightColorSprite.tint = colorOverlay.tint;
+                    lightColorSprite.alpha = colorOverlay.alpha;
                 }
 
-                // Update darkness overlay based on visibility and light
+                // Update darkness overlay
                 if (darkSprite) {
-                    if (!hasControlled) {
-                        // Observer mode: show based on illumination only
-                        if (light.intensity > 0 && light.intensity < 1) {
-                            darkSprite.texture = this.darkTexture;
-                            darkSprite.alpha = 1.0 - light.intensity;
-                        } else if (light.intensity >= 1) {
-                            darkSprite.alpha = 0;
-                        } else {
-                            darkSprite.texture = this.solidDarkTexture;
-                            darkSprite.alpha = 1.0;
-                        }
-                    } else if (visible) {
-                        // Visible to a controlled actor
-                        // Alpha progression: 0 (full light) -> 0.85 (no light) -> 0.92 (remembered)
-                        if (light.intensity >= 1) {
-                            darkSprite.alpha = 0;
-                        } else if (light.intensity > 0) {
-                            // Scale from 0 to 0.85 as intensity goes from 1 to 0
-                            darkSprite.texture = this.darkTexture;
-                            darkSprite.alpha = 0.85 * (1.0 - light.intensity);
-                        } else {
-                            // Visible but no light
-                            darkSprite.texture = this.darkTexture;
-                            darkSprite.alpha = 0.85;
-                        }
-                    } else if (fogOfWar && explored) {
-                        // Not visible but previously explored - darker than visible unlit
-                        darkSprite.texture = this.darkTexture;
-                        darkSprite.alpha = 0.92;
-                    } else {
-                        // Not visible and not explored
-                        darkSprite.texture = this.solidDarkTexture;
-                        darkSprite.alpha = 1.0;
-                    }
+                    const darkness = lightingManager.getDarknessAlpha(x, y, fogOfWar);
+                    darkSprite.texture = darkness.useSolidTexture ? this.solidDarkTexture : this.darkTexture;
+                    darkSprite.alpha = darkness.alpha;
                 }
             }
         }
@@ -2666,83 +2614,40 @@ class RenderSystem {
     }
 
     updateEntityLighting(lightingManager) {
-        const hasControlled = lightingManager.hasControlledActors();
         const fogOfWar = this.engine.currentPrototype?.config?.mechanics?.fog_of_war;
 
         for (const actor of this.engine.entityManager.actors) {
-            const light = lightingManager.getLightLevel(actor.x, actor.y);
-            const visible = lightingManager.isVisible(actor.x, actor.y);
-            const explored = lightingManager.isExplored(actor.x, actor.y);
+            const vis = lightingManager.getEntityVisibility(actor.x, actor.y, fogOfWar);
 
-            if (hasControlled) {
-                const shouldShow = visible || (fogOfWar && explored);
-                if (actor.spriteBase) actor.spriteBase.visible = shouldShow;
-                if (actor.spriteTop) actor.spriteTop.visible = shouldShow;
+            if (actor.spriteBase) actor.spriteBase.visible = vis.showBase;
+            if (actor.spriteTop) actor.spriteTop.visible = vis.showTop;
 
-                this.setAnimationPlaying(actor.spriteBase, visible);
-                this.setAnimationPlaying(actor.spriteTop, visible);
+            this.setAnimationPlaying(actor.spriteBase, vis.animateBase);
+            this.setAnimationPlaying(actor.spriteTop, vis.animateTop);
 
-                if (!shouldShow) continue;
-            } else {
-                if (actor.spriteBase) actor.spriteBase.visible = true;
-                if (actor.spriteTop) actor.spriteTop.visible = true;
-                this.setAnimationPlaying(actor.spriteBase, true);
-                this.setAnimationPlaying(actor.spriteTop, true);
-            }
+            if (!vis.showBase && !vis.showTop) continue;
 
+            // Light sources keep their own tint
             if (actor.hasAttribute('light_source')) continue;
 
-            let lightTint = 0xFFFFFF;
-            if (light.intensity > 0 && (light.r > 0 || light.g > 0 || light.b > 0)) {
-                const maxComponent = Math.max(light.r, light.g, light.b, 1);
-                const r = Math.floor((light.r / maxComponent) * 255);
-                const g = Math.floor((light.g / maxComponent) * 255);
-                const b = Math.floor((light.b / maxComponent) * 255);
-                lightTint = (r << 16) | (g << 8) | b;
-            }
-
-            if (hasControlled && !visible && fogOfWar && explored) {
-                lightTint = 0x333333;
-            }
-
             if (actor.spriteBase) {
-                actor.spriteBase.tint = this.blendTints(actor.tint, lightTint);
+                actor.spriteBase.tint = this.blendTints(actor.tint, vis.baseTint);
             }
             if (actor.spriteTop) {
-                actor.spriteTop.tint = this.blendTints(actor.tint, lightTint);
+                actor.spriteTop.tint = this.blendTints(actor.tint, vis.topTint);
             }
         }
 
         for (const item of this.engine.entityManager.items) {
-            const light = lightingManager.getLightLevel(item.x, item.y);
-            const visible = lightingManager.isVisible(item.x, item.y);
-            const explored = lightingManager.isExplored(item.x, item.y);
+            const vis = lightingManager.getEntityVisibility(item.x, item.y, fogOfWar);
 
-            if (hasControlled) {
-                const shouldShow = visible || (fogOfWar && explored);
-                if (item.sprite) item.sprite.visible = shouldShow;
-                this.setAnimationPlaying(item.sprite, visible);
-                if (!shouldShow) continue;
-            } else {
-                if (item.sprite) item.sprite.visible = true;
-                this.setAnimationPlaying(item.sprite, true);
-            }
+            if (item.sprite) item.sprite.visible = vis.showBase;
+            this.setAnimationPlaying(item.sprite, vis.animateBase);
 
-            let lightTint = 0xFFFFFF;
-            if (light.intensity > 0 && (light.r > 0 || light.g > 0 || light.b > 0)) {
-                const maxComponent = Math.max(light.r, light.g, light.b, 1);
-                const r = Math.floor((light.r / maxComponent) * 255);
-                const g = Math.floor((light.g / maxComponent) * 255);
-                const b = Math.floor((light.b / maxComponent) * 255);
-                lightTint = (r << 16) | (g << 8) | b;
-            }
-
-            if (hasControlled && !visible && fogOfWar && explored) {
-                lightTint = 0x333333;
-            }
+            if (!vis.showBase) continue;
 
             if (item.sprite) {
-                item.sprite.tint = this.blendTints(item.tint, lightTint);
+                item.sprite.tint = this.blendTints(item.tint, vis.baseTint);
             }
         }
     }
@@ -2772,125 +2677,6 @@ class RenderSystem {
         } else if (!shouldPlay && sprite.playing) {
             sprite.stop();
         }
-    }
-}
-
-// ============================================================================
-// AUDIO MANAGER
-// ============================================================================
-
-class AudioManager {
-    constructor(audioSpriteData) {
-        this.audioSpriteData = audioSpriteData;
-        this.sound = null;
-        this.muted = false;
-        this.volume = 1.0;
-        
-        if (audioSpriteData) {
-            this.initHowler();
-        }
-    }
-    
-    initHowler() {
-        try {
-            // Use URLs from sprite data if available, otherwise construct default paths
-            let urls = this.audioSpriteData.urls;
-            
-            // If URLs are relative and start with /, make them relative to current directory
-            if (urls && urls.length > 0) {
-                urls = urls.map(url => {
-                    if (url.startsWith('/')) {
-                        return '.' + url; // Convert /assets/... to ./assets/...
-                    }
-                    return url;
-                });
-            } else {
-                // Fallback to default paths
-                const basePath = './assets/audio/effects';
-                const formats = ['mp3', 'ogg', 'm4a'];
-                urls = formats.map(ext => `${basePath}.${ext}`);
-            }
-            
-            console.log('Initializing audio with URLs:', urls);
-            
-            this.sound = new Howl({
-                src: urls,
-                sprite: this.audioSpriteData.sprite,
-                volume: this.volume,
-                onload: () => {
-                    console.log('Audio sprite loaded successfully');
-                },
-                onloaderror: (id, error) => {
-                    console.error('Audio loading error:', error);
-                }
-            });
-            
-            console.log('Howler initialized with', Object.keys(this.audioSpriteData.sprite).length, 'sound effects');
-        } catch (error) {
-            console.error('Failed to initialize Howler:', error);
-            this.sound = null;
-        }
-    }
-    
-    play(soundName) {
-        if (!this.sound) {
-            console.warn('Audio system not initialized');
-            return;
-        }
-        
-        if (this.muted) {
-            return;
-        }
-        
-        try {
-            // Check if the sound exists in the sprite
-            if (!this.audioSpriteData.sprite[soundName]) {
-                console.warn(`Sound '${soundName}' not found in audio sprite`);
-                return;
-            }
-            
-            this.sound.play(soundName);
-        } catch (error) {
-            console.warn(`Failed to play sound '${soundName}':`, error);
-        }
-    }
-    
-    stop(soundName) {
-        if (this.sound) {
-            try {
-                this.sound.stop(soundName);
-            } catch (error) {
-                console.warn(`Failed to stop sound '${soundName}':`, error);
-            }
-        }
-    }
-    
-    mute() {
-        this.muted = true;
-        if (this.sound) {
-            this.sound.mute(true);
-        }
-    }
-    
-    unmute() {
-        this.muted = false;
-        if (this.sound) {
-            this.sound.mute(false);
-        }
-    }
-    
-    setVolume(volume) {
-        this.volume = Math.max(0, Math.min(1, volume)); // Clamp between 0 and 1
-        if (this.sound) {
-            this.sound.volume(this.volume);
-        }
-    }
-    
-    listSounds() {
-        if (!this.audioSpriteData) {
-            return [];
-        }
-        return Object.keys(this.audioSpriteData.sprite);
     }
 }
 
@@ -3043,7 +2829,7 @@ class InputManager {
 
     onPlayerAction() {
         // Called after player takes an action - unlock the turn engine to let AI act
-        if (this.engine.turnEngine) {
+        if (this.engine.turnEngine && this.engine.turnEngine._lock) {
             this.engine.turnEngine.unlock();
         }
     }
@@ -3104,69 +2890,6 @@ async function initializeGame() {
 
 // For debugging: expose initialization function to console
 window.initializeGame = initializeGame;
-
-// Audio debugging utilities
-window.audioDebug = {
-    play: (soundName) => {
-        if (!engine || !engine.audioManager) {
-            console.error('Engine not initialized. Run initializeGame() first.');
-            return;
-        }
-        engine.playSound(soundName);
-    },
-    
-    list: () => {
-        if (!engine || !engine.audioManager) {
-            console.error('Engine not initialized. Run initializeGame() first.');
-            return [];
-        }
-        const sounds = engine.listAvailableSounds();
-        console.table(sounds.map(name => ({ sound: name })));
-        return sounds;
-    },
-    
-    volume: (vol) => {
-        if (!engine || !engine.audioManager) {
-            console.error('Engine not initialized. Run initializeGame() first.');
-            return;
-        }
-        engine.setAudioVolume(vol);
-        console.log(`Volume set to ${vol * 100}%`);
-    },
-    
-    mute: () => {
-        if (!engine || !engine.audioManager) {
-            console.error('Engine not initialized. Run initializeGame() first.');
-            return;
-        }
-        engine.muteAudio();
-        console.log('Audio muted');
-    },
-    
-    unmute: () => {
-        if (!engine || !engine.audioManager) {
-            console.error('Engine not initialized. Run initializeGame() first.');
-            return;
-        }
-        engine.unmuteAudio();
-        console.log('Audio unmuted');
-    },
-    
-    test: () => {
-        if (!engine || !engine.audioManager) {
-            console.error('Engine not initialized. Run initializeGame() first.');
-            return;
-        }
-        console.log('Playing test sequence...');
-        const testSounds = ['feets', 'plunk1', 'tone1', 'bow', 'pickup'];
-        testSounds.forEach((sound, i) => {
-            setTimeout(() => {
-                console.log(`Playing: ${sound}`);
-                engine.playSound(sound);
-            }, i * 600);
-        });
-    }
-};
 
 // Level loading utilities for developer console
 // Levels ordered by depth (index = depth number)
