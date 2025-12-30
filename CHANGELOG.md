@@ -10,8 +10,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Planned
 
 - Pathfinding (A*)
-- Combat system
-- Item use/effects
 - UI (inventory, stats, messages)
 - Item drops on death
 - First-person view pane (experimental)
@@ -22,6 +20,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Multi-level state stack
 - AI behaviors (structure exists, random_walk works, others are stubs)
 - Wildcard item/actor spawning (stubs exist)
+
+## [0.3a] - 2025-12-30
+
+### Added
+
+- Item system documentation (ITEMS.md)
+- Attribute-based item effects replacing hardcoded item types
+- Collision effects: items can modify attributes on actors the holder collides with
+  - Numeric values add/subtract (e.g., `"health": -10` for damage)
+  - Boolean values set directly (e.g., `"locked": false` for keys)
+  - `"toggle"` value toggles boolean attributes
+- Wear effects: wearable items can modify wearer's attributes while equipped
+  - Same value types as collision effects
+  - Effects reversed on unequip
+- Equipment system with three positional slots:
+  - `top`: above actor's head (y-2) for crowns, horns, halos
+  - `middle`: on actor's top tile (y-1) for helmets, masks
+  - `lower`: on actor's base tile (y) for armor, cloaks
+- Use verb system: items define custom UI verbs (e.g., "Drink", "Dig", "Fire")
+- Custom pickup and use sounds per item with defaults
+- Animated tiles now start on random frames for visual variety
+- Sword item with collision damage
+- Crown item with strength wear effect
+
+### Changed
+
+- Items auto-equip to appropriate slot when picked up
+- Picking up item for occupied slot unequips previous item
+- Removed weapon/attack_type attributes in favor of collision_effect
+- Item properties (use_effect, restore_amount, etc.) moved into attributes
+
+### Removed
+
+- Hardcoded weapon boolean attribute
+- Hardcoded attack_type attribute
 
 ## [0.2a] - 2025-12-29
 

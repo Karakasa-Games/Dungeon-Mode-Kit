@@ -898,6 +898,21 @@ class Actor extends Entity {
         // Sprite references (will be set by renderer)
         this.spriteBase = null;
         this.spriteTop = null;
+
+        // Equipment slots and their sprites
+        // top: above actor's top tile (y - 2), for crowns, horns, halos
+        // middle: on actor's top tile (y - 1), for helmets, masks
+        // lower: on actor's base tile (y), for armor, cloaks
+        this.equipment = {
+            top: null,
+            middle: null,
+            lower: null
+        };
+        this.spriteEquipment = {
+            top: null,
+            middle: null,
+            lower: null
+        };
         
         // Stats (from prototype config)
         this.stats = {};
@@ -1079,7 +1094,309 @@ class Actor extends Entity {
         this.inventory.push(item);
         this.engine.entityManager.removeEntity(item);
         console.log(`${this.name} picked up ${item.name}`);
+
+        // Play pickup sound if this is the player
+        if (this.hasAttribute('controlled')) {
+            const pickupSound = item.getAttribute('pickup_sound') || 'tone3';
+            this.engine.playSound(pickupSound);
+        }
+
+        // Auto-equip wearable items
+        const slot = item.getAttribute('wearable');
+        if (slot && ['top', 'middle', 'lower'].includes(slot)) {
+            this.equipToSlot(item, slot);
+        }
+
         return true;
+    }
+
+    /**
+     * Equip a wearable item to its designated slot
+     * @param {Item} item - The wearable item to equip
+     * @param {string} slot - The equipment slot ('top', 'middle', or 'lower')
+     */
+    equipToSlot(item, slot) {
+        // If slot already has an item, unequip it first
+        const currentItem = this.equipment[slot];
+        if (currentItem) {
+            this.unequipFromSlot(slot);
+        }
+
+        // Equip the new item
+        this.equipment[slot] = item;
+
+        // Apply wear effects to actor
+        this.applyWearEffect(item);
+
+        // Create sprite for the equipped item
+        this.spriteEquipment[slot] = this.engine.renderer.createEquipmentSprite(
+            this,
+            item,
+            slot
+        );
+
+        console.log(`${this.name} equipped ${item.name} (${slot})`);
+    }
+
+    /**
+     * Unequip an item from a slot
+     * @param {string} slot - The equipment slot to unequip
+     */
+    unequipFromSlot(slot) {
+        const item = this.equipment[slot];
+        if (!item) return;
+
+        // Remove wear effects from actor
+        this.removeWearEffect(item);
+
+        // Destroy sprite
+        if (this.spriteEquipment[slot]) {
+            this.spriteEquipment[slot].destroy();
+            this.spriteEquipment[slot] = null;
+        }
+
+        // Clear the slot
+        this.equipment[slot] = null;
+
+        console.log(`${this.name} unequipped ${item.name}`);
+    }
+
+    /**
+     * Apply wear effects from an item to this actor
+     * @param {Item} item - The item being equipped
+     */
+    applyWearEffect(item) {
+        const wearEffect = item.getAttribute('wear_effect');
+        if (!wearEffect) return;
+
+        for (const [attr, value] of Object.entries(wearEffect)) {
+            const currentValue = this.getAttribute(attr);
+
+            // Only apply if actor has this attribute
+            if (currentValue === undefined) continue;
+
+            // Handle "toggle" value
+            if (value === 'toggle') {
+                this.setAttribute(attr, !currentValue);
+                console.log(`${item.name}: toggled ${this.name}'s ${attr} to ${!currentValue}`);
+            }
+            // Handle numeric values (add)
+            else if (typeof currentValue === 'number' && typeof value === 'number') {
+                this.setAttribute(attr, currentValue + value);
+                console.log(`${item.name}: ${this.name}'s ${attr} ${value >= 0 ? '+' : ''}${value} (now ${currentValue + value})`);
+            }
+            // Handle boolean values (set directly)
+            else if (typeof value === 'boolean') {
+                // Store original value for restoration on unequip
+                if (!item._originalWearValues) item._originalWearValues = {};
+                item._originalWearValues[attr] = currentValue;
+                this.setAttribute(attr, value);
+                console.log(`${item.name}: set ${this.name}'s ${attr} to ${value}`);
+            }
+        }
+    }
+
+    /**
+     * Remove wear effects from an item from this actor
+     * @param {Item} item - The item being unequipped
+     */
+    removeWearEffect(item) {
+        const wearEffect = item.getAttribute('wear_effect');
+        if (!wearEffect) return;
+
+        for (const [attr, value] of Object.entries(wearEffect)) {
+            const currentValue = this.getAttribute(attr);
+
+            // Only remove if actor has this attribute
+            if (currentValue === undefined) continue;
+
+            // Handle "toggle" value (toggle back)
+            if (value === 'toggle') {
+                this.setAttribute(attr, !currentValue);
+                console.log(`${item.name} removed: toggled ${this.name}'s ${attr} to ${!currentValue}`);
+            }
+            // Handle numeric values (subtract)
+            else if (typeof currentValue === 'number' && typeof value === 'number') {
+                this.setAttribute(attr, currentValue - value);
+                console.log(`${item.name} removed: ${this.name}'s ${attr} ${value >= 0 ? '-' : '+'}${Math.abs(value)} (now ${currentValue - value})`);
+            }
+            // Handle boolean values (restore original)
+            else if (typeof value === 'boolean') {
+                const originalValue = item._originalWearValues?.[attr];
+                if (originalValue !== undefined) {
+                    this.setAttribute(attr, originalValue);
+                    console.log(`${item.name} removed: restored ${this.name}'s ${attr} to ${originalValue}`);
+                }
+            }
+        }
+    }
+
+    /**
+     * Get the item equipped in a specific slot
+     * @param {string} slot - The equipment slot ('head', 'body', or 'feet')
+     * @returns {Item|null}
+     */
+    getEquippedItem(slot) {
+        return this.equipment[slot] || null;
+    }
+
+    /**
+     * Check if actor has any equipped items
+     * @returns {boolean}
+     */
+    hasEquippedItems() {
+        return this.equipment.top || this.equipment.middle || this.equipment.lower;
+    }
+
+    /**
+     * Use an item from inventory
+     * @param {Item} item - The item to use
+     * @returns {boolean} True if item was used successfully
+     */
+    useItem(item) {
+        // Check if item is in inventory
+        if (!this.inventory.includes(item)) {
+            console.log(`${this.name} doesn't have ${item.name}`);
+            return false;
+        }
+
+        // Check if item has a use_verb (is usable)
+        const useVerb = item.getAttribute('use_verb');
+        if (!useVerb) {
+            console.log(`${item.name} cannot be used`);
+            return false;
+        }
+
+        // Play use sound if this is the player
+        if (this.hasAttribute('controlled')) {
+            const useSound = item.getAttribute('use_sound') || 'tone1';
+            this.engine.playSound(useSound);
+        }
+
+        // Get the use effect to determine what happens
+        const useEffect = item.getAttribute('use_effect');
+        let success = false;
+
+        if (useEffect) {
+            success = this.executeItemEffect(item, useEffect);
+        } else {
+            // Item has a verb but no effect - just mark as used
+            console.log(`${this.name} used ${item.name}`);
+            success = true;
+        }
+
+        // Handle consumable items (remove from inventory after use)
+        if (success && item.hasAttribute('consumable')) {
+            this.inventory = this.inventory.filter(i => i !== item);
+            console.log(`${item.name} was consumed`);
+        }
+
+        return success;
+    }
+
+    /**
+     * Execute an item's use effect
+     * @param {Item} item - The item being used
+     * @param {string} effect - The effect identifier
+     * @returns {boolean} True if effect executed successfully
+     */
+    executeItemEffect(item, effect) {
+        switch (effect) {
+            case 'restore_health':
+                const healthAmount = item.getAttribute('restore_amount') || 10;
+                // TODO: Implement health restoration when stats system is ready
+                console.log(`${this.name} restored ${healthAmount} health`);
+                return true;
+
+            case 'restore_strength':
+                const strengthAmount = item.getAttribute('restore_amount') || 5;
+                // TODO: Implement strength restoration when stats system is ready
+                console.log(`${this.name} restored ${strengthAmount} strength`);
+                return true;
+
+            default:
+                console.log(`Unknown item effect: ${effect}`);
+                return false;
+        }
+    }
+
+    /**
+     * Get all usable items in inventory (items with use_verb attribute)
+     * @returns {Array<{item: Item, verb: string}>}
+     */
+    getUsableItems() {
+        return this.inventory
+            .filter(item => item.getAttribute('use_verb'))
+            .map(item => ({
+                item: item,
+                verb: item.getAttribute('use_verb')
+            }));
+    }
+
+    /**
+     * Apply collision effects from held items to a target actor
+     * @param {Actor} target - The actor being collided with
+     * @returns {{effectApplied: boolean, targetPassable: boolean}}
+     */
+    applyCollisionEffects(target) {
+        let effectApplied = false;
+        let targetPassable = false;
+
+        // Check all items in inventory for collision effects
+        for (const item of this.inventory) {
+            const collisionEffect = item.getAttribute('collision_effect');
+            if (!collisionEffect) continue;
+
+            // Apply each effect in the collision_effect object
+            for (const [attr, value] of Object.entries(collisionEffect)) {
+                // Check if target has this attribute
+                const currentValue = target.getAttribute(attr);
+
+                // Handle special "toggle" value
+                if (value === 'toggle') {
+                    if (currentValue !== undefined) {
+                        target.setAttribute(attr, !currentValue);
+                        console.log(`${item.name}: toggled ${target.name}'s ${attr} to ${!currentValue}`);
+                        effectApplied = true;
+                    }
+                }
+                // Handle numeric values (add/subtract)
+                else if (typeof value === 'number' && typeof currentValue === 'number') {
+                    const newValue = currentValue + value;
+                    target.setAttribute(attr, newValue);
+                    console.log(`${item.name}: ${target.name}'s ${attr} ${value >= 0 ? '+' : ''}${value} (now ${newValue})`);
+                    effectApplied = true;
+
+                    // Check if this killed the target (health reached 0 or below)
+                    if (attr === 'health' && newValue <= 0) {
+                        target.die();
+                        targetPassable = true;
+                    }
+                }
+                // Handle boolean values (set directly)
+                else if (typeof value === 'boolean') {
+                    // Only apply if target has the attribute
+                    if (currentValue !== undefined) {
+                        target.setAttribute(attr, value);
+                        console.log(`${item.name}: set ${target.name}'s ${attr} to ${value}`);
+                        effectApplied = true;
+
+                        // Check if setting locked to false should open something
+                        if (attr === 'locked' && value === false && target.hasAttribute('openable')) {
+                            target.open();
+                            this.engine.updateLighting();
+                            // Door is now open, can pass through
+                            targetPassable = !target.hasAttribute('solid');
+                        }
+                    }
+                }
+            }
+
+            // If any effect was applied, break (use first matching item)
+            if (effectApplied) break;
+        }
+
+        return { effectApplied, targetPassable };
     }
 
     /**
@@ -1148,12 +1465,25 @@ class Actor extends Entity {
         // Check for blocking actors
         const actorAtTarget = this.engine.entityManager.getActorAt(newX, newY);
         if (actorAtTarget && actorAtTarget.hasAttribute('solid')) {
+            // Apply collision effects from held items
+            const collisionResult = this.applyCollisionEffects(actorAtTarget);
+
+            // If collision effects made the actor passable, try again
+            if (collisionResult.targetPassable) {
+                // Recurse to check if we can now move
+                return this.tryMove(newX, newY);
+            }
+
+            // Check if actor can be opened (doors, chests, etc.)
             if (actorAtTarget.hasAttribute('openable') && !actorAtTarget.state?.open) {
                 actorAtTarget.open();
                 this.engine.updateLighting();
                 return false;
             }
-            console.log(`${this.name} blocked by ${actorAtTarget.name}`);
+
+            if (!collisionResult.effectApplied) {
+                console.log(`${this.name} blocked by ${actorAtTarget.name}`);
+            }
             return false;
         }
 
@@ -1207,6 +1537,22 @@ class Actor extends Entity {
         if (this.spriteTop) {
             this.spriteTop.x = this.x * globalVars.TILE_WIDTH;
             this.spriteTop.y = (this.y - 1) * globalVars.TILE_HEIGHT;
+        }
+        // Update equipment sprite positions
+        // top: above actor's top tile (y - 2)
+        if (this.spriteEquipment.top) {
+            this.spriteEquipment.top.x = this.x * globalVars.TILE_WIDTH;
+            this.spriteEquipment.top.y = (this.y - 2) * globalVars.TILE_HEIGHT;
+        }
+        // middle: on actor's top tile (y - 1)
+        if (this.spriteEquipment.middle) {
+            this.spriteEquipment.middle.x = this.x * globalVars.TILE_WIDTH;
+            this.spriteEquipment.middle.y = (this.y - 1) * globalVars.TILE_HEIGHT;
+        }
+        // lower: on actor's base tile (y)
+        if (this.spriteEquipment.lower) {
+            this.spriteEquipment.lower.x = this.x * globalVars.TILE_WIDTH;
+            this.spriteEquipment.lower.y = this.y * globalVars.TILE_HEIGHT;
         }
     }
 
@@ -1455,6 +1801,15 @@ class EntityManager {
             entity.spriteTop.destroy();
             entity.spriteTop = null;
         }
+        // Clean up equipment sprites
+        if (entity.spriteEquipment) {
+            for (const slot of ['top', 'middle', 'lower']) {
+                if (entity.spriteEquipment[slot]) {
+                    entity.spriteEquipment[slot].destroy();
+                    entity.spriteEquipment[slot] = null;
+                }
+            }
+        }
         if (entity.sprite) {
             entity.sprite.destroy();
             entity.sprite = null;
@@ -1510,6 +1865,12 @@ class EntityManager {
             if (entity instanceof Actor) {
                 if (entity.spriteBase) entity.spriteBase.destroy();
                 if (entity.spriteTop) entity.spriteTop.destroy();
+                // Clean up equipment sprites
+                if (entity.spriteEquipment) {
+                    for (const slot of ['top', 'middle', 'lower']) {
+                        if (entity.spriteEquipment[slot]) entity.spriteEquipment[slot].destroy();
+                    }
+                }
             } else if (entity.sprite) {
                 entity.sprite.destroy();
             }
@@ -2394,6 +2755,18 @@ class RenderSystem {
                 { flipH: actor.flipTopH, flipV: actor.flipTopV }
             );
 
+            // Render equipment sprites for each slot
+            for (const slot of ['top', 'middle', 'lower']) {
+                const equippedItem = actor.getEquippedItem(slot);
+                if (equippedItem) {
+                    actor.spriteEquipment[slot] = this.createEquipmentSprite(
+                        actor,
+                        equippedItem,
+                        slot
+                    );
+                }
+            }
+
             actorsRendered++;
         }
 
@@ -2482,6 +2855,60 @@ class RenderSystem {
 
         // No sprite to render
         return null;
+    }
+
+    /**
+     * Create a sprite for an equipped item displayed on an actor
+     * @param {Actor} actor - The actor wearing the item
+     * @param {Item} item - The equipped item
+     * @param {string} slot - The equipment slot ('top', 'middle', or 'lower')
+     * @returns {PIXI.Sprite|null} The created sprite or null
+     */
+    createEquipmentSprite(actor, item, slot) {
+        const tileset = PIXI.Loader.shared.resources.tiles;
+        if (!tileset || !item.tileIndex) return null;
+
+        const rect = new PIXI.Rectangle(
+            item.tileIndex.x * globalVars.TILE_WIDTH,
+            item.tileIndex.y * globalVars.TILE_HEIGHT,
+            globalVars.TILE_WIDTH,
+            globalVars.TILE_HEIGHT
+        );
+        const texture = new PIXI.Texture(tileset.texture.baseTexture, rect);
+        const sprite = new PIXI.Sprite(texture);
+
+        // Position based on slot type
+        // top: above actor's top tile (y - 2), for crowns, horns, halos
+        // middle: on actor's top tile (y - 1), for helmets, masks
+        // lower: on actor's base tile (y), for armor, cloaks
+        const baseX = actor.x * globalVars.TILE_WIDTH;
+        let y, zIndex;
+
+        switch (slot) {
+            case 'top':
+                y = (actor.y - 2) * globalVars.TILE_HEIGHT;
+                zIndex = 13; // Above everything
+                break;
+            case 'middle':
+                y = (actor.y - 1) * globalVars.TILE_HEIGHT;
+                zIndex = 12; // Above actor top sprite
+                break;
+            case 'lower':
+                y = actor.y * globalVars.TILE_HEIGHT;
+                zIndex = 12; // Above actor base sprite
+                break;
+            default:
+                y = actor.y * globalVars.TILE_HEIGHT;
+                zIndex = 12;
+        }
+
+        sprite.x = baseX;
+        sprite.y = y;
+        sprite.zIndex = zIndex;
+        sprite.tint = item.tint;
+
+        this.entityContainer.addChild(sprite);
+        return sprite;
     }
 
     renderItems(entityManager) {
@@ -2630,6 +3057,14 @@ class RenderSystem {
             if (actor.spriteBase) actor.spriteBase.visible = vis.showBase;
             if (actor.spriteTop) actor.spriteTop.visible = vis.showTop;
 
+            // Update equipment sprite visibility
+            // top: uses showTop (visible when actor's top tile is visible)
+            // middle: uses showTop (on actor's top tile)
+            // lower: uses showBase (on actor's base tile)
+            if (actor.spriteEquipment.top) actor.spriteEquipment.top.visible = vis.showTop;
+            if (actor.spriteEquipment.middle) actor.spriteEquipment.middle.visible = vis.showTop;
+            if (actor.spriteEquipment.lower) actor.spriteEquipment.lower.visible = vis.showBase;
+
             this.setAnimationPlaying(actor.spriteBase, vis.animateBase);
             this.setAnimationPlaying(actor.spriteTop, vis.animateTop);
 
@@ -2643,6 +3078,18 @@ class RenderSystem {
             }
             if (actor.spriteTop) {
                 actor.spriteTop.tint = this.blendTints(actor.tint, vis.topTint);
+            }
+
+            // Update equipment sprite tints
+            for (const slot of ['top', 'middle', 'lower']) {
+                if (actor.spriteEquipment[slot]) {
+                    const equippedItem = actor.getEquippedItem(slot);
+                    if (equippedItem) {
+                        // top/middle use topTint, lower uses baseTint
+                        const tintToUse = slot === 'lower' ? vis.baseTint : vis.topTint;
+                        actor.spriteEquipment[slot].tint = this.blendTints(equippedItem.tint, tintToUse);
+                    }
+                }
             }
         }
 

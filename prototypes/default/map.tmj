@@ -287,7 +287,18 @@
          "draworder":"topdown",
          "id":6,
          "name":"items",
-         "objects":[],
+         "objects":[
+                {
+                 "height":30,
+                 "id":26,
+                 "name":"crown",
+                 "rotation":0,
+                 "type":"crown",
+                 "visible":true,
+                 "width":40,
+                 "x":958.133541585318,
+                 "y":523.201223480411
+                }],
          "opacity":1,
          "type":"objectgroup",
          "visible":false,
@@ -295,7 +306,7 @@
          "y":0
         }],
  "nextlayerid":7,
- "nextobjectid":25,
+ "nextobjectid":27,
  "orientation":"orthogonal",
  "renderorder":"right-down",
  "tiledversion":"1.11.2",
