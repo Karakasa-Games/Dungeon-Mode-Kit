@@ -287,18 +287,7 @@
          "draworder":"topdown",
          "id":6,
          "name":"items",
-         "objects":[
-                {
-                 "height":30,
-                 "id":26,
-                 "name":"crown",
-                 "rotation":0,
-                 "type":"crown",
-                 "visible":true,
-                 "width":40,
-                 "x":958.133541585318,
-                 "y":523.201223480411
-                }],
+         "objects":[],
          "opacity":1,
          "type":"objectgroup",
          "visible":false,

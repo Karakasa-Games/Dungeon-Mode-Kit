@@ -586,7 +586,7 @@ class DungeonEngine {
         };
     }
     
-    transitionToPrototype(prototypeName, saveState = true, entryDirection = null) {
+    async transitionToPrototype(prototypeName, saveState = true, entryDirection = null) {
         if (saveState) {
             this.prototypeStack.push({
                 name: this.currentPrototype.name,
@@ -595,10 +595,10 @@ class DungeonEngine {
         }
 
         this.cleanup();
-        this.loadPrototype(prototypeName, entryDirection);
+        await this.loadPrototype(prototypeName, entryDirection);
     }
-    
-    returnToPreviousPrototype() {
+
+    async returnToPreviousPrototype() {
         if (this.prototypeStack.length === 0) {
             console.warn('No previous prototype to return to');
             return;
@@ -606,7 +606,7 @@ class DungeonEngine {
 
         const previous = this.prototypeStack.pop();
         this.cleanup();
-        this.loadPrototype(previous.name);
+        await this.loadPrototype(previous.name);
         this.restoreGameState(previous.state);
     }
 
@@ -614,7 +614,7 @@ class DungeonEngine {
      * Use a stairway to transition to another level
      * @param {string} direction - 'up' or 'down'
      */
-    useStairway(direction) {
+    async useStairway(direction) {
         const config = this.currentPrototype.config;
         let targetLevel = null;
 
@@ -626,10 +626,9 @@ class DungeonEngine {
 
         if (targetLevel) {
             console.log(`Using stairway ${direction} to ${targetLevel}`);
-            this.playSound('levelout');
             // Pass entry direction: descending means entering from above, ascending means entering from below
             const entryDirection = direction === 'down' ? 'from_above' : 'from_below';
-            this.transitionToPrototype(targetLevel, true, entryDirection);
+            await this.transitionToPrototype(targetLevel, true, entryDirection);
         } else {
             console.log(`No ${direction === 'down' ? 'next' : 'previous'} level configured`);
         }
@@ -1393,7 +1392,7 @@ class Actor extends Entity {
     }
 
     /**
-     * Apply collision effects from held items to a target actor
+     * Apply collision effects from actor or held items to a target actor
      * @param {Actor} target - The actor being collided with
      * @returns {{effectApplied: boolean, targetPassable: boolean}}
      */
@@ -1401,13 +1400,23 @@ class Actor extends Entity {
         let effectApplied = false;
         let targetPassable = false;
 
-        // Check all items in inventory for collision effects
+        // Gather effect sources: actor's own effect first, then items
+        const sources = [];
+        const actorEffect = this.getAttribute('collision_effect');
+        if (actorEffect) {
+            sources.push({ name: this.name, effect: actorEffect });
+        }
         for (const item of this.inventory) {
-            const collisionEffect = item.getAttribute('collision_effect');
-            if (!collisionEffect) continue;
+            const itemEffect = item.getAttribute('collision_effect');
+            if (itemEffect) {
+                sources.push({ name: item.name, effect: itemEffect });
+            }
+        }
 
+        // Apply effects from first source
+        for (const source of sources) {
             // Apply each effect in the collision_effect object
-            for (const [attr, value] of Object.entries(collisionEffect)) {
+            for (const [attr, value] of Object.entries(source.effect)) {
                 // Check if target has this attribute
                 const currentValue = target.getAttribute(attr);
 
@@ -1415,7 +1424,7 @@ class Actor extends Entity {
                 if (value === 'toggle') {
                     if (currentValue !== undefined) {
                         target.setAttribute(attr, !currentValue);
-                        console.log(`${item.name}: toggled ${target.name}'s ${attr} to ${!currentValue}`);
+                        console.log(`${source.name}: toggled ${target.name}'s ${attr} to ${!currentValue}`);
                         effectApplied = true;
                     }
                 }
@@ -1423,7 +1432,7 @@ class Actor extends Entity {
                 else if (typeof value === 'number' && typeof currentValue === 'number') {
                     const newValue = currentValue + value;
                     target.setAttribute(attr, newValue);
-                    console.log(`${item.name}: ${target.name}'s ${attr} ${value >= 0 ? '+' : ''}${value} (now ${newValue})`);
+                    console.log(`${source.name}: ${target.name}'s ${attr} ${value >= 0 ? '+' : ''}${value} (now ${newValue})`);
                     effectApplied = true;
 
                     // Check if this killed the target (health reached 0 or below)
@@ -1437,7 +1446,7 @@ class Actor extends Entity {
                     // Only apply if target has the attribute
                     if (currentValue !== undefined) {
                         target.setAttribute(attr, value);
-                        console.log(`${item.name}: set ${target.name}'s ${attr} to ${value}`);
+                        console.log(`${source.name}: set ${target.name}'s ${attr} to ${value}`);
                         effectApplied = true;
 
                         // Check if setting locked to false should open something
@@ -1451,7 +1460,7 @@ class Actor extends Entity {
                 }
             }
 
-            // If any effect was applied, break (use first matching item)
+            // If any effect was applied, break (use first matching source)
             if (effectApplied) break;
         }
 
@@ -1625,7 +1634,12 @@ class Actor extends Entity {
             const stairway = this.engine.entityManager.getOtherActorAt(newX, newY, this);
             if (stairway && stairway.hasAttribute('stairway')) {
                 const direction = stairway.getAttribute('stairway');
+                // Lock the turn engine to prevent further actions during transition
+                if (this.engine.turnEngine) {
+                    this.engine.turnEngine.lock();
+                }
                 this.engine.useStairway(direction);
+                return true; // Exit early, transition handles everything
             }
         }
 
@@ -1781,16 +1795,6 @@ const BehaviorLibrary = {
         const dir = directions[Math.floor(Math.random() * directions.length)];
         actor.tryMove(actor.x + dir.dx, actor.y + dir.dy);
         return true;
-    },
-    
-    attack_adjacent: (actor, data) => {
-        // Attack if target is adjacent
-        const target = actor.engine.entityManager.findAdjacentTarget(actor);
-        if (target) {
-            actor.attack(target);
-            return true;
-        }
-        return false;
     }
 };
 

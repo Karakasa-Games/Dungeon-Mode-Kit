@@ -57,13 +57,14 @@
     "name": "Asterion",
     "tileIndexBase": "DOOR_TOP",
     "tileIndexTop": "CABESA_DE_VACA",
-    "personality": "aggressive_melee",
+    
     "attributes": {
       "hostile": true,
       "solid": true,
       "visible": true,
       "flammable": true,
-      "inventory": 1
+      "inventory": 1,
+      "collision_effect": { "health": -10 }
     },
     "stats": {
       "health": 30,
