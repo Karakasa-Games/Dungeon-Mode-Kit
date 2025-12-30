@@ -68,7 +68,8 @@
     "stats": {
       "health": 30,
       "strength": 8
-    }
+    },
+    "default_items": ["horns"]
   },
   
   "wall": {
@@ -79,7 +80,8 @@
       "solid": true,
       "visible": true,
       "pushable": false,
-      "breakable": true
+      "breakable": true,
+      "paint_tile": "WALL_TOP"
     }
   },
   
@@ -123,7 +125,23 @@
       "visible": true,
       "damages": false,
       "spreads": false,
-      "ignites": true
+      "ignites": true,
+      "paint_tile": "OPAQUE_DOTTED_LIGHT_SHADE"
+    }
+  },
+  "lava": {
+    "name": "Lava",
+    "tileIndexBase": "BLANK",
+    "tileIndexTop": "BLANK",
+    "animated": true,
+    "animation_frames": "fluid",
+    "tint": "#FFB49D",
+    "attributes": {
+      "solid": false,
+      "visible": true,
+      "damages": true,
+      "spreads": false,
+      "ignites": false
     }
   },
   "fire": {
@@ -140,7 +158,8 @@
       "damages": true,
       "spreads": true,
       "ignites": true,
-      "light_source": true
+      "light_source": true,
+      "paint_tile": "OPAQUE_INVERSE_DIAMOND_SUITE"
     },
     "damage_per_turn": 10,
     "spread_chance": 0.3,

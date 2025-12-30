@@ -43,14 +43,26 @@ class SpriteLibrary {
             console.error('Sprite library not loaded');
             return null;
         }
-        
+
         const coords = this.tiles[name.toUpperCase()];
         if (!coords) {
             console.warn(`Tile '${name}' not found in sprite library`);
             return null;
         }
-        
+
         return { x: coords[0], y: coords[1] };
+    }
+
+    /**
+     * Convert a tile name to a Tiled tileId (1-based linear index)
+     * @param {string} name - Tile name from static-tiles.json
+     * @param {number} cols - Number of columns in spritesheet (default 23)
+     * @returns {number|null} Tiled tileId or null if not found
+     */
+    getTileIdByName(name, cols = 23) {
+        const coords = this.getTileByName(name);
+        if (!coords) return null;
+        return coords.y * cols + coords.x + 1;
     }
     
     /**
@@ -657,6 +669,7 @@ class DungeonEngine {
             if (playerData) {
                 const player = new Actor(stairway.x, stairway.y, 'player', playerData, this);
                 this.entityManager.addEntity(player);
+                player.loadDefaultItems();
             } else {
                 console.error('No player actor data found in prototype');
             }
@@ -951,6 +964,38 @@ class Actor extends Entity {
         this.tileIndexTop_open = engine.spriteLibrary.resolveTile(data.tileIndexTop_open) || null;
 
         this.isDead = false;
+
+        // Store default items to be loaded after spawn
+        this.defaultItems = data.default_items || [];
+    }
+
+    /**
+     * Load default items into actor's inventory
+     * Called after actor is spawned and prototype is available
+     */
+    loadDefaultItems() {
+        if (!this.defaultItems.length) return;
+
+        for (const itemType of this.defaultItems) {
+            const itemData = this.engine.currentPrototype?.getItemData(itemType);
+            if (!itemData) {
+                console.warn(`Default item '${itemType}' not found for ${this.name}`);
+                continue;
+            }
+
+            // Create the item (not placed on map)
+            const item = new Item(-1, -1, itemType, itemData, this.engine);
+
+            // Add directly to inventory
+            this.inventory.push(item);
+            console.log(`${this.name} starts with ${item.name}`);
+
+            // Auto-equip wearable items
+            const slot = item.getAttribute('wearable');
+            if (slot && ['top', 'middle', 'lower'].includes(slot)) {
+                this.equipToSlot(item, slot);
+            }
+        }
     }
 
     open() {
@@ -1062,12 +1107,26 @@ class Actor extends Entity {
     die() {
         this.isDead = true;
         this.setAttribute('solid', false);
+
+        // Drop items (if not already dropped by fall())
+        if (this.inventory.length > 0) {
+            this.dropItems(false);
+        }
+
         if (this.spriteBase) {
             this.spriteBase.visible = false;
         }
         if (this.spriteTop) {
             this.spriteTop.visible = false;
         }
+
+        // Hide equipment sprites
+        for (const slot of ['top', 'middle', 'lower']) {
+            if (this.spriteEquipment[slot]) {
+                this.spriteEquipment[slot].visible = false;
+            }
+        }
+
         if (this.engine.scheduler) {
             this.engine.scheduler.remove(this);
         }
@@ -1451,7 +1510,60 @@ class Actor extends Entity {
      */
     fall() {
         console.log(`${this.name} fell into the void!`);
+        this.dropItems(true); // Items lost to void
         this.die();
+    }
+
+    /**
+     * Drop all inventory items when actor dies or is removed
+     * @param {boolean} destroyItems - If true, items are lost (fell into void)
+     */
+    dropItems(destroyItems = false) {
+        if (this.inventory.length === 0) return;
+
+        // Unequip all items first
+        for (const slot of ['top', 'middle', 'lower']) {
+            if (this.equipment[slot]) {
+                this.unequipFromSlot(slot);
+            }
+        }
+
+        if (destroyItems) {
+            console.log(`${this.name}'s items were lost to the void`);
+            this.inventory = [];
+            return;
+        }
+
+        // Find valid floor tiles around the actor (current tile + 8 neighbors)
+        const dropPositions = [];
+        for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+                const tx = this.x + dx;
+                const ty = this.y + dy;
+                if (this.hasFloorAt(tx, ty)) {
+                    dropPositions.push({ x: tx, y: ty });
+                }
+            }
+        }
+
+        if (dropPositions.length === 0) {
+            console.log(`${this.name}'s items were lost - no valid drop location`);
+            this.inventory = [];
+            return;
+        }
+
+        // Drop items to available positions
+        let posIndex = 0;
+        for (const item of this.inventory) {
+            const pos = dropPositions[posIndex % dropPositions.length];
+            item.x = pos.x;
+            item.y = pos.y;
+            this.engine.entityManager.addEntity(item);
+            console.log(`${item.name} dropped at (${pos.x}, ${pos.y})`);
+            posIndex++;
+        }
+
+        this.inventory = [];
     }
 
     // Movement methods
@@ -1742,6 +1854,9 @@ class EntityManager {
             // Create and add actor
             const actor = new Actor(tileX, tileY, actorType, actorData, this.engine);
             this.addEntity(actor);
+
+            // Load any default items for this actor
+            actor.loadDefaultItems();
 
             console.log(`Spawned ${actorType} at tile (${tileX}, ${tileY}) from pixel (${obj.x}, ${obj.y})`);
         }
@@ -2102,19 +2217,58 @@ class MapManager {
     }
     
     getWildcardType(tileId) {
-        // Map tile IDs to wildcard types
-        const wildcardTypes = {
+        // Map tile IDs to wildcard types (built-in procedural types)
+        const builtinWildcards = {
             210: 'maze',
             10: 'dungeon',   // OPAQUE_INVERSE_DIAMOND_SUITE - ROT.js Digger dungeon with walls and doors
             143: 'room',
             144: 'room',
             12: 'item_spawn',
-            3: 'actor_spawn',
-            9: 'fire',
-            135: 'sewage',
-            132: 'wall'      // Spawns wall actors
+            3: 'actor_spawn'
         };
-        return wildcardTypes[tileId] || 'unknown';
+
+        if (builtinWildcards[tileId]) {
+            return builtinWildcards[tileId];
+        }
+
+        // Check actor wildcard_tile attributes
+        const actorType = this.getActorWildcardType(tileId);
+        if (actorType) {
+            return actorType;
+        }
+
+        return 'unknown';
+    }
+
+    /**
+     * Build lookup of tileId -> actorType from wildcard_tile attributes
+     * Cached for performance
+     */
+    getActorWildcardType(tileId) {
+        // Build cache if not exists
+        if (!this.actorWildcardCache) {
+            this.actorWildcardCache = {};
+            const prototype = this.engine.currentPrototype;
+            if (prototype && prototype.actors) {
+                for (const [actorType, actorData] of Object.entries(prototype.actors)) {
+                    const paintTile = actorData.attributes?.paint_tile;
+                    if (paintTile) {
+                        const paintTileId = this.engine.spriteLibrary.getTileIdByName(paintTile);
+                        if (paintTileId) {
+                            this.actorWildcardCache[paintTileId] = actorType;
+                        }
+                    }
+                }
+            }
+        }
+        return this.actorWildcardCache[tileId] || null;
+    }
+
+    /**
+     * Clear the actor wildcard cache (call when prototype changes)
+     */
+    clearWildcardCache() {
+        this.actorWildcardCache = null;
     }
     
     generateProceduralMap() {
@@ -2214,14 +2368,12 @@ class MapManager {
             case 'actor_spawn':
                 // Spawn random actor
                 break;
-            case 'fire':
-                this.spawnActorsAt(region, 'fire');
-                break;
-            case 'sewage':
-                this.spawnActorsAt(region, 'sewage');
-                break;
-            case 'wall':
-                this.spawnActorsAt(region, 'wall');
+            default:
+                // Check if this is an actor type from wildcard_tile attribute
+                const actorData = this.engine.currentPrototype?.getActorData(type);
+                if (actorData) {
+                    this.spawnActorsAt(region, type);
+                }
                 break;
         }
     }
@@ -2239,6 +2391,7 @@ class MapManager {
                 if (wildcard && wildcard.type === actorType) {
                     const actor = new Actor(x, y, actorType, actorData, this.engine);
                     this.engine.entityManager.addEntity(actor);
+                    actor.loadDefaultItems();
                 }
             }
         }
@@ -3058,10 +3211,10 @@ class RenderSystem {
             if (actor.spriteTop) actor.spriteTop.visible = vis.showTop;
 
             // Update equipment sprite visibility
-            // top: uses showTop (visible when actor's top tile is visible)
+            // top: uses showEquipmentTop (at y-2, above actor's head) - lit same as actor
             // middle: uses showTop (on actor's top tile)
             // lower: uses showBase (on actor's base tile)
-            if (actor.spriteEquipment.top) actor.spriteEquipment.top.visible = vis.showTop;
+            if (actor.spriteEquipment.top) actor.spriteEquipment.top.visible = vis.showEquipmentTop;
             if (actor.spriteEquipment.middle) actor.spriteEquipment.middle.visible = vis.showTop;
             if (actor.spriteEquipment.lower) actor.spriteEquipment.lower.visible = vis.showBase;
 
@@ -3085,8 +3238,15 @@ class RenderSystem {
                 if (actor.spriteEquipment[slot]) {
                     const equippedItem = actor.getEquippedItem(slot);
                     if (equippedItem) {
-                        // top/middle use topTint, lower uses baseTint
-                        const tintToUse = slot === 'lower' ? vis.baseTint : vis.topTint;
+                        // top uses equipmentTopTint (same as actor), middle uses topTint, lower uses baseTint
+                        let tintToUse;
+                        if (slot === 'top') {
+                            tintToUse = vis.equipmentTopTint;
+                        } else if (slot === 'lower') {
+                            tintToUse = vis.baseTint;
+                        } else {
+                            tintToUse = vis.topTint;
+                        }
                         actor.spriteEquipment[slot].tint = this.blendTints(equippedItem.tint, tintToUse);
                     }
                 }

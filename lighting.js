@@ -207,6 +207,27 @@ class LightingManager {
         return false;
     }
 
+    isEquipmentTopVisible(x, y) {
+        // Check if equipment at y-2 (above actor's head) should be visible
+        // This position is visible if:
+        // 1. The tile at y-2 is directly visible, OR
+        // 2. There's an actor at (x, y) with "top" slot equipment whose base is visible
+        if (this.isVisible(x, y)) {
+            return true;
+        }
+
+        // Check if there's an actor two tiles below whose equipment would render here
+        const actorBelow = this.engine.entityManager.getActorAt(x, y + 2);
+        if (actorBelow && actorBelow.spriteEquipment?.top && !actorBelow.isDead) {
+            // Equipment is visible if the actor's base tile is visible
+            if (this.isVisible(x, y + 2)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     hasControlledActors() {
         return this.engine.entityManager.actors.some(
             a => a.hasAttribute('controlled') && !a.isDead
@@ -229,6 +250,7 @@ class LightingManager {
         const light = this.getLightLevel(x, y);
         const visible = this.isVisible(x, y);
         const topVisible = this.isTopVisible(x, y);
+        const equipmentTopVisible = this.isEquipmentTopVisible(x, y);
         const explored = this.isExplored(x, y);
 
         if (!hasControlled) {
@@ -239,7 +261,7 @@ class LightingManager {
             } else {
                 return { alpha: 1.0, useSolidTexture: true };
             }
-        } else if (visible || topVisible) {
+        } else if (visible || topVisible || equipmentTopVisible) {
             if (light.intensity >= 1) {
                 return { alpha: 0, useSolidTexture: false };
             } else if (light.intensity > 0) {
@@ -257,6 +279,7 @@ class LightingManager {
     getEntityVisibility(x, y, fogOfWar = false) {
         // Get visibility for an entity at position (x, y)
         // The top sprite should have the same visibility as the base
+        // Equipment in "top" slot (at y-2) should also match the actor's visibility
         const hasControlled = this.hasControlledActors();
         const light = this.getLightLevel(x, y);
         const visible = this.isVisible(x, y);
@@ -267,8 +290,10 @@ class LightingManager {
             return {
                 showBase: true,
                 showTop: true,
+                showEquipmentTop: true,
                 baseTint: lightTint,
                 topTint: lightTint,
+                equipmentTopTint: lightTint,
                 animateBase: true,
                 animateTop: true
             };
@@ -280,8 +305,10 @@ class LightingManager {
         return {
             showBase: shouldShow,
             showTop: shouldShow,
+            showEquipmentTop: shouldShow,
             baseTint: tint,
             topTint: tint,
+            equipmentTopTint: tint,
             animateBase: visible,
             animateTop: visible
         };
