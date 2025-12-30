@@ -22,7 +22,7 @@ Based on previous expiments— [grotto roguelike](https://github.com/wysiwyggins
 - **Modular**: Mix authored and procedural content seamlessly
 - **Semantic**: Clear, attribute-based entity system inspired by *Baba Is You*
 - **Embeddable**: Canvas games integrated into web pages
-- **Rapid Prototyping**: Quick iteration on different game mechanics
+- **Rapid Prototyping**: Quick iteration on different game mechanics, don't bother with persistence between levels
 
 ## Technical Architecture
 
@@ -30,80 +30,42 @@ Based on previous expiments— [grotto roguelike](https://github.com/wysiwyggins
 
 - **Technology**: PIXI.js (or performance-equivalent alternative)
 - **Resolution**: Tiles displayed at half-size for hi-DPI displays
-- **Height System**: Floor + 2-tile height (floor, base, top)
-- **Layers**: Background shadows, floor, entities (1-2 tiles), UI. Tiles have transparent backgrounds so we need to manually hide occluded tiles on locations behind actors.
+- **Height System**: Floor + 2-tile height (floor, base, top, ((ok and also maybe hats))
+- **Layers**: Background shadows, floor, entities (1-2 tiles), UI. Most tiles have transparent backgrounds so we need to manually hide occluded tiles on locations behind actors.
 - - **Effects**: Sprite tinting, animation frames
 
-## Core Architecture
+## Entity System
 
-### Entity System Hierarchy
+The engine uses a simple class hierarchy: **Entity** → **Item** and **Actor**. All behavior is driven by attributes defined in JSON data files.
 
-#### Entity (Base Class)
+### Entity (Base Class)
 
-**Purpose**: Any object with sprites and semantic attributes
+Entities have a position, type identifier, sprite, tint, and a map of attributes. Attributes can be any value type—boolean flags, numbers, strings, or objects. The `hasAttribute(key)` method returns true only if the attribute exists and is truthy, while `getAttribute(key)` returns the raw value.
 
-```javascript
-class Entity {
-  constructor(x, y, type) {
-    this.x = x;
-    this.y = y;
-    this.type = type;
-    this.attributes = new Map(); 
-    this.sprite = null;
-    this.tint = 0xFFFFFF;
-  }
-  
-  // Helper methods for attribute management
-  setAttribute(key, value) { this.attributes.set(key, value); }
-  getAttribute(key) { return this.attributes.get(key) || false; }
-  hasAttribute(key) { return this.attributes.has(key) && this.attributes.get(key); }
-}
-```
+### Item
 
-**Base Attributes**:
+Items are single-tile entities defined in `data/items.json` or prototype-specific `items.json` files. They sit on the floor and can be picked up by actors with an `inventory` attribute.
 
-- **Physical**: `pushable`, `flammable`, `breakable`, `solid`
-- **Visual**: `animated`, `visible`
+Key item attributes include `pickupable`, `visible`, `stackable`, `consumable`, and `flammable`. Items can have a `wearable` slot (`top`, `middle`, or `lower`) to auto-equip when picked up. Wearable items render above the actor at their slot position.
 
-#### Item (extends Entity)
+**Effects:** Items use attribute-based effects rather than hardcoded types:
+- `collision_effect` modifies attributes on actors the holder collides with (e.g., `{"health": -10}` for damage, `{"locked": false}` for keys)
+- `wear_effect` modifies the wearer's attributes while equipped (e.g., `{"strength": 5}`)
+- Effect values can be numbers (add/subtract), booleans (set), or `"toggle"`
 
-**Purpose**: Single-tile pickupable objects
+Items with `use_verb` can be activated through UI (e.g., "Drink", "Dig"). The `use_effect` attribute specifies the effect type.
 
-- **Height**: 1 tile
-- **Behavior**: Passive, inventory integration
-- **Examples**: Keys, potions, weapons, food
+### Actor
 
-#### Actor (extends Entity)
+Actors are two-tile entities (base + top) defined in `data/actors.json`. They include creatures, the player, doors, walls, fire, and other interactive objects. Actors participate in the turn-based scheduler if they have a `personality` attribute.
 
-**Purpose**: Interactive 2-tile entities with behavior
+Common actor attributes: `solid`, `visible`, `hostile`, `controlled` (player), `sighted`, `flammable`, `openable`, `light_source`, `stairway`. Actors can have `stats` (like `health` and `strength`) and an `inventory` capacity.
 
-- **Height**: 2 tiles (base + top)
-- **Behavior**: Active, personality-driven, turn-based
-- **Examples**: Players, monsters, doors, walls, NPCs, Fire
+Actors can have their own `collision_effect` for unarmed attacks or special interactions. The `default_items` array spawns items in the actor's inventory on creation. The `paint_tile` attribute lets you place actors in Tiled using a specific tile on the wildcards layer.
 
-### Personality System
+### Personalities and AI
 
-**Data-Driven AI**: JSON files defining behavioral attributes
-
-```json
-// personalities/guard.json
-{
-  "controlled": false,
-  "mutiply_chance": 0.2,
-  "hostile": true,
-  "tactical": true,
-  "patrol_range": 5,
-  "vision_range": 8,
-  "memory_duration": 10,
-  "preferred_positions": ["doorway", "corner", "chokepoint"],
-  "behaviors": ["patrol", "guard_area", "pursue_intruders"]
-  etc
-}
-```
-
-**Switchable**: Personalities can change during gameplay (charm effects, mind control, etc.)
-
-**Shared Behaviors**: Common AI routines (pathfinding, line-of-sight, etc.) used across personalities
+Actor behavior is controlled by the `personality` attribute (e.g., `"aggressive_melee"`, `"random_walk"`). Personalities map to behavior functions that execute each turn. Hostile actors with `sighted` avoid walking into pits; those without may fall.
 
 ## Map System
 
@@ -151,59 +113,33 @@ class Entity {
 
 ## Prototype System
 
-### Game Definition
+A prototype is a self-contained level or game variant. Each prototype folder contains a `prototype.json` config and optionally a `map.tmj` (Tiled map), plus local `actors.json` and `items.json` overrides.
 
-Each prototype is a JSON file defining complete game rules:
+### Prototype Config
 
 ```json
-// prototypes/puzzle_cave/prototype.json
 {
-  "name": "Strength Puzzle Cave",
+  "name": "Cretan Labyrinth",
+  "loaded_sound": "levelout",
+  "depth": 2,
+  "turn_speed": 50,
+  "next_level": "deeper_labyrinth",
+  "previous_level": "default",
   "mechanics": {
-    "fog_of_war": false,
-    "darkness": false,
-    "turn_based": true
-  },
-  "stats": {
-    "strength": {
-      "max": 10,
-      "current": 10,
-      "depletes_on": ["push_wall"],
-      "restore_items": ["strength_potion"]
-    },
-    "health": { "max": 100, "current": 100 },
-    "hunger": { "max": 100, "current": 100, "depletes_per_turn": 1 }
-  },
-  "inventory": { "max_items": 5 },
-  "available_items": ["key", "strength_potion", "lever", "food"],
-  "available_actors": ["wall", "pushable_wall", "door", "switch"],
-  "win_conditions": ["reach_exit", "activate_all_switches"],
-  "transitions": {
-    "stairs_down": "dungeon_level2",
-    "stairs_up": "previous_prototype"
+    "fog_of_war": true,
+    "darkness": true,
+    "ambient_light": 0.1,
+    "player_light_radius": 6
   }
 }
 ```
 
-### Creating New Prototypes
+The `next_level` and `previous_level` fields link prototypes via stairway actors. The `mechanics` object controls lighting and visibility systems. The `loaded_sound` plays when the level finishes loading.
 
-1. **Create folder**: Make new directory in `prototypes/`
-2. **Define game**: Create `prototype.json` with mechanics and stats
-3. **Choose content approach**:
-   - **Authored**: Create `map.tmj` with floor/item/actor layers + wildcards
-   - **Procedural**: Omit `map.tmj` for fully generated levels
-   - **Mixed**: Use wildcard tiles in authored maps
-4. **Customize entities**: Add prototype-specific actors/items in local folders
-5. **Test**: Embed canvas in explanatory web page
+### Entity Overrides
 
-### Asset Loading Priority
+Actor and item stats are defined in actor/item JSON files, not the prototype config. Prototypes can override global definitions by including local `actors.json` or `items.json` files. The engine loads global definitions first, then merges prototype-specific overrides.
 
-1. **Global First**: Load global actors/items as defaults
-2. **Local Overrides**: Prototype-specific actors/items override globals
-3. **Auto-Detection**: Engine automatically detects and loads `map.tmj` if present
+### Creating a Prototype
 
-### Content Authoring
-
-- **Mixed Content**: Hand-authored areas + procedural zones in same map
-- **Rapid Iteration**: JSON-driven mechanics allow quick rule changes
-- **Asset Reuse**: Same sprites/audio across all prototypes
+Create a folder in `prototypes/` with a `prototype.json`. For authored content, add a `map.tmj` with floor, actors, items, and wildcards layers. Without a map file, the engine generates a procedural level. Add local `actors.json` or `items.json` to customize entities for this prototype.
