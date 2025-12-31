@@ -158,6 +158,7 @@ class DungeonEngine {
         this.entityManager = null;
         this.inputManager = null;
         this.lightingManager = null;
+        this.interfaceManager = null;
         this.spriteLibrary = new SpriteLibrary();
         
         // Game state
@@ -232,6 +233,7 @@ class DungeonEngine {
             
             this.app.stage.sortableChildren = true;
             this.renderer = new RenderSystem(this.app, this.mapManager.width, this.mapManager.height, this);
+            this.interfaceManager = new InterfaceManager(this);
             container.appendChild(this.app.view);
             this.app.view.style.width = `${this.canvasWidth / 2}px`;
             this.app.view.style.height = `${this.canvasHeight / 2}px`;
@@ -716,11 +718,17 @@ class DungeonEngine {
             this.renderer.clear();
         }
 
+        // Clear UI elements
+        if (this.interfaceManager) {
+            this.interfaceManager.clear();
+        }
+
         // Destroy the PIXI application and remove the canvas
         if (this.app) {
             this.app.destroy(true, { children: true, texture: false, baseTexture: false });
             this.app = null;
             this.renderer = null;
+            this.interfaceManager = null;
         }
 
         // Clear lighting manager
@@ -1646,6 +1654,11 @@ class Actor extends Entity {
         // Update lighting if this actor affects it
         if (this.hasAttribute('controlled') || this.hasAttribute('light_source')) {
             this.engine.updateLighting();
+        }
+
+        // Notify interface of player move (for dismissOnMove text boxes)
+        if (this.hasAttribute('controlled') && this.engine.interfaceManager) {
+            this.engine.interfaceManager.onPlayerMove();
         }
 
         return true;
@@ -3346,7 +3359,8 @@ class InputManager {
             '.': 'wait',
             'g': 'pickup',
             ',': 'pickup',
-            'i': 'inventory'
+            'i': 'player_info',
+            'I': 'player_info'
         };
 
         // Global keys (work regardless of player state)
@@ -3440,8 +3454,10 @@ class InputManager {
                 }
                 break;
 
-            case 'inventory':
-                console.log('Inventory:', player.inventory.map(i => i.name).join(', ') || '(empty)');
+            case 'player_info':
+                if (this.engine.interfaceManager) {
+                    this.engine.interfaceManager.togglePlayerInfo(player);
+                }
                 break;
         }
     }
