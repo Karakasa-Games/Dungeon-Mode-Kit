@@ -144,6 +144,230 @@ function generateColorVariation(baseColor, variation = 0x101008) {
 }
 
 // ============================================================================
+// PATHFINDING UTILITIES
+// ============================================================================
+
+/**
+ * Compute a straight line path between two points using Bresenham's algorithm
+ * Useful for line-of-sight, projectile paths, and aiming
+ * @param {number} x0 - Starting X coordinate
+ * @param {number} y0 - Starting Y coordinate
+ * @param {number} x1 - Ending X coordinate
+ * @param {number} y1 - Ending Y coordinate
+ * @returns {Array<{x: number, y: number}>} Array of points along the line (includes start and end)
+ */
+function getLinePath(x0, y0, x1, y1) {
+    const points = [];
+    const dx = Math.abs(x1 - x0);
+    const dy = Math.abs(y1 - y0);
+    const sx = x0 < x1 ? 1 : -1;
+    const sy = y0 < y1 ? 1 : -1;
+    let err = dx - dy;
+
+    let x = x0;
+    let y = y0;
+
+    while (true) {
+        points.push({ x, y });
+
+        if (x === x1 && y === y1) break;
+
+        const e2 = 2 * err;
+        if (e2 > -dy) {
+            err -= dy;
+            x += sx;
+        }
+        if (e2 < dx) {
+            err += dx;
+            y += sy;
+        }
+    }
+
+    return points;
+}
+
+/**
+ * Check if there's a clear line of sight between two points
+ * @param {number} x0 - Starting X coordinate
+ * @param {number} y0 - Starting Y coordinate
+ * @param {number} x1 - Ending X coordinate
+ * @param {number} y1 - Ending Y coordinate
+ * @param {function(number, number): boolean} isBlocked - Callback that returns true if a tile blocks sight
+ * @param {boolean} includeEndpoints - Whether to check the start and end points (default: false)
+ * @returns {boolean} True if line of sight is clear
+ */
+function hasLineOfSight(x0, y0, x1, y1, isBlocked, includeEndpoints = false) {
+    const path = getLinePath(x0, y0, x1, y1);
+
+    for (let i = 0; i < path.length; i++) {
+        // Skip endpoints unless includeEndpoints is true
+        if (!includeEndpoints && (i === 0 || i === path.length - 1)) {
+            continue;
+        }
+
+        if (isBlocked(path[i].x, path[i].y)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+/**
+ * Get the first blocking point along a line (for projectile impacts, etc.)
+ * @param {number} x0 - Starting X coordinate
+ * @param {number} y0 - Starting Y coordinate
+ * @param {number} x1 - Ending X coordinate
+ * @param {number} y1 - Ending Y coordinate
+ * @param {function(number, number): boolean} isBlocked - Callback that returns true if a tile blocks
+ * @param {boolean} skipStart - Whether to skip the starting point (default: true)
+ * @returns {{x: number, y: number}|null} First blocking point, or null if path is clear
+ */
+function getFirstBlockingPoint(x0, y0, x1, y1, isBlocked, skipStart = true) {
+    const path = getLinePath(x0, y0, x1, y1);
+
+    for (let i = skipStart ? 1 : 0; i < path.length; i++) {
+        if (isBlocked(path[i].x, path[i].y)) {
+            return path[i];
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Compute a path using A* algorithm via ROT.js
+ * @param {number} fromX - Starting X coordinate
+ * @param {number} fromY - Starting Y coordinate
+ * @param {number} toX - Target X coordinate
+ * @param {number} toY - Target Y coordinate
+ * @param {function(number, number): boolean} isPassable - Callback that returns true if a tile is passable
+ * @param {object} options - Optional settings
+ * @param {number} options.topology - Movement topology: 4 (cardinal), 6 (hex), or 8 (including diagonals). Default: 8
+ * @returns {Array<{x: number, y: number}>} Array of points from start to end (includes both), or empty array if no path
+ */
+function findPathAStar(fromX, fromY, toX, toY, isPassable, options = {}) {
+    const topology = options.topology ?? 8;
+    const path = [];
+
+    const astar = new ROT.Path.AStar(toX, toY, isPassable, { topology });
+
+    astar.compute(fromX, fromY, (x, y) => {
+        path.push({ x, y });
+    });
+
+    return path;
+}
+
+/**
+ * Compute a path using Dijkstra's algorithm via ROT.js
+ * Better than A* when you need to find paths to multiple targets or explore all reachable tiles
+ * @param {number} fromX - Starting X coordinate
+ * @param {number} fromY - Starting Y coordinate
+ * @param {number} toX - Target X coordinate
+ * @param {number} toY - Target Y coordinate
+ * @param {function(number, number): boolean} isPassable - Callback that returns true if a tile is passable
+ * @param {object} options - Optional settings
+ * @param {number} options.topology - Movement topology: 4 (cardinal), 6 (hex), or 8 (including diagonals). Default: 8
+ * @returns {Array<{x: number, y: number}>} Array of points from start to end (includes both), or empty array if no path
+ */
+function findPathDijkstra(fromX, fromY, toX, toY, isPassable, options = {}) {
+    const topology = options.topology ?? 8;
+    const path = [];
+
+    const dijkstra = new ROT.Path.Dijkstra(toX, toY, isPassable, { topology });
+
+    dijkstra.compute(fromX, fromY, (x, y) => {
+        path.push({ x, y });
+    });
+
+    return path;
+}
+
+/**
+ * Check if a path exists between two points (without computing the full path)
+ * Uses A* for efficiency
+ * @param {number} fromX - Starting X coordinate
+ * @param {number} fromY - Starting Y coordinate
+ * @param {number} toX - Target X coordinate
+ * @param {number} toY - Target Y coordinate
+ * @param {function(number, number): boolean} isPassable - Callback that returns true if a tile is passable
+ * @param {object} options - Optional settings
+ * @param {number} options.topology - Movement topology: 4, 6, or 8. Default: 8
+ * @returns {boolean} True if a path exists
+ */
+function pathExists(fromX, fromY, toX, toY, isPassable, options = {}) {
+    const path = findPathAStar(fromX, fromY, toX, toY, isPassable, options);
+    return path.length > 0;
+}
+
+/**
+ * Get the next step along a path from one point to another
+ * Useful for AI movement - returns just the next tile to move to
+ * @param {number} fromX - Starting X coordinate
+ * @param {number} fromY - Starting Y coordinate
+ * @param {number} toX - Target X coordinate
+ * @param {number} toY - Target Y coordinate
+ * @param {function(number, number): boolean} isPassable - Callback that returns true if a tile is passable
+ * @param {object} options - Optional settings
+ * @param {number} options.topology - Movement topology: 4, 6, or 8. Default: 8
+ * @returns {{x: number, y: number}|null} Next point to move to, or null if no path or already at target
+ */
+function getNextPathStep(fromX, fromY, toX, toY, isPassable, options = {}) {
+    if (fromX === toX && fromY === toY) {
+        return null; // Already at target
+    }
+
+    const path = findPathAStar(fromX, fromY, toX, toY, isPassable, options);
+
+    // Path includes starting point, so next step is at index 1
+    if (path.length > 1) {
+        return path[1];
+    }
+
+    return null; // No path found
+}
+
+/**
+ * Calculate Manhattan distance between two points
+ * @param {number} x0 - First X coordinate
+ * @param {number} y0 - First Y coordinate
+ * @param {number} x1 - Second X coordinate
+ * @param {number} y1 - Second Y coordinate
+ * @returns {number} Manhattan distance
+ */
+function getManhattanDistance(x0, y0, x1, y1) {
+    return Math.abs(x1 - x0) + Math.abs(y1 - y0);
+}
+
+/**
+ * Calculate Chebyshev distance between two points (diagonal distance)
+ * This is the number of king moves on a chessboard
+ * @param {number} x0 - First X coordinate
+ * @param {number} y0 - First Y coordinate
+ * @param {number} x1 - Second X coordinate
+ * @param {number} y1 - Second Y coordinate
+ * @returns {number} Chebyshev distance
+ */
+function getChebyshevDistance(x0, y0, x1, y1) {
+    return Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0));
+}
+
+/**
+ * Calculate Euclidean distance between two points
+ * @param {number} x0 - First X coordinate
+ * @param {number} y0 - First Y coordinate
+ * @param {number} x1 - Second X coordinate
+ * @param {number} y1 - Second Y coordinate
+ * @returns {number} Euclidean distance
+ */
+function getEuclideanDistance(x0, y0, x1, y1) {
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    return Math.sqrt(dx * dx + dy * dy);
+}
+
+// ============================================================================
 // CORE ENGINE CLASS
 // ============================================================================
 
@@ -1746,35 +1970,103 @@ class Actor extends Entity {
     }
 
     /**
-     * Check if this actor can see the target (simple distance check)
+     * Check if this actor can see the target (distance + line-of-sight check)
      * @param {Entity} target - The target to check visibility for
-     * @returns {boolean} True if target is within vision range
+     * @returns {boolean} True if target is within vision range and has clear line of sight
      */
     canSeeTarget(target) {
         if (!target) return false;
-        const dx = target.x - this.x;
-        const dy = target.y - this.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        return distance <= this.visionRange;
+
+        // First check distance
+        const distance = getEuclideanDistance(this.x, this.y, target.x, target.y);
+        if (distance > this.visionRange) return false;
+
+        // Then check actual line of sight
+        const isBlocked = (x, y) => {
+            // Check if tile blocks vision (walls, solid actors)
+            if (!this.hasFloorAt(x, y)) return true;
+
+            // Check for solid actors at this position (but not self or target)
+            const actorAt = this.engine.entityManager.getActorAt(x, y);
+            if (actorAt && actorAt !== this && actorAt !== target && actorAt.hasAttribute('solid')) {
+                return true;
+            }
+
+            return false;
+        };
+
+        return hasLineOfSight(this.x, this.y, target.x, target.y, isBlocked);
     }
 
     /**
-     * Move toward a target position
+     * Check if a tile is passable for pathfinding purposes
+     * @param {number} x - X coordinate
+     * @param {number} y - Y coordinate
+     * @returns {boolean} True if the tile can be walked through
+     */
+    isPassableAt(x, y) {
+        // Check bounds
+        if (x < 0 || x >= this.engine.mapManager.width ||
+            y < 0 || y >= this.engine.mapManager.height) {
+            return false;
+        }
+
+        // Check for floor
+        if (!this.hasFloorAt(x, y)) return false;
+
+        // Check for solid actors (but allow the actor's own position)
+        const actorAt = this.engine.entityManager.getActorAt(x, y);
+        if (actorAt && actorAt !== this && actorAt.hasAttribute('solid')) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Move toward a target position using A* pathfinding
+     * Falls back to simple directional movement if no path found
      * @param {number} targetX - Target X coordinate
      * @param {number} targetY - Target Y coordinate
+     * @returns {boolean} True if movement was attempted
      */
     moveToward(targetX, targetY) {
+        // Already at target
+        if (this.x === targetX && this.y === targetY) return false;
+
+        // Create passability callback for pathfinding
+        const isPassable = (x, y) => {
+            // Target position is always considered passable (we want to reach it)
+            if (x === targetX && y === targetY) return true;
+            return this.isPassableAt(x, y);
+        };
+
+        // Try A* pathfinding first
+        const nextStep = getNextPathStep(this.x, this.y, targetX, targetY, isPassable);
+
+        if (nextStep) {
+            // Found a path - try to move to next step
+            return this.tryMove(nextStep.x, nextStep.y);
+        }
+
+        // No path found - fall back to simple directional movement
+        // This handles cases where target is unreachable but we want to get closer
         const dx = Math.sign(targetX - this.x);
         const dy = Math.sign(targetY - this.y);
 
         // Try to move in both directions, prefer the larger distance
         if (Math.abs(targetX - this.x) > Math.abs(targetY - this.y)) {
-            if (dx !== 0 && this.tryMove(this.x + dx, this.y)) return;
-            if (dy !== 0 && this.tryMove(this.x, this.y + dy)) return;
+            if (dx !== 0 && this.tryMove(this.x + dx, this.y)) return true;
+            if (dy !== 0 && this.tryMove(this.x, this.y + dy)) return true;
         } else {
-            if (dy !== 0 && this.tryMove(this.x, this.y + dy)) return;
-            if (dx !== 0 && this.tryMove(this.x + dx, this.y)) return;
+            if (dy !== 0 && this.tryMove(this.x, this.y + dy)) return true;
+            if (dx !== 0 && this.tryMove(this.x + dx, this.y)) return true;
         }
+
+        // Try diagonal movement as last resort
+        if (dx !== 0 && dy !== 0 && this.tryMove(this.x + dx, this.y + dy)) return true;
+
+        return false;
     }
 
     serialize() {
@@ -1823,21 +2115,80 @@ class Personality {
 
 // Behavior Library - Common AI routines
 const BehaviorLibrary = {
+    /**
+     * Attack an adjacent hostile target (player or enemy faction)
+     * Returns true if an attack was made
+     */
+    attack_adjacent: (actor, data) => {
+        // Check all adjacent tiles (8-directional)
+        const directions = [
+            {dx: -1, dy: -1}, {dx: 0, dy: -1}, {dx: 1, dy: -1},
+            {dx: -1, dy: 0},                   {dx: 1, dy: 0},
+            {dx: -1, dy: 1},  {dx: 0, dy: 1},  {dx: 1, dy: 1}
+        ];
+
+        for (const dir of directions) {
+            const targetX = actor.x + dir.dx;
+            const targetY = actor.y + dir.dy;
+            const target = actor.engine.entityManager.getActorAt(targetX, targetY);
+
+            // Check if target is valid - only attack controlled actors (players, allies)
+            if (!target || target.isDead || !target.hasAttribute('controlled')) continue;
+
+            // Calculate damage from personality data or default
+            const damage = data.attack_damage || 5;
+
+            // Apply damage to target
+            if (target.stats?.health !== undefined) {
+                if (typeof target.stats.health === 'object') {
+                    target.stats.health.current -= damage;
+                    console.log(`${actor.name} attacks ${target.name} for ${damage} damage! (${target.stats.health.current}/${target.stats.health.max} HP)`);
+
+                    if (target.stats.health.current <= 0) {
+                        target.die();
+                    }
+                } else {
+                    target.stats.health -= damage;
+                    console.log(`${actor.name} attacks ${target.name} for ${damage} damage!`);
+
+                    if (target.stats.health <= 0) {
+                        target.die();
+                    }
+                }
+            }
+
+            // Play attack sound if available
+            actor.engine.playSound?.('ouch');
+
+            return true; // Attack was made
+        }
+
+        return false; // No valid target found
+    },
+
+    /**
+     * Patrol between waypoints (placeholder)
+     */
     patrol: (actor, data) => {
-        // Patrol between waypoints
+        // TODO: Implement waypoint patrol
         return false;
     },
-    
+
+    /**
+     * Pursue a visible target using A* pathfinding
+     */
     pursue_target: (actor, data) => {
         // Find and move toward target
         const target = actor.engine.entityManager.findNearestPlayer(actor);
         if (target && actor.canSeeTarget(target)) {
-            actor.moveToward(target.x, target.y);
-            return true;
+            return actor.moveToward(target.x, target.y);
         }
         return false;
     },
-    
+
+    /**
+     * Random wandering movement
+     */
     random_walk: (actor) => {
         // Sighted actors only consider valid moves (avoids pits, walls, etc.)
         if (actor.hasAttribute('sighted')) {
@@ -1858,6 +2209,36 @@ const BehaviorLibrary = {
         const dir = directions[Math.floor(Math.random() * directions.length)];
         actor.tryMove(actor.x + dir.dx, actor.y + dir.dy);
         return true;
+    },
+
+    /**
+     * Flee from nearby threats
+     */
+    flee_from_danger: (actor, data) => {
+        const fleeDistance = data.flee_threshold || 3;
+        const player = actor.engine.entityManager.player;
+
+        if (!player || player.isDead) return false;
+
+        const distance = getChebyshevDistance(actor.x, actor.y, player.x, player.y);
+
+        // Only flee if player is within flee threshold
+        if (distance > fleeDistance) return false;
+
+        // Move away from the player
+        const dx = Math.sign(actor.x - player.x);
+        const dy = Math.sign(actor.y - player.y);
+
+        // Try to move directly away
+        if (dx !== 0 && dy !== 0 && actor.tryMove(actor.x + dx, actor.y + dy)) return true;
+        if (dx !== 0 && actor.tryMove(actor.x + dx, actor.y)) return true;
+        if (dy !== 0 && actor.tryMove(actor.x, actor.y + dy)) return true;
+
+        // Try perpendicular movement as escape
+        if (actor.tryMove(actor.x + dy, actor.y + dx)) return true;
+        if (actor.tryMove(actor.x - dy, actor.y - dx)) return true;
+
+        return false;
     }
 };
 
@@ -2018,9 +2399,31 @@ class EntityManager {
         return this.actors.find(a => a.getAttribute(attributeName) === attributeValue);
     }
 
+    /**
+     * Find the nearest controlled actor (player or ally) to a given actor
+     * @param {Actor} fromActor - The actor searching for a target
+     * @returns {Actor|null} The nearest controlled actor, or null if none found
+     */
     findNearestPlayer(fromActor) {
-        // For now, just return the player
-        return this.player;
+        let nearest = null;
+        let nearestDistance = Infinity;
+
+        for (const actor of this.actors) {
+            // Skip dead actors and the searcher itself
+            if (actor.isDead || actor === fromActor) continue;
+
+            // Only consider controlled actors (players, allies)
+            if (!actor.hasAttribute('controlled')) continue;
+
+            const distance = getChebyshevDistance(fromActor.x, fromActor.y, actor.x, actor.y);
+
+            if (distance < nearestDistance) {
+                nearestDistance = distance;
+                nearest = actor;
+            }
+        }
+
+        return nearest;
     }
     
     findAdjacentTarget(actor) {

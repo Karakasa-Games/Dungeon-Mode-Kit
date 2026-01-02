@@ -1,33 +1,24 @@
 {
   "aggressive_melee": {
     "name": "Aggressive Melee",
-    "controlled": false,
     "hostile": true,
-    "vision_range": 8,
     "behaviors": [
       "attack_adjacent",
       "pursue_target",
       "random_walk"
-    ],
-    "movement_speed": 1,
-    "attack_damage": 5
+    ]
   },
   
   "ranged_attacker": {
     "name": "Ranged Attacker",
-    "controlled": false,
     "hostile": true,
-    "vision_range": 10,
     "preferred_distance": 5,
     "behaviors": [
       "ranged_attack",
       "maintain_distance",
       "pursue_target",
       "random_walk"
-    ],
-    "movement_speed": 1,
-    "attack_damage": 10,
-    "attack_range": 5
+    ]
   },
   
   "guard": {
@@ -45,27 +36,16 @@
       "guard_area",
       "pursue_intruders"
     ],
-    "movement_speed": 1,
     "alert_allies": true
   },
   
   "passive_wanderer": {
     "name": "Passive Wanderer",
-    "controlled": false,
     "hostile": false,
-    "vision_range": 5,
     "behaviors": [
       "random_walk",
       "flee_from_danger"
     ],
-    "movement_speed": 1,
     "flee_threshold": 3
-  },
-  
-  "player_controlled": {
-    "name": "Player Controlled",
-    "controlled": true,
-    "hostile": false,
-    "behaviors": []
   }
 }
