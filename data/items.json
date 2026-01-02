@@ -1,5 +1,5 @@
 {
-  "key": {
+  "gold_key": {
     "name": "Gold Key",
     "tileIndex": "WHITE_KEY",
     "tint": "#FFD700",
@@ -26,7 +26,7 @@
 
   "sword": {
     "name": "Sword",
-    "tileIndex": "LATIN_CAPITAL_LETTER_T",
+    "tileIndex": "UP_ARROW",
     "attributes": {
       "pickupable": true,
       "visible": true,

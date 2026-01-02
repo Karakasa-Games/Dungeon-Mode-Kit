@@ -7,7 +7,8 @@
       "visible": true,
       "stackable": false,
       "wearable": "top",
-      "wear_effect": { "strength": 5 }
+      "wear_effect": { "strength": 5 },
+      "description": "A pair of bronze horns that grant strength to the wearer."
     }
   }
 }

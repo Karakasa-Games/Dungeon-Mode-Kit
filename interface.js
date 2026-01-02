@@ -11,6 +11,11 @@ class InterfaceManager {
         this.maxTextBoxes = 4; // Maximum visible text boxes
         this.dismissOnMoveBoxes = new Set(); // Text boxes to dismiss on player move
         this.autoDisposeTimers = new Map(); // Timers for auto-disposing boxes
+
+        // Inventory interaction state
+        this.inventoryMode = false; // True when player info is showing and accepting item selection
+        this.currentPlayer = null; // Reference to player when inventory is open
+        this.selectedItemIndex = null; // Currently selected item index (for action menu)
     }
 
     get container() {
@@ -522,13 +527,15 @@ class InterfaceManager {
             }
         }
 
-        // Gather inventory items
+        // Gather inventory items with letter prefixes
         const inventoryItems = [];
         if (player.inventory && player.inventory.length > 0) {
-            for (const item of player.inventory) {
-                let itemText = item.name;
+            for (let i = 0; i < player.inventory.length; i++) {
+                const item = player.inventory[i];
+                const letter = String.fromCharCode(97 + i); // 'a', 'b', 'c', etc.
+                let itemText = `${letter}) ${item.name}`;
                 // Mark equipped items
-                if (item.equipped) {
+                if (player.isItemEquipped(item)) {
                     itemText += ' (worn)';
                 }
                 inventoryItems.push(itemText);
@@ -583,6 +590,149 @@ class InterfaceManager {
 
         if (!boxContainer) return;
 
+        // Store box position for item action menu positioning
+        boxContainer._boxX = x;
+        boxContainer._boxWidth = boxWidth;
+
+        // Add text sprites
+        const textStartX = (padding + 1) * globalVars.TILE_WIDTH;
+        const textStartY = (padding + 1) * globalVars.TILE_HEIGHT;
+
+        for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+            const line = lines[lineIndex];
+            for (let charIndex = 0; charIndex < line.length; charIndex++) {
+                const char = line[charIndex];
+                const charX = textStartX + (charIndex * globalVars.TILE_WIDTH);
+                const charY = textStartY + (lineIndex * globalVars.TILE_HEIGHT);
+
+                const sprite = this.createCharSprite(char, charX, charY, 0x000000);
+                if (sprite) {
+                    boxContainer.addChild(sprite);
+                }
+            }
+        }
+
+        // Enable inventory selection mode
+        this.inventoryMode = true;
+        this.currentPlayer = player;
+        this.selectedItemIndex = null;
+    }
+
+    /**
+     * Hide the player info box if it's showing
+     */
+    hidePlayerInfo() {
+        this.removeBox('player_info');
+        this.removeBox('item_action_menu');
+        this.inventoryMode = false;
+        this.currentPlayer = null;
+        this.selectedItemIndex = null;
+    }
+
+    /**
+     * Show the item action menu for a selected inventory item
+     * @param {number} itemIndex - Index of the item in player's inventory
+     */
+    showItemActionMenu(itemIndex) {
+        if (!this.currentPlayer || !this.inventoryMode) return;
+        if (itemIndex < 0 || itemIndex >= this.currentPlayer.inventory.length) return;
+
+        const item = this.currentPlayer.inventory[itemIndex];
+        this.selectedItemIndex = itemIndex;
+
+        // Remove existing action menu if present
+        this.removeBox('item_action_menu');
+
+        // Build menu lines
+        const lines = [];
+        lines.push(item.name);
+        lines.push(''); // blank line
+
+        // Add description if available
+        const description = item.getAttribute('description');
+        if (description) {
+            // Word wrap description to fit in menu
+            const wrappedDesc = this.wrapText(description, 20);
+            for (const line of wrappedDesc) {
+                lines.push(line);
+            }
+            lines.push(''); // blank line after description
+        }
+
+        // Add action options with number keys
+        lines.push('Actions:');
+        let actionNum = 1;
+
+        // Check if item is currently equipped
+        const isEquipped = this.currentPlayer.isItemEquipped(item);
+
+        // Drop is always available
+        lines.push(`  ${actionNum}) Drop`);
+        actionNum++;
+
+        // Wear option if item is wearable and not currently worn
+        if (item.hasAttribute('wearable') && !isEquipped) {
+            lines.push(`  ${actionNum}) Wear`);
+            actionNum++;
+        }
+
+        // Remove option if item is currently worn
+        if (isEquipped) {
+            lines.push(`  ${actionNum}) Remove`);
+            actionNum++;
+        }
+
+        // Use verb if available
+        const useVerb = item.getAttribute('use_verb');
+        if (useVerb) {
+            lines.push(`  ${actionNum}) ${this.capitalize(useVerb)}`);
+            actionNum++;
+        }
+
+        // Calculate dimensions
+        const padding = 1;
+        const maxLineLength = Math.max(...lines.map(l => l.length), 12);
+        const contentWidth = maxLineLength;
+        const contentHeight = lines.length;
+        const boxWidth = contentWidth + (padding * 2) + 2;
+        const boxHeight = contentHeight + (padding * 2) + 2;
+
+        // Position next to player info box
+        const playerInfoBox = this.boxes.get('player_info');
+        const mapWidth = this.engine.mapManager?.width || 30;
+        let x;
+
+        if (playerInfoBox && playerInfoBox._boxX !== undefined) {
+            // Position adjacent to player info box
+            const playerInfoRight = playerInfoBox._boxX + playerInfoBox._boxWidth;
+            const playerInfoLeft = playerInfoBox._boxX;
+
+            // Try to place on the opposite side from player info
+            if (playerInfoLeft > boxWidth) {
+                // Place to the left of player info
+                x = playerInfoLeft - boxWidth;
+            } else if (playerInfoRight + boxWidth < mapWidth) {
+                // Place to the right of player info
+                x = playerInfoRight;
+            } else {
+                // Fallback: overlap slightly
+                x = Math.max(0, mapWidth - boxWidth - 1);
+            }
+        } else {
+            // Fallback positioning
+            x = Math.floor((mapWidth - boxWidth) / 2);
+        }
+
+        const y = 1;
+
+        // Create the box
+        const boxContainer = this.createBox('item_action_menu', x, y, boxWidth, boxHeight, {
+            fillColor: 0xFFFFFF,
+            borderTint: 0x000000
+        });
+
+        if (!boxContainer) return;
+
         // Add text sprites
         const textStartX = (padding + 1) * globalVars.TILE_WIDTH;
         const textStartY = (padding + 1) * globalVars.TILE_HEIGHT;
@@ -603,10 +753,173 @@ class InterfaceManager {
     }
 
     /**
-     * Hide the player info box if it's showing
+     * Close the item action menu
      */
-    hidePlayerInfo() {
-        this.removeBox('player_info');
+    closeItemActionMenu() {
+        this.removeBox('item_action_menu');
+        this.selectedItemIndex = null;
+    }
+
+    /**
+     * Handle keyboard input for inventory interaction
+     * @param {string} key - The key that was pressed
+     * @returns {boolean} True if the key was handled
+     */
+    handleInventoryKey(key) {
+        if (!this.inventoryMode || !this.currentPlayer) return false;
+
+        // If action menu is open, handle number keys for actions
+        if (this.selectedItemIndex !== null) {
+            if (key === 'Escape') {
+                this.closeItemActionMenu();
+                return true;
+            }
+
+            // Handle action selection (1, 2, 3, etc.)
+            const actionNum = parseInt(key, 10);
+            if (!isNaN(actionNum) && actionNum >= 1) {
+                return this.executeItemAction(actionNum);
+            }
+
+            return false;
+        }
+
+        // Handle letter keys for item selection (a-z)
+        if (key.length === 1 && key >= 'a' && key <= 'z') {
+            const itemIndex = key.charCodeAt(0) - 97; // 'a' = 0, 'b' = 1, etc.
+            if (itemIndex < this.currentPlayer.inventory.length) {
+                this.showItemActionMenu(itemIndex);
+                return true;
+            }
+        }
+
+        // Escape closes the player info entirely
+        if (key === 'Escape') {
+            this.hidePlayerInfo();
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Execute an item action based on the numbered option
+     * @param {number} actionNum - The action number (1-based)
+     * @returns {boolean} True if action was executed
+     */
+    executeItemAction(actionNum) {
+        if (this.selectedItemIndex === null || !this.currentPlayer) return false;
+
+        const item = this.currentPlayer.inventory[this.selectedItemIndex];
+        if (!item) return false;
+
+        // Build the action list to determine which action corresponds to which number
+        let currentAction = 1;
+
+        // Check if item is currently equipped
+        const isEquipped = this.currentPlayer.isItemEquipped(item);
+
+        // Action 1 is always Drop
+        if (actionNum === currentAction) {
+            this.executeDropItem(item);
+            return true;
+        }
+        currentAction++;
+
+        // Wear (if wearable and not worn)
+        if (item.hasAttribute('wearable') && !isEquipped) {
+            if (actionNum === currentAction) {
+                this.executeWearItem(item);
+                return true;
+            }
+            currentAction++;
+        }
+
+        // Remove (if worn)
+        if (isEquipped) {
+            if (actionNum === currentAction) {
+                this.executeRemoveItem(item);
+                return true;
+            }
+            currentAction++;
+        }
+
+        // Use verb action
+        const useVerb = item.getAttribute('use_verb');
+        if (useVerb) {
+            if (actionNum === currentAction) {
+                this.executeUseItem(item);
+                return true;
+            }
+            currentAction++;
+        }
+
+        return false;
+    }
+
+    /**
+     * Drop an item from inventory
+     */
+    executeDropItem(item) {
+        if (!this.currentPlayer) return;
+
+        // Remove from inventory
+        const index = this.currentPlayer.inventory.indexOf(item);
+        if (index > -1) {
+            this.currentPlayer.inventory.splice(index, 1);
+
+            // Place item at player's position
+            item.x = this.currentPlayer.x;
+            item.y = this.currentPlayer.y;
+            this.engine.entityManager.addEntity(item);
+
+            console.log(`${this.currentPlayer.name} dropped ${item.name}`);
+        }
+
+        // Close menus and refresh
+        this.closeItemActionMenu();
+        this.showPlayerInfo(this.currentPlayer);
+    }
+
+    /**
+     * Wear/equip an item
+     */
+    executeWearItem(item) {
+        if (!this.currentPlayer) return;
+
+        this.currentPlayer.equipItem(item);
+
+        // Close menus and refresh
+        this.closeItemActionMenu();
+        this.showPlayerInfo(this.currentPlayer);
+    }
+
+    /**
+     * Remove/unequip a worn item
+     */
+    executeRemoveItem(item) {
+        if (!this.currentPlayer) return;
+
+        this.currentPlayer.unequipItem(item);
+
+        // Close menus and refresh
+        this.closeItemActionMenu();
+        this.showPlayerInfo(this.currentPlayer);
+    }
+
+    /**
+     * Use an item (execute its use_verb action)
+     */
+    executeUseItem(item) {
+        if (!this.currentPlayer) return;
+
+        if (this.currentPlayer.useItem) {
+            this.currentPlayer.useItem(item);
+        }
+
+        // Close menus and refresh
+        this.closeItemActionMenu();
+        this.showPlayerInfo(this.currentPlayer);
     }
 
     /**

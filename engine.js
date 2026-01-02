@@ -1315,6 +1315,56 @@ class Actor extends Entity {
     }
 
     /**
+     * Check if a specific item is currently equipped
+     * @param {Item} item - The item to check
+     * @returns {boolean} True if the item is equipped in any slot
+     */
+    isItemEquipped(item) {
+        return this.equipment.top === item ||
+               this.equipment.middle === item ||
+               this.equipment.lower === item;
+    }
+
+    /**
+     * Equip a wearable item (convenience method)
+     * @param {Item} item - The item to equip
+     * @returns {boolean} True if successfully equipped
+     */
+    equipItem(item) {
+        const slot = item.getAttribute('wearable');
+        if (!slot || !['top', 'middle', 'lower'].includes(slot)) {
+            console.log(`${item.name} is not wearable`);
+            return false;
+        }
+
+        if (!this.inventory.includes(item)) {
+            console.log(`${this.name} doesn't have ${item.name}`);
+            return false;
+        }
+
+        this.equipToSlot(item, slot);
+        return true;
+    }
+
+    /**
+     * Unequip a worn item (convenience method)
+     * @param {Item} item - The item to unequip
+     * @returns {boolean} True if successfully unequipped
+     */
+    unequipItem(item) {
+        const slot = item.getAttribute('wearable');
+        if (!slot) return false;
+
+        if (this.equipment[slot] !== item) {
+            console.log(`${item.name} is not equipped`);
+            return false;
+        }
+
+        this.unequipFromSlot(slot);
+        return true;
+    }
+
+    /**
      * Use an item from inventory
      * @param {Item} item - The item to use
      * @returns {boolean} True if item was used successfully
@@ -3390,6 +3440,12 @@ class InputManager {
 
     handleKeyDown(event) {
         if (!this.enabled) return;
+
+        // Check if interface manager wants to handle this key (inventory interaction)
+        if (this.engine.interfaceManager?.handleInventoryKey(event.key)) {
+            event.preventDefault();
+            return;
+        }
 
         // Check global keys first (work regardless of player state)
         const globalAction = this.globalKeyMap[event.key] || this.globalKeyMap[event.code];

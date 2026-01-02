@@ -142,7 +142,9 @@
       "visible": true,
       "damages": true,
       "spreads": false,
-      "ignites": false
+      "ignites": false,
+      "light_source": true,
+      "paint_tile": "DOUBLE_EXCLAMATION_MARK"
     }
   },
   "fire": {
