@@ -1,0 +1,24 @@
+{
+  "blood": {
+    "name": "Blood",
+    "tileIndex": null,
+    "fillColor": "#8B0000",
+    "attributes": {
+      "visible": true
+    }
+  },
+  "rubble": {
+    "name": "Rubble",
+    "tileIndex": "UPWARD_POINTING_TRIANGLE",
+    "attributes": {
+      "visible": true
+    }
+  },
+  "skull": {
+    "name": "Skull",
+    "tileIndex": "SKULL",
+    "attributes": {
+      "visible": true
+    }
+  }
+}

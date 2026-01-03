@@ -16,6 +16,9 @@ class InterfaceManager {
         this.inventoryMode = false; // True when player info is showing and accepting item selection
         this.currentPlayer = null; // Reference to player when inventory is open
         this.selectedItemIndex = null; // Currently selected item index (for action menu)
+
+        // Confirmation dialog state
+        this.confirmDialog = null; // { message, onConfirm, onCancel }
     }
 
     get container() {
@@ -927,5 +930,111 @@ class InterfaceManager {
      */
     capitalize(str) {
         return str.charAt(0).toUpperCase() + str.slice(1);
+    }
+
+    /**
+     * Show a confirmation dialog with Yes/No options
+     * @param {string} message - The question to display
+     * @param {function} onConfirm - Callback when user confirms (Y)
+     * @param {function} onCancel - Callback when user cancels (N/Escape)
+     */
+    showConfirmDialog(message, onConfirm, onCancel) {
+        // Remove any existing confirm dialog
+        this.closeConfirmDialog();
+
+        // Store callbacks
+        this.confirmDialog = { message, onConfirm, onCancel };
+
+        // Build dialog lines
+        const lines = [];
+
+        // Word wrap the message
+        const wrappedMessage = this.wrapText(message, 24);
+        for (const line of wrappedMessage) {
+            lines.push(line);
+        }
+        lines.push('');
+        lines.push('  (Y)es  /  (N)o');
+
+        // Calculate dimensions
+        const padding = 1;
+        const maxLineLength = Math.max(...lines.map(l => l.length), 16);
+        const contentWidth = maxLineLength;
+        const contentHeight = lines.length;
+        const boxWidth = contentWidth + (padding * 2) + 2;
+        const boxHeight = contentHeight + (padding * 2) + 2;
+
+        // Center the dialog
+        const mapWidth = this.engine.mapManager?.width || 30;
+        const mapHeight = this.engine.mapManager?.height || 20;
+        const x = Math.floor((mapWidth - boxWidth) / 2);
+        const y = Math.floor((mapHeight - boxHeight) / 2);
+
+        // Create the box
+        const boxContainer = this.createBox('confirm_dialog', x, y, boxWidth, boxHeight, {
+            fillColor: 0xFFFFFF,
+            borderTint: 0x000000
+        });
+
+        if (!boxContainer) return;
+
+        // Add text sprites
+        const textStartX = (padding + 1) * globalVars.TILE_WIDTH;
+        const textStartY = (padding + 1) * globalVars.TILE_HEIGHT;
+
+        for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+            const line = lines[lineIndex];
+            for (let charIndex = 0; charIndex < line.length; charIndex++) {
+                const char = line[charIndex];
+                const charX = textStartX + (charIndex * globalVars.TILE_WIDTH);
+                const charY = textStartY + (lineIndex * globalVars.TILE_HEIGHT);
+
+                const sprite = this.createCharSprite(char, charX, charY, 0x000000);
+                if (sprite) {
+                    boxContainer.addChild(sprite);
+                }
+            }
+        }
+    }
+
+    /**
+     * Close the confirmation dialog
+     */
+    closeConfirmDialog() {
+        this.removeBox('confirm_dialog');
+        this.confirmDialog = null;
+    }
+
+    /**
+     * Handle keyboard input for confirmation dialog
+     * @param {string} key - The key that was pressed
+     * @returns {boolean} True if the key was handled
+     */
+    handleConfirmKey(key) {
+        if (!this.confirmDialog) return false;
+
+        if (key === 'y' || key === 'Y') {
+            const onConfirm = this.confirmDialog.onConfirm;
+            this.closeConfirmDialog();
+            if (onConfirm) onConfirm();
+            return true;
+        }
+
+        if (key === 'n' || key === 'N' || key === 'Escape') {
+            const onCancel = this.confirmDialog.onCancel;
+            this.closeConfirmDialog();
+            if (onCancel) onCancel();
+            return true;
+        }
+
+        return true; // Consume all keys while dialog is open
+    }
+
+    /**
+     * Check if a confirmation dialog is currently showing
+     * @returns {boolean}
+     */
+    hasConfirmDialog() {
+        return this.confirmDialog !== null;
     }
 }

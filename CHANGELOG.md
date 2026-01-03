@@ -9,8 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Planned
 
-- Pathfinding (A*)
-- UI (inventory, stats, messages)
 - Item drops on death
 - First-person view pane (experimental)
 - Verbose text description of turns (experimental)
@@ -18,8 +16,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### In Progress
 
 - Multi-level state stack
-- AI behaviors (structure exists, random_walk works, others are stubs)
 - Wildcard item/actor spawning (stubs exist)
+
+## [0.4a] 2026-01-03
+
+### Added
+
+- Basic UI (textboxes with selectable options)
+- Player info window showing name, attributes, and inventory with letter-prefixed items (a, b, c...)
+- Item action menu with Drop, Wear/Remove, and custom use_verb options
+- Confirmation dialogs for hazardous movement (lava, void) with Y/N input
+- A* pathfinding via ROT.js (`findPathAStar`, `findPathDijkstra`, `getNextPathStep`, `pathExists`)
+- Bresenham line path algorithm (`getLinePath`, `hasLineOfSight`, `getFirstBlockingPoint`)
+- Distance utility functions (`getManhattanDistance`, `getChebyshevDistance`, `getEuclideanDistance`)
+- AI behaviors: `attack_adjacent`, `pursue_target` (with A* pathfinding), `flee_from_danger`, `incinerate_entities`
+- `aggressive_melee` personality - enemies can chase and attack controlled actors
+- `lava_behavior` personality - incinerates solid actors (spawns fire) and liquids (spawns smoke)
+- `spawnActor` method for dynamically spawning actors at runtime
+- `spawnEntity` method for spawning decorative entities from entities.json
+- `remains` attribute for actors - spawns a decorative entity on death (blood, skull, rubble)
+- `liquid` attribute for actors (used by incineration logic)
+- `fireproof` attribute check for lava hazard warnings
+
+### Changed
+
+- `canSeeTarget` now uses actual line-of-sight checking instead of just distance
+- `moveToward` now uses A* pathfinding with fallback to simple directional movement
+- `findNearestPlayer` properly calculates distance to find nearest controlled actor
+- Equipment status now checked via `actor.isItemEquipped(item)` instead of `item.equipped`
 
 ## [0.3a] - 2025-12-30
 

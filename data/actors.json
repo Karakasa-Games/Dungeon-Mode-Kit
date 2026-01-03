@@ -10,7 +10,8 @@
       "visible": true,
       "flammable": true,
       "sighted": true,
-      "inventory": 5
+      "inventory": 5,
+      "remains": "skull"
     },
     "stats": {
       "health": 100,
@@ -28,7 +29,8 @@
       "solid": true,
       "visible": true,
       "flammable": true,
-      "inventory": 1
+      "inventory": 1,
+      "remains": "skull"
     },
     "stats": {
       "health": 30,
@@ -82,7 +84,8 @@
       "visible": true,
       "pushable": false,
       "breakable": true,
-      "paint_tile": "WALL_TOP"
+      "paint_tile": "WALL_TOP",
+      "remains": "rubble"
     }
   },
   
@@ -126,6 +129,7 @@
       "visible": true,
       "damages": false,
       "spreads": false,
+      "liquid": true,
       "ignites": true,
       "paint_tile": "OPAQUE_DOTTED_LIGHT_SHADE"
     }
@@ -137,6 +141,7 @@
     "animated": true,
     "animation_frames": "fluid",
     "tint": "#FFB49D",
+    "personality": "lava_behavior",
     "attributes": {
       "solid": false,
       "visible": true,
@@ -206,6 +211,20 @@
       "visible": true,
       "stairway": "up"
     }
+  },
+  "smoke": {
+    "name": "Smoke",
+    "tileIndexBase": "BLANK",
+    "tileIndexTop": "BLANK",
+    "animated": true,
+    "animation_frames": "smoke",
+    "attributes": {
+      "solid": false,
+      "visible": true,
+      "damages": true
+    },
+    "damage_per_turn": 2,
+    "lifetime": 5
   }
  
 }

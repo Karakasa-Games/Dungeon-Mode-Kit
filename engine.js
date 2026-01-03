@@ -1,5 +1,5 @@
 /**
- * Dungeon Mode Kit - Core Engine
+ * Dungeon Mode Kit - Core Engine, 2025- Wiley Wiggins
  * A modular roguelike engine supporting multiple prototypes with mixed authored/procedural content, built on rot.js and pixi.js
  */
 
@@ -18,8 +18,6 @@ class SpriteLibrary {
             const response = await fetch('./data/static-tiles.json');
             const data = await response.json();
             this.tiles = data.tiles;
-            
-            // Store animation metadata
             this.animations = {
                 'fire': 'fire',
                 'smoke': 'smoke',
@@ -115,9 +113,7 @@ function parseTint(value, defaultValue = 0xFFFFFF) {
     }
 
     if (typeof value === 'string') {
-        // Remove # prefix if present
         let hex = value.startsWith('#') ? value.slice(1) : value;
-        // Parse as hexadecimal
         const parsed = parseInt(hex, 16);
         if (!isNaN(parsed)) {
             return parsed;
@@ -200,7 +196,6 @@ function hasLineOfSight(x0, y0, x1, y1, isBlocked, includeEndpoints = false) {
     const path = getLinePath(x0, y0, x1, y1);
 
     for (let i = 0; i < path.length; i++) {
-        // Skip endpoints unless includeEndpoints is true
         if (!includeEndpoints && (i === 0 || i === path.length - 1)) {
             continue;
         }
@@ -315,17 +310,14 @@ function pathExists(fromX, fromY, toX, toY, isPassable, options = {}) {
  */
 function getNextPathStep(fromX, fromY, toX, toY, isPassable, options = {}) {
     if (fromX === toX && fromY === toY) {
-        return null; // Already at target
+        return null;
     }
-
     const path = findPathAStar(fromX, fromY, toX, toY, isPassable, options);
-
-    // Path includes starting point, so next step is at index 1
     if (path.length > 1) {
         return path[1];
     }
 
-    return null; // No path found
+    return null;
 }
 
 /**
@@ -416,27 +408,30 @@ class DungeonEngine {
     async loadGlobalData() {
         try {
             // Load global entity definitions
-            const [actorsRes, itemsRes, personalitiesRes] = await Promise.all([
+            const [actorsRes, itemsRes, personalitiesRes, entitiesRes] = await Promise.all([
                 fetch('./data/actors.json'),
                 fetch('./data/items.json'),
-                fetch('./data/personalities.json')
+                fetch('./data/personalities.json'),
+                fetch('./data/entities.json')
             ]);
-            
+
             this.globalActors = await actorsRes.json();
             this.globalItems = await itemsRes.json();
             this.globalPersonalities = await personalitiesRes.json();
-            
+            this.globalEntities = await entitiesRes.json();
+
             console.log('Global data loaded:', {
                 actors: Object.keys(this.globalActors).length,
                 items: Object.keys(this.globalItems).length,
-                personalities: Object.keys(this.globalPersonalities).length
+                personalities: Object.keys(this.globalPersonalities).length,
+                entities: Object.keys(this.globalEntities).length
             });
         } catch (error) {
             console.error('Failed to load global data:', error);
-            // Set defaults so the game can still run
             this.globalActors = {};
             this.globalItems = {};
             this.globalPersonalities = {};
+            this.globalEntities = {};
         }
     }
     
@@ -517,10 +512,7 @@ class DungeonEngine {
     
     setupAnimationFrames() {
         this.animationFrames = {};
-
-        // Define animation sources - frame count calculated from texture width
         const animations = ['fire', 'smoke', 'fluid'];
-
         for (const name of animations) {
             this.animationFrames[name] = [];
             const baseTexture = PIXI.Loader.shared.resources[name].texture.baseTexture;
@@ -564,19 +556,11 @@ class DungeonEngine {
             }
         }
 
-        // Get turn speed from prototype config (default 50ms)
         this.turnSpeed = this.currentPrototype?.config.turn_speed ?? 50;
-
-        // Observer mode state (for play/pause when no controlled actors)
         this.observerPaused = false;
-
         console.log(`Turn engine initialized with ${this.scheduler._queue._events.length} scheduled actors`);
         console.log(`Observer mode: ${!this.hasControlledActor}, turn speed: ${this.turnSpeed}ms`);
-
-        // Start the engine
         this.turnEngine.start();
-
-        // In observer mode, start auto-advancing turns
         if (!this.hasControlledActor) {
             this.advanceObserverTurn();
         }
@@ -587,13 +571,9 @@ class DungeonEngine {
      */
     advanceObserverTurn() {
         if (this.observerPaused || this.hasControlledActor) return;
-
-        // Unlock to let one round of AI turns happen
         if (this.turnEngine && this.turnEngine._lock) {
             this.turnEngine.unlock();
         }
-
-        // Schedule next turn after delay
         setTimeout(() => this.advanceObserverTurn(), this.turnSpeed);
     }
 
@@ -617,24 +597,18 @@ class DungeonEngine {
     onControlledActorDied() {
         console.log('Controlled actor died - transitioning to observer mode');
         this.hasControlledActor = false;
-
-        // Unlock the engine (it was locked waiting for player input)
         if (this.turnEngine && this.turnEngine._lock) {
             this.turnEngine.unlock();
         }
-
-        // Check if there are any actors with behaviors still in the scheduler
         const hasActorsWithBehaviors = this.entityManager.actors.some(
             actor => !actor.isDead && actor.personality
         );
 
         if (hasActorsWithBehaviors) {
-            // Start observer mode auto-advance
             this.observerPaused = false;
             setTimeout(() => this.advanceObserverTurn(), this.turnSpeed);
         } else {
             console.log('No actors with behaviors remaining - game over');
-            // Could trigger a game over state here
         }
     }
 
@@ -656,44 +630,36 @@ class DungeonEngine {
         const fogOfWar = this.currentPrototype?.config.mechanics?.fog_of_war || false;
         this.renderer.updateDarkness(this.lightingManager, fogOfWar);
     }
-
-    // Audio helper methods
     playSound(soundName) {
         if (this.audioManager) {
             this.audioManager.play(soundName);
         }
     }
-
     playSoundVaried(soundName, volumeBase, volumeVariance, rateBase, rateVariance) {
         if (this.audioManager) {
             this.audioManager.playVaried(soundName, volumeBase, volumeVariance, rateBase, rateVariance);
         }
     }
-
     stopSound(soundName) {
         if (this.audioManager) {
             this.audioManager.stop(soundName);
         }
     }
-    
     muteAudio() {
         if (this.audioManager) {
             this.audioManager.mute();
         }
     }
-    
     unmuteAudio() {
         if (this.audioManager) {
             this.audioManager.unmute();
         }
     }
-    
     setAudioVolume(volume) {
         if (this.audioManager) {
             this.audioManager.setVolume(volume);
         }
     }
-    
     listAvailableSounds() {
         if (this.audioManager) {
             return this.audioManager.listSounds();
@@ -708,8 +674,6 @@ class DungeonEngine {
         await this.currentPrototype.loadAssets();
         this.mapManager = new MapManager(this);
         const hasAuthoredMap = await this.checkForAuthoredMap(prototypeName);
-
-        // Load authored map or generate procedural map
         if (hasAuthoredMap) {
             await this.mapManager.loadTiledMap(`prototypes/${prototypeName}/map.tmj`);
         } else {
@@ -721,33 +685,24 @@ class DungeonEngine {
 
         await this.initializeRenderer();
 
-        // Initialize entity manager
         this.entityManager = new EntityManager(this);
 
-        // Spawn entities from Tiled object layers (but skip player if we'll spawn at stairway)
         await this.entityManager.spawnEntities(this.currentPrototype.config, entryDirection);
-
-        // Process wildcards (spawns actors for fire, sewage, wall tiles, etc.)
         await this.mapManager.processWildcards();
 
-        // Spawn player at appropriate stairway based on entry direction
         this.spawnPlayerAtStairway(entryDirection);
 
-        // Spawn any actors created by wildcard/labyrinth processing (e.g., room walls, dungeon doors)
         this.mapManager.spawnPendingWalls();
         this.mapManager.spawnPendingDoors();
 
-        // Add diagonal shadows beneath floor tiles (only when darkness is disabled)
         if (!prototypeConfig.mechanics?.darkness) {
             this.mapManager.addBaseAndShadows();
         }
 
-        // Render the map and entities
         this.renderer.renderTestPattern(this.mapManager);
         this.renderer.renderItems(this.entityManager);
         this.renderer.renderActors(this.entityManager);
 
-        // Initialize lighting system if darkness is enabled
         if (prototypeConfig.mechanics?.darkness) {
             this.lightingManager = new LightingManager(this);
             this.lightingManager.initialize(
@@ -759,10 +714,9 @@ class DungeonEngine {
             this.updateLighting();
         }
 
-        // Initialize turn engine
+
         this.initializeTurnEngine();
 
-        // Play loaded sound if specified
         if (prototypeConfig.loaded_sound) {
             this.playSound(prototypeConfig.loaded_sound);
         }
@@ -852,7 +806,7 @@ class DungeonEngine {
 
         if (targetLevel) {
             console.log(`Using stairway ${direction} to ${targetLevel}`);
-            // Pass entry direction: descending means entering from above, ascending means entering from below
+
             const entryDirection = direction === 'down' ? 'from_above' : 'from_below';
             await this.transitionToPrototype(targetLevel, true, entryDirection);
         } else {
@@ -865,7 +819,7 @@ class DungeonEngine {
      * @param {string|null} entryDirection - 'from_above', 'from_below', or null for direct load
      */
     spawnPlayerAtStairway(entryDirection) {
-        // If player was already spawned from the map, don't spawn another
+
         if (this.entityManager.player) {
             console.log('Player already exists from map, skipping stairway spawn');
             return;
@@ -881,11 +835,9 @@ class DungeonEngine {
         } else if (entryDirection === 'from_below') {
             targetStairwayType = 'down';
         } else {
-            // Direct load - try up_stairway first
             targetStairwayType = 'up';
         }
 
-        // Find the stairway actor
         const stairway = this.entityManager.findActorByAttribute('stairway', targetStairwayType);
 
         if (stairway) {
@@ -899,7 +851,6 @@ class DungeonEngine {
                 console.error('No player actor data found in prototype');
             }
         } else if (entryDirection === null) {
-            // Direct load with no up stairway - player should be in the map
             console.log('No up stairway found, expecting player to be placed in map');
         } else {
             console.warn(`No ${targetStairwayType} stairway found to spawn player at`);
@@ -942,12 +893,10 @@ class DungeonEngine {
             this.renderer.clear();
         }
 
-        // Clear UI elements
         if (this.interfaceManager) {
             this.interfaceManager.clear();
         }
 
-        // Destroy the PIXI application and remove the canvas
         if (this.app) {
             this.app.destroy(true, { children: true, texture: false, baseTexture: false });
             this.app = null;
@@ -955,7 +904,6 @@ class DungeonEngine {
             this.interfaceManager = null;
         }
 
-        // Clear lighting manager
         if (this.lightingManager) {
             this.lightingManager = null;
         }
@@ -975,12 +923,10 @@ class Prototype {
     }
     
     async loadAssets() {
-        // Load prototype-specific overrides
+
         const prototypeActors = await this.loadJSON('actors.json', {});
         const prototypeItems = await this.loadJSON('items.json', {});
         const prototypePersonalities = await this.loadJSON('personalities.json', {});
-        
-        // Merge with globals (prototype overrides global)
         this.actors = { ...this.engine.globalActors, ...prototypeActors };
         this.items = { ...this.engine.globalItems, ...prototypeItems };
         this.personalities = { ...this.engine.globalPersonalities, ...prototypePersonalities };
@@ -1030,7 +976,6 @@ class Entity {
         this.zIndex = 1;
     }
     
-    // Attribute management
     setAttribute(key, value) {
         this.attributes.set(key, value);
     }
@@ -1044,7 +989,6 @@ class Entity {
         return this.attributes.has(key) && this.attributes.get(key);
     }
     
-    // Position
     updatePosition(newX, newY) {
         this.x = newX;
         this.y = newY;
@@ -1057,7 +1001,6 @@ class Entity {
         // Override in subclasses
     }
     
-    // Serialization
     serialize() {
         return {
             x: this.x,
@@ -1081,19 +1024,11 @@ class Item extends Entity {
     constructor(x, y, type, data, engine) {
         super(x, y, type, engine);
         this.name = data.name || type;
-
-        // Resolve tile index - support both {x, y} format and string names
         this.tileIndex = engine.spriteLibrary.resolveTile(data.tileIndex) || {x: 0, y: 0};
         this.height = 1;
-
-        // Load tint value (supports number or "#RRGGBB" string format)
         this.tint = parseTint(data.tint);
-
-        // Default item attributes
         this.setAttribute('pickupable', true);
         this.setAttribute('visible', true);
-
-        // Apply data attributes
         if (data.attributes) {
             Object.entries(data.attributes).forEach(([key, value]) => {
                 this.setAttribute(key, value);
@@ -1102,7 +1037,6 @@ class Item extends Entity {
     }
     
     use(actor) {
-        // Override in item-specific logic
         console.log(`${actor.name} used ${this.name}`);
     }
 }
@@ -1111,20 +1045,14 @@ class Actor extends Entity {
     constructor(x, y, type, data, engine) {
         super(x, y, type, engine);
         this.name = data.name || type;
-        this.height = 2; // Actors are 2-tile (base + top)
-
-        // Load tint value (supports number or "#RRGGBB" string format)
+        this.height = 2;
         this.tint = parseTint(data.tint);
         this.flickerTint = data.flickerTint || false;
-
-        // Vision range for FOV calculation
         this.visionRange = data.vision_range ?? 8;
 
-        // Base tile - can be static (tileIndexBase) or animated (animationBase)
         this.tileIndexBase = engine.spriteLibrary.resolveTile(data.tileIndexBase) || null;
         this.animationBase = data.animationBase || null;
 
-        // Top tile - can be static (tileIndexTop) or animated (animationTop)
         this.tileIndexTop = engine.spriteLibrary.resolveTile(data.tileIndexTop) || null;
         this.animationTop = data.animationTop || null;
 
@@ -1133,20 +1061,14 @@ class Actor extends Entity {
             this.animationBase = data.animation_frames;
         }
 
-        // Flip properties for base and top sprites
         this.flipBaseH = data.flipBaseH || false;
         this.flipBaseV = data.flipBaseV || false;
         this.flipTopH = data.flipTopH || false;
         this.flipTopV = data.flipTopV || false;
 
-        // Sprite references (will be set by renderer)
         this.spriteBase = null;
         this.spriteTop = null;
 
-        // Equipment slots and their sprites
-        // top: above actor's top tile (y - 2), for crowns, horns, halos
-        // middle: on actor's top tile (y - 1), for helmets, masks
-        // lower: on actor's base tile (y), for armor, cloaks
         this.equipment = {
             top: null,
             middle: null,
@@ -1158,7 +1080,7 @@ class Actor extends Entity {
             lower: null
         };
         
-        // Stats (from prototype config)
+
         this.stats = {};
         if (engine.currentPrototype && engine.currentPrototype.config.stats) {
             Object.entries(engine.currentPrototype.config.stats).forEach(([stat, config]) => {
@@ -1166,11 +1088,8 @@ class Actor extends Entity {
             });
         }
         
-        // Inventory - uses the 'inventory' attribute to determine max capacity
-        // If no inventory attribute, actor cannot pick up items
         this.inventory = [];
-        
-        // Personality (for AI actors)
+
         this.personality = null;
         if (data.personality) {
             this.loadPersonality(data.personality);
@@ -1196,7 +1115,7 @@ class Actor extends Entity {
 
         this.isDead = false;
 
-        // Store default items to be loaded after spawn
+
         this.defaultItems = data.default_items || [];
     }
 
@@ -1214,10 +1133,9 @@ class Actor extends Entity {
                 continue;
             }
 
-            // Create the item (not placed on map)
+
             const item = new Item(-1, -1, itemType, itemData, this.engine);
 
-            // Add directly to inventory
             this.inventory.push(item);
             console.log(`${this.name} starts with ${item.name}`);
 
@@ -1342,6 +1260,12 @@ class Actor extends Entity {
         // Drop items (if not already dropped by fall())
         if (this.inventory.length > 0) {
             this.dropItems(false);
+        }
+
+        // Spawn remains entity if specified
+        const remains = this.getAttribute('remains');
+        if (remains) {
+            this.engine.entityManager.spawnEntity(remains, this.x, this.y);
         }
 
         if (this.spriteBase) {
@@ -2239,6 +2163,57 @@ const BehaviorLibrary = {
         if (actor.tryMove(actor.x - dy, actor.y - dx)) return true;
 
         return false;
+    },
+
+    /**
+     * Incinerate any entities (actors or items) sharing this actor's tile
+     * Spawns a replacement actor (e.g., fire) in their place
+     */
+    incinerate_entities: (actor, data) => {
+        const entityManager = actor.engine.entityManager;
+        const spawnType = data.spawn_on_incinerate || 'fire';
+        const liquidSpawnType = data.spawn_on_liquid_incinerate || 'smoke';
+        let incinerated = false;
+
+        // Find other actors at this position
+        for (const other of entityManager.actors) {
+            if (other === actor) continue;
+            if (other.isDead) continue;
+            if (other.x !== actor.x || other.y !== actor.y) continue;
+
+            const isSolid = other.hasAttribute('solid');
+            const isLiquid = other.hasAttribute('liquid');
+
+            // Only incinerate solid actors or liquids
+            if (!isSolid && !isLiquid) continue;
+
+            console.log(`${actor.name} incinerates ${other.name}!`);
+            other.die();
+
+            // Spawn replacement actor - smoke for liquids, fire for solids
+            if (isLiquid && liquidSpawnType) {
+                entityManager.spawnActor(liquidSpawnType, other.x, other.y);
+                actor.engine.playSound?.('match');
+            } else if (isSolid && spawnType) {
+                entityManager.spawnActor(spawnType, other.x, other.y);
+                actor.engine.playSound?.('fireball');
+            }
+
+            incinerated = true;
+        }
+
+        // Find items at this position
+        const itemsAtPosition = entityManager.items.filter(
+            item => item.x === actor.x && item.y === actor.y
+        );
+
+        for (const item of itemsAtPosition) {
+            console.log(`${actor.name} incinerates ${item.name}!`);
+            entityManager.removeEntity(item);
+            incinerated = true;
+        }
+
+        return incinerated;
     }
 };
 
@@ -2436,7 +2411,75 @@ class EntityManager {
         }
         return null;
     }
-    
+
+    /**
+     * Spawn an actor from actors.json at a given position
+     * @param {string} actorType - The actor type key from actors.json
+     * @param {number} x - X coordinate
+     * @param {number} y - Y coordinate
+     * @returns {Actor|null} The spawned actor or null if type not found
+     */
+    spawnActor(actorType, x, y) {
+        const actorData = this.engine.currentPrototype?.getActorData(actorType);
+        if (!actorData) {
+            console.warn(`Actor type '${actorType}' not found in actors.json`);
+            return null;
+        }
+
+        const actor = new Actor(x, y, actorType, actorData, this.engine);
+        this.addEntity(actor);
+        actor.loadDefaultItems();
+
+        // Create sprites if renderer exists
+        if (this.engine.renderer) {
+            this.engine.renderer.createActorSprites(actor);
+        }
+
+        return actor;
+    }
+
+    /**
+     * Spawn a decorative entity from entities.json
+     * @param {string} entityType - The entity type key from entities.json
+     * @param {number} x - X coordinate
+     * @param {number} y - Y coordinate
+     * @returns {Entity|null} The spawned entity or null if type not found
+     */
+    spawnEntity(entityType, x, y) {
+        const entityData = this.engine.globalEntities?.[entityType];
+        if (!entityData) {
+            console.warn(`Entity type '${entityType}' not found in entities.json`);
+            return null;
+        }
+
+        const entity = new Entity(x, y, entityType, this.engine);
+        entity.name = entityData.name || entityType;
+
+        // Set tint
+        entity.tint = parseTint(entityData.tint);
+
+        // Set fill color if specified (for entities like blood that are just colored fills)
+        entity.fillColor = entityData.fillColor ? parseTint(entityData.fillColor) : null;
+
+        // Resolve tile index
+        entity.tileIndex = this.engine.spriteLibrary.resolveTile(entityData.tileIndex);
+
+        // Apply attributes
+        if (entityData.attributes) {
+            for (const [key, value] of Object.entries(entityData.attributes)) {
+                entity.setAttribute(key, value);
+            }
+        }
+
+        // Create sprite
+        this.engine.renderer?.createEntitySprite(entity);
+
+        // Add to entities list
+        this.entities.push(entity);
+
+        return entity;
+    }
+
     serializeEntities() {
         return this.entities.map(e => e.serialize());
     }
@@ -3397,6 +3440,48 @@ class RenderSystem {
     }
 
     /**
+     * Create sprites for a single actor (used when spawning actors dynamically)
+     * @param {Actor} actor - The actor to create sprites for
+     */
+    createActorSprites(actor) {
+        if (!actor.hasAttribute('visible')) return;
+
+        // Render base sprite (static or animated)
+        actor.spriteBase = this.createActorSprite(
+            actor,
+            actor.tileIndexBase,
+            actor.animationBase,
+            actor.x * globalVars.TILE_WIDTH,
+            actor.y * globalVars.TILE_HEIGHT,
+            10, // zIndex
+            { flipH: actor.flipBaseH, flipV: actor.flipBaseV }
+        );
+
+        // Render top sprite (static or animated) - one tile above
+        actor.spriteTop = this.createActorSprite(
+            actor,
+            actor.tileIndexTop,
+            actor.animationTop,
+            actor.x * globalVars.TILE_WIDTH,
+            (actor.y - 1) * globalVars.TILE_HEIGHT,
+            11, // zIndex
+            { flipH: actor.flipTopH, flipV: actor.flipTopV }
+        );
+
+        // Render equipment sprites for each slot
+        for (const slot of ['top', 'middle', 'lower']) {
+            const equippedItem = actor.getEquippedItem(slot);
+            if (equippedItem) {
+                actor.spriteEquipment[slot] = this.createEquipmentSprite(
+                    actor,
+                    equippedItem,
+                    slot
+                );
+            }
+        }
+    }
+
+    /**
      * Create a sprite for an actor tile (base or top)
      * @param {Actor} actor - The actor this sprite belongs to
      * @param {Object|null} tileIndex - Static tile coordinates {x, y} or null
@@ -3478,6 +3563,57 @@ class RenderSystem {
 
         // No sprite to render
         return null;
+    }
+
+    /**
+     * Create a sprite for a decorative entity
+     * @param {Entity} entity - The entity to create a sprite for
+     */
+    createEntitySprite(entity) {
+        const tileset = PIXI.Loader.shared.resources.tiles;
+        const x = entity.x * globalVars.TILE_WIDTH;
+        const y = entity.y * globalVars.TILE_HEIGHT;
+        const zIndex = 5; // Below actors (10) but above floor
+
+        // If entity has a fill color, create a colored rectangle
+        if (entity.fillColor !== null && entity.fillColor !== undefined) {
+            const graphics = new PIXI.Graphics();
+            graphics.beginFill(entity.fillColor);
+            graphics.drawRect(0, 0, globalVars.TILE_WIDTH, globalVars.TILE_HEIGHT);
+            graphics.endFill();
+            graphics.x = x;
+            graphics.y = y;
+            graphics.zIndex = zIndex;
+
+            this.entityContainer.addChild(graphics);
+            entity.sprite = graphics;
+        }
+
+        // If entity has a tile index, create a sprite on top of any fill
+        if (entity.tileIndex) {
+            const rect = new PIXI.Rectangle(
+                entity.tileIndex.x * globalVars.TILE_WIDTH,
+                entity.tileIndex.y * globalVars.TILE_HEIGHT,
+                globalVars.TILE_WIDTH,
+                globalVars.TILE_HEIGHT
+            );
+            const texture = new PIXI.Texture(tileset.texture.baseTexture, rect);
+            const sprite = new PIXI.Sprite(texture);
+
+            sprite.x = x;
+            sprite.y = y;
+            sprite.zIndex = zIndex + 1; // Slightly above fill
+            sprite.tint = entity.tint;
+
+            this.entityContainer.addChild(sprite);
+
+            // If we already have a fill sprite, store tile sprite separately
+            if (entity.sprite) {
+                entity.tileSprite = sprite;
+            } else {
+                entity.sprite = sprite;
+            }
+        }
     }
 
     /**
@@ -3844,6 +3980,12 @@ class InputManager {
     handleKeyDown(event) {
         if (!this.enabled) return;
 
+        // Check if confirmation dialog wants to handle this key first
+        if (this.engine.interfaceManager?.handleConfirmKey(event.key)) {
+            event.preventDefault();
+            return;
+        }
+
         // Check if interface manager wants to handle this key (inventory interaction)
         if (this.engine.interfaceManager?.handleInventoryKey(event.key)) {
             event.preventDefault();
@@ -3887,6 +4029,30 @@ class InputManager {
         // Handle movement actions
         if (this.directions[action]) {
             const dir = this.directions[action];
+            const targetX = player.x + dir.dx;
+            const targetY = player.y + dir.dy;
+
+            // Check for hazards that need confirmation
+            const hazardCheck = this.checkMovementHazard(player, targetX, targetY);
+            if (hazardCheck) {
+                // Show confirmation dialog
+                this.engine.interfaceManager?.showConfirmDialog(
+                    hazardCheck.message,
+                    () => {
+                        // On confirm - execute the move
+                        const moved = player.moveBy(dir.dx, dir.dy);
+                        if (moved) {
+                            this.engine.playSoundVaried('feets', 0.4, 0.1, 1.0, 0.06);
+                            this.onPlayerAction();
+                        }
+                    },
+                    () => {
+                        // On cancel - do nothing
+                    }
+                );
+                return;
+            }
+
             const moved = player.moveBy(dir.dx, dir.dy);
             if (moved) {
                 this.engine.playSoundVaried('feets', 0.4, 0.1, 1.0, 0.06);
@@ -3926,6 +4092,37 @@ class InputManager {
         if (this.engine.turnEngine && this.engine.turnEngine._lock) {
             this.engine.turnEngine.unlock();
         }
+    }
+
+    /**
+     * Check if moving to a position would trigger a hazard warning
+     * @param {Actor} player - The player actor
+     * @param {number} targetX - Target X coordinate
+     * @param {number} targetY - Target Y coordinate
+     * @returns {{message: string}|null} Hazard info or null if safe
+     */
+    checkMovementHazard(player, targetX, targetY) {
+        const entityManager = this.engine.entityManager;
+
+        // Check for void (no floor)
+        if (!player.hasFloorAt(targetX, targetY)) {
+            return { message: "Dive into the depths?" };
+        }
+
+        // Check for lava_behavior actors at target position
+        if (!player.hasAttribute('fireproof')) {
+            for (const actor of entityManager.actors) {
+                if (actor.x !== targetX || actor.y !== targetY) continue;
+                if (actor.isDead) continue;
+
+                // Check if actor has lava_behavior personality
+                if (actor.personality?.name === 'Lava') {
+                    return { message: `Really step into ${actor.name}?` };
+                }
+            }
+        }
+
+        return null; // No hazard
     }
 
     enable() {

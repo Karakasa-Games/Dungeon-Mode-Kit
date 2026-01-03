@@ -26,7 +26,7 @@
 
   "sword": {
     "name": "Sword",
-    "tileIndex": "UP_ARROW",
+    "tileIndex": "UPWARDS_ARROW",
     "attributes": {
       "pickupable": true,
       "visible": true,

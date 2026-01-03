@@ -47,5 +47,14 @@
       "flee_from_danger"
     ],
     "flee_threshold": 3
+  },
+
+  "lava_behavior": {
+    "name": "Lava",
+    "hostile": false,
+    "behaviors": [
+      "incinerate_entities"
+    ],
+    "spawn_on_incinerate": "fire"
   }
 }
