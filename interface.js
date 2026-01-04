@@ -520,13 +520,11 @@ class InterfaceManager {
             this.removeBox(infoBoxId);
         }
 
-        // Gather stats (numerical attributes from stats object)
+        // Gather stats
         const stats = [];
         if (player.stats) {
             for (const [key, value] of Object.entries(player.stats)) {
-                if (typeof value === 'number') {
-                    stats.push(`${this.capitalize(key)}: ${value}`);
-                }
+                stats.push(`${this.capitalize(key)}: ${JSON.stringify(value)}`) //String.value results in [Object Object], but this adds unwanted quotes.
             }
         }
 
@@ -548,8 +546,8 @@ class InterfaceManager {
         // Build lines for the info box
         const lines = [];
         lines.push(player.name);
-        lines.push(''); // blank line
-
+        lines.push('');
+        // change this to thermometer ui with max stat as LIGHT_SHADE blocks and FULL_BLOCK for current stat. can divide stats by 10 to get number of tiles
         if (stats.length > 0) {
             lines.push('Stats:');
             for (const stat of stats) {
@@ -558,7 +556,7 @@ class InterfaceManager {
         }
 
         if (inventoryItems.length > 0) {
-            if (stats.length > 0) lines.push(''); // blank line between sections
+            if (stats.length > 0) lines.push('');
             lines.push('Inventory:');
             for (const item of inventoryItems) {
                 lines.push('  ' + item);
