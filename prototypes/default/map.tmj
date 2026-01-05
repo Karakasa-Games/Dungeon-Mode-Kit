@@ -298,6 +298,28 @@
                  "width":40,
                  "x":1040,
                  "y":480
+                }, 
+                {
+                 "height":30,
+                 "id":34,
+                 "name":"Wall",
+                 "rotation":0,
+                 "type":"pushable_wall",
+                 "visible":true,
+                 "width":40,
+                 "x":760,
+                 "y":540
+                }, 
+                {
+                 "height":30,
+                 "id":35,
+                 "name":"Wall",
+                 "rotation":0,
+                 "type":"pushable_wall",
+                 "visible":true,
+                 "width":40,
+                 "x":800,
+                 "y":450
                 }],
          "opacity":1,
          "type":"objectgroup",
@@ -372,7 +394,7 @@
          "y":0
         }],
  "nextlayerid":7,
- "nextobjectid":34,
+ "nextobjectid":36,
  "orientation":"orthogonal",
  "renderorder":"right-down",
  "tiledversion":"1.11.2",

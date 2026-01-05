@@ -1032,6 +1032,8 @@ class Item extends Entity {
         this.tileIndex = engine.spriteLibrary.resolveTile(data.tileIndex) || {x: 0, y: 0};
         this.height = 1;
         this.tint = parseTint(data.tint);
+        this.flipH = data.flipH || false;
+        this.flipV = data.flipV || false;
         this.setAttribute('pickupable', true);
         this.setAttribute('visible', true);
         if (data.attributes) {
@@ -1040,7 +1042,7 @@ class Item extends Entity {
             });
         }
     }
-    
+
     use(actor) {
         console.log(`${actor.name} used ${this.name}`);
     }
@@ -1115,6 +1117,17 @@ class Actor extends Entity {
             Object.entries(data.attributes).forEach(([key, value]) => {
                 this.setAttribute(key, value);
             });
+        }
+
+        // Load top-level behavior properties as attributes
+        if (data.collision_effect) {
+            this.setAttribute('collision_effect', data.collision_effect);
+        }
+        if (data.collision_sound) {
+            this.setAttribute('collision_sound', data.collision_sound);
+        }
+        if (data.death_sound) {
+            this.setAttribute('death_sound', data.death_sound);
         }
 
         // State for openable/interactive actors (doors, chests, etc.)
@@ -1271,6 +1284,12 @@ class Actor extends Entity {
     die(spawnRemains = true) {
         this.isDead = true;
         this.setAttribute('solid', false);
+
+        // Play death sound if specified
+        const deathSound = this.getAttribute('death_sound');
+        if (deathSound) {
+            this.engine.playSound?.(deathSound);
+        }
 
         // Drop items (if not already dropped by fall())
         if (this.inventory.length > 0) {
@@ -1578,23 +1597,38 @@ class Actor extends Entity {
     /**
      * Execute an item's use effect
      * @param {Item} item - The item being used
-     * @param {string} effect - The effect identifier
+     * @param {string|object} effect - The effect identifier (string) or stat modifiers (object)
      * @returns {boolean} True if effect executed successfully
      */
     executeItemEffect(item, effect) {
+        // Handle object format: { "health": 20, "nutrition": 10 } for direct stat modification
+        if (typeof effect === 'object') {
+            let anyStatModified = false;
+            for (const [statName, amount] of Object.entries(effect)) {
+                if (this.stats[statName] !== undefined) {
+                    // Stats are stored as { max, current } objects
+                    if (typeof this.stats[statName] === 'object') {
+                        const oldValue = this.stats[statName].current;
+                        this.stats[statName].current = Math.min(
+                            this.stats[statName].max,
+                            Math.max(0, this.stats[statName].current + amount)
+                        );
+                        console.log(`${this.name}'s ${statName}: ${oldValue} -> ${this.stats[statName].current}`);
+                    } else {
+                        // Simple number stat
+                        this.stats[statName] += amount;
+                        console.log(`${this.name}'s ${statName} modified by ${amount}`);
+                    }
+                    anyStatModified = true;
+                } else {
+                    console.log(`${this.name} has no ${statName} stat to modify`);
+                }
+            }
+            return anyStatModified;
+        }
+
+        // Handle string format: method name for complex effects
         switch (effect) {
-            case 'restore_health':
-                const healthAmount = item.getAttribute('restore_amount') || 10;
-                // TODO: Implement health restoration when stats system is ready
-                console.log(`${this.name} restored ${healthAmount} health`);
-                return true;
-
-            case 'restore_strength':
-                const strengthAmount = item.getAttribute('restore_amount') || 5;
-                // TODO: Implement strength restoration when stats system is ready
-                console.log(`${this.name} restored ${strengthAmount} strength`);
-                return true;
-
             default:
                 console.log(`Unknown item effect: ${effect}`);
                 return false;
@@ -1623,43 +1657,70 @@ class Actor extends Entity {
         let effectApplied = false;
         let targetPassable = false;
 
-        // Gather effect sources: actor's own effect first, then items
+        // Gather all effect sources: items first, then actor's own effect (unarmed)
         const sources = [];
-        const actorEffect = this.getAttribute('collision_effect');
-        if (actorEffect) {
-            sources.push({ name: this.name, effect: actorEffect });
-        }
         for (const item of this.inventory) {
             const itemEffect = item.getAttribute('collision_effect');
             if (itemEffect) {
-                sources.push({ name: item.name, effect: itemEffect });
+                sources.push({ name: item.name, effect: itemEffect, sound: item.getAttribute('collision_sound') });
             }
         }
+        const actorEffect = this.getAttribute('collision_effect');
+        if (actorEffect) {
+            sources.push({ name: this.name, effect: actorEffect, sound: this.getAttribute('collision_sound') });
+        }
 
-        // Apply effects from first source
+        // Apply effects from ALL sources (stacking)
         for (const source of sources) {
+            let sourceApplied = false;
+
             // Apply each effect in the collision_effect object
-            for (const [attr, value] of Object.entries(source.effect)) {
-                // Check if target has this attribute
-                const currentValue = target.getAttribute(attr);
+            for (const [key, value] of Object.entries(source.effect)) {
+                // Auto-detect: check stats first, then attributes
+                // Stats priority - check if target has this as a stat
+                if (target.stats && target.stats[key] !== undefined) {
+                    const stat = target.stats[key];
+                    if (typeof stat === 'object' && stat.current !== undefined) {
+                        // Stats stored as { max, current }
+                        const oldValue = stat.current;
+                        stat.current = Math.max(0, stat.current + value);
+                        console.log(`${source.name}: ${target.name}'s ${key} ${value >= 0 ? '+' : ''}${value} (${oldValue} -> ${stat.current})`);
+                        sourceApplied = true;
+
+                        // Check if this killed the target
+                        if (key === 'health' && stat.current <= 0) {
+                            target.die();
+                            targetPassable = true;
+                        }
+                    } else if (typeof stat === 'number') {
+                        // Simple number stat
+                        target.stats[key] += value;
+                        console.log(`${source.name}: ${target.name}'s ${key} ${value >= 0 ? '+' : ''}${value}`);
+                        sourceApplied = true;
+                    }
+                    continue;
+                }
+
+                // Fall back to attributes
+                const currentValue = target.getAttribute(key);
 
                 // Handle special "toggle" value
                 if (value === 'toggle') {
                     if (currentValue !== undefined) {
-                        target.setAttribute(attr, !currentValue);
-                        console.log(`${source.name}: toggled ${target.name}'s ${attr} to ${!currentValue}`);
-                        effectApplied = true;
+                        target.setAttribute(key, !currentValue);
+                        console.log(`${source.name}: toggled ${target.name}'s ${key} to ${!currentValue}`);
+                        sourceApplied = true;
                     }
                 }
                 // Handle numeric values (add/subtract)
                 else if (typeof value === 'number' && typeof currentValue === 'number') {
                     const newValue = currentValue + value;
-                    target.setAttribute(attr, newValue);
-                    console.log(`${source.name}: ${target.name}'s ${attr} ${value >= 0 ? '+' : ''}${value} (now ${newValue})`);
-                    effectApplied = true;
+                    target.setAttribute(key, newValue);
+                    console.log(`${source.name}: ${target.name}'s ${key} ${value >= 0 ? '+' : ''}${value} (now ${newValue})`);
+                    sourceApplied = true;
 
                     // Check if this killed the target (health reached 0 or below)
-                    if (attr === 'health' && newValue <= 0) {
+                    if (key === 'health' && newValue <= 0) {
                         target.die();
                         targetPassable = true;
                     }
@@ -1668,12 +1729,12 @@ class Actor extends Entity {
                 else if (typeof value === 'boolean') {
                     // Only apply if target has the attribute
                     if (currentValue !== undefined) {
-                        target.setAttribute(attr, value);
-                        console.log(`${source.name}: set ${target.name}'s ${attr} to ${value}`);
-                        effectApplied = true;
+                        target.setAttribute(key, value);
+                        console.log(`${source.name}: set ${target.name}'s ${key} to ${value}`);
+                        sourceApplied = true;
 
                         // Check if setting locked to false should open something
-                        if (attr === 'locked' && value === false && target.hasAttribute('openable')) {
+                        if (key === 'locked' && value === false && target.hasAttribute('openable')) {
                             target.open();
                             this.engine.updateLighting();
                             // Door is now open, can pass through
@@ -1683,8 +1744,18 @@ class Actor extends Entity {
                 }
             }
 
-            // If any effect was applied, break (use first matching source)
-            if (effectApplied) break;
+            // Play collision sound if this source applied any effect
+            if (sourceApplied) {
+                effectApplied = true;
+                if (source.sound) {
+                    this.engine.playSound(source.sound);
+                }
+            }
+        }
+
+        // Flash the target for visual feedback if any effect was applied
+        if (effectApplied && target.flash) {
+            target.flash();
         }
 
         return { effectApplied, targetPassable };
@@ -1700,6 +1771,39 @@ class Actor extends Entity {
         }
         const tile = this.engine.mapManager.floorMap[y][x];
         return tile && tile.tileId;
+    }
+
+    /**
+     * Check if an actor can be pushed to a position
+     * @param {number} x - Target X coordinate
+     * @param {number} y - Target Y coordinate
+     * @returns {boolean} True if position is valid for pushing
+     */
+    canPushTo(x, y) {
+        // Check bounds
+        if (x < 0 || x >= this.engine.mapManager.width ||
+            y < 0 || y >= this.engine.mapManager.height) {
+            return false;
+        }
+
+        // Check for floor
+        if (!this.hasFloorAt(x, y)) {
+            return false;
+        }
+
+        // Check for walls
+        const wallTile = this.engine.mapManager.wallMap[y][x];
+        if (wallTile !== null) {
+            return false;
+        }
+
+        // Check for blocking actors
+        const actorAt = this.engine.entityManager.getActorAt(x, y);
+        if (actorAt && actorAt.hasAttribute('solid')) {
+            return false;
+        }
+
+        return true;
     }
 
     /**
@@ -1799,16 +1903,53 @@ class Actor extends Entity {
     }
 
     // Movement methods
+    /**
+     * Attempt to move to a new position
+     * @param {number} newX - Target X coordinate
+     * @param {number} newY - Target Y coordinate
+     * @returns {{moved: boolean, actionTaken: boolean}} moved=position changed, actionTaken=turn should be consumed
+     */
     tryMove(newX, newY) {
         // Check bounds
         if (newX < 0 || newX >= this.engine.mapManager.width ||
             newY < 0 || newY >= this.engine.mapManager.height) {
-            return false;
+            return { moved: false, actionTaken: false };
         }
 
         // Check for blocking actors
         const actorAtTarget = this.engine.entityManager.getActorAt(newX, newY);
         if (actorAtTarget && actorAtTarget.hasAttribute('solid')) {
+            // Check if actor can be pushed
+            if (actorAtTarget.hasAttribute('pushable')) {
+                const dx = newX - this.x;
+                const dy = newY - this.y;
+                const pushX = newX + dx;
+                const pushY = newY + dy;
+
+                // Check if the push destination is valid
+                const canPush = this.canPushTo(pushX, pushY);
+                if (canPush) {
+                    // Push the actor
+                    actorAtTarget.x = pushX;
+                    actorAtTarget.y = pushY;
+                    actorAtTarget.updateSpritePosition();
+                    console.log(`${this.name} pushes ${actorAtTarget.name}`);
+
+                    // Now move into the vacated space
+                    this.x = newX;
+                    this.y = newY;
+                    this.updateSpritePosition();
+
+                    // Update lighting if needed
+                    if (this.hasAttribute('controlled') || this.hasAttribute('light_source')) {
+                        this.engine.updateLighting();
+                    }
+
+                    return { moved: true, actionTaken: true };
+                }
+                // Can't push - fall through to normal blocking behavior
+            }
+
             // Apply collision effects from held items
             const collisionResult = this.applyCollisionEffects(actorAtTarget);
 
@@ -1820,15 +1961,22 @@ class Actor extends Entity {
 
             // Check if actor can be opened (doors, chests, etc.)
             if (actorAtTarget.hasAttribute('openable') && !actorAtTarget.state?.open) {
+                // Check if locked - play tap sound and block
+                if (actorAtTarget.state?.locked) {
+                    console.log(`${actorAtTarget.name} is locked`);
+                    this.engine.playSound?.('tap1');
+                    return { moved: false, actionTaken: false };
+                }
                 actorAtTarget.open();
                 this.engine.updateLighting();
-                return false;
+                return { moved: false, actionTaken: true };
             }
 
             if (!collisionResult.effectApplied) {
                 console.log(`${this.name} blocked by ${actorAtTarget.name}`);
             }
-            return false;
+            // Effect applied = action taken (attack), even though we didn't move
+            return { moved: false, actionTaken: collisionResult.effectApplied };
         }
 
         // Check for floor tile - if no floor, actor falls
@@ -1838,7 +1986,7 @@ class Actor extends Entity {
             this.y = newY;
             this.updateSpritePosition();
             this.fall();
-            return true; // Move happened, actor just died
+            return { moved: true, actionTaken: true }; // Move happened, actor just died
         }
 
         // Move successful
@@ -1862,7 +2010,7 @@ class Actor extends Entity {
                     this.engine.turnEngine.lock();
                 }
                 this.engine.useStairway(direction);
-                return true; // Exit early, transition handles everything
+                return { moved: true, actionTaken: true }; // Exit early, transition handles everything
             }
         }
 
@@ -1876,7 +2024,7 @@ class Actor extends Entity {
             this.engine.interfaceManager.onPlayerMove();
         }
 
-        return true;
+        return { moved: true, actionTaken: true };
     }
 
     moveBy(dx, dy) {
@@ -1908,6 +2056,39 @@ class Actor extends Entity {
             this.spriteEquipment.lower.x = this.x * globalVars.TILE_WIDTH;
             this.spriteEquipment.lower.y = this.y * globalVars.TILE_HEIGHT;
         }
+    }
+
+    /**
+     * Flash the actor's sprites with color inversion for visual feedback
+     * @param {number} duration - Duration of flash in milliseconds (default 100)
+     */
+    flash(duration = 100) {
+        // Create invert color matrix filter
+        const invertFilter = new PIXI.filters.ColorMatrixFilter();
+        invertFilter.negative();
+
+        // Collect all sprites to flash
+        const sprites = [];
+        if (this.spriteBase) sprites.push(this.spriteBase);
+        if (this.spriteTop) sprites.push(this.spriteTop);
+        if (this.spriteEquipment.top) sprites.push(this.spriteEquipment.top);
+        if (this.spriteEquipment.middle) sprites.push(this.spriteEquipment.middle);
+        if (this.spriteEquipment.lower) sprites.push(this.spriteEquipment.lower);
+
+        // Apply filter to all sprites
+        for (const sprite of sprites) {
+            sprite.filters = sprite.filters ? [...sprite.filters, invertFilter] : [invertFilter];
+        }
+
+        // Remove filter after duration
+        setTimeout(() => {
+            for (const sprite of sprites) {
+                if (sprite.filters) {
+                    sprite.filters = sprite.filters.filter(f => f !== invertFilter);
+                    if (sprite.filters.length === 0) sprite.filters = null;
+                }
+            }
+        }, duration);
     }
 
     /**
@@ -1987,7 +2168,8 @@ class Actor extends Entity {
 
         if (nextStep) {
             // Found a path - try to move to next step
-            return this.tryMove(nextStep.x, nextStep.y);
+            const result = this.tryMove(nextStep.x, nextStep.y);
+            return result.moved || result.actionTaken;
         }
 
         // No path found - fall back to simple directional movement
@@ -1997,15 +2179,30 @@ class Actor extends Entity {
 
         // Try to move in both directions, prefer the larger distance
         if (Math.abs(targetX - this.x) > Math.abs(targetY - this.y)) {
-            if (dx !== 0 && this.tryMove(this.x + dx, this.y)) return true;
-            if (dy !== 0 && this.tryMove(this.x, this.y + dy)) return true;
+            if (dx !== 0) {
+                const result = this.tryMove(this.x + dx, this.y);
+                if (result.moved || result.actionTaken) return true;
+            }
+            if (dy !== 0) {
+                const result = this.tryMove(this.x, this.y + dy);
+                if (result.moved || result.actionTaken) return true;
+            }
         } else {
-            if (dy !== 0 && this.tryMove(this.x, this.y + dy)) return true;
-            if (dx !== 0 && this.tryMove(this.x + dx, this.y)) return true;
+            if (dy !== 0) {
+                const result = this.tryMove(this.x, this.y + dy);
+                if (result.moved || result.actionTaken) return true;
+            }
+            if (dx !== 0) {
+                const result = this.tryMove(this.x + dx, this.y);
+                if (result.moved || result.actionTaken) return true;
+            }
         }
 
         // Try diagonal movement as last resort
-        if (dx !== 0 && dy !== 0 && this.tryMove(this.x + dx, this.y + dy)) return true;
+        if (dx !== 0 && dy !== 0) {
+            const result = this.tryMove(this.x + dx, this.y + dy);
+            if (result.moved || result.actionTaken) return true;
+        }
 
         return false;
     }
@@ -2060,7 +2257,7 @@ const BehaviorLibrary = {
      * Attack an adjacent hostile target (player or enemy faction)
      * Returns true if an attack was made
      */
-    attack_adjacent: (actor, data) => {
+    attack_adjacent: (actor) => {
         // Check all adjacent tiles (8-directional)
         const directions = [
             {dx: -1, dy: -1}, {dx: 0, dy: -1}, {dx: 1, dy: -1},
@@ -2076,32 +2273,12 @@ const BehaviorLibrary = {
             // Check if target is valid - only attack controlled actors (players, allies)
             if (!target || target.isDead || !target.hasAttribute('controlled')) continue;
 
-            // Calculate damage from personality data or default
-            const damage = data.attack_damage || 5;
+            // Use unified collision effects system (handles damage, sounds, flash, etc.)
+            const result = actor.applyCollisionEffects(target);
 
-            // Apply damage to target
-            if (target.stats?.health !== undefined) {
-                if (typeof target.stats.health === 'object') {
-                    target.stats.health.current -= damage;
-                    console.log(`${actor.name} attacks ${target.name} for ${damage} damage! (${target.stats.health.current}/${target.stats.health.max} HP)`);
-
-                    if (target.stats.health.current <= 0) {
-                        target.die();
-                    }
-                } else {
-                    target.stats.health -= damage;
-                    console.log(`${actor.name} attacks ${target.name} for ${damage} damage!`);
-
-                    if (target.stats.health <= 0) {
-                        target.die();
-                    }
-                }
+            if (result.effectApplied) {
+                return true; // Attack was made
             }
-
-            // Play attack sound if available
-            actor.engine.playSound?.('ouch');
-
-            return true; // Attack was made
         }
 
         return false; // No valid target found
@@ -2138,8 +2315,8 @@ const BehaviorLibrary = {
                 return false; // No valid moves available
             }
             const dir = validDirs[Math.floor(Math.random() * validDirs.length)];
-            actor.tryMove(actor.x + dir.dx, actor.y + dir.dy);
-            return true;
+            const result = actor.tryMove(actor.x + dir.dx, actor.y + dir.dy);
+            return result.moved || result.actionTaken;
         }
 
         // Non-sighted actors pick randomly (may fall into pits)
@@ -2148,8 +2325,8 @@ const BehaviorLibrary = {
             {dx: 0, dy: -1}, {dx: 0, dy: 1}
         ];
         const dir = directions[Math.floor(Math.random() * directions.length)];
-        actor.tryMove(actor.x + dir.dx, actor.y + dir.dy);
-        return true;
+        const result = actor.tryMove(actor.x + dir.dx, actor.y + dir.dy);
+        return result.moved || result.actionTaken;
     },
 
     /**
@@ -2171,13 +2348,24 @@ const BehaviorLibrary = {
         const dy = Math.sign(actor.y - player.y);
 
         // Try to move directly away
-        if (dx !== 0 && dy !== 0 && actor.tryMove(actor.x + dx, actor.y + dy)) return true;
-        if (dx !== 0 && actor.tryMove(actor.x + dx, actor.y)) return true;
-        if (dy !== 0 && actor.tryMove(actor.x, actor.y + dy)) return true;
+        if (dx !== 0 && dy !== 0) {
+            const result = actor.tryMove(actor.x + dx, actor.y + dy);
+            if (result.moved || result.actionTaken) return true;
+        }
+        if (dx !== 0) {
+            const result = actor.tryMove(actor.x + dx, actor.y);
+            if (result.moved || result.actionTaken) return true;
+        }
+        if (dy !== 0) {
+            const result = actor.tryMove(actor.x, actor.y + dy);
+            if (result.moved || result.actionTaken) return true;
+        }
 
         // Try perpendicular movement as escape
-        if (actor.tryMove(actor.x + dy, actor.y + dx)) return true;
-        if (actor.tryMove(actor.x - dy, actor.y - dx)) return true;
+        let result = actor.tryMove(actor.x + dy, actor.y + dx);
+        if (result.moved || result.actionTaken) return true;
+        result = actor.tryMove(actor.x - dy, actor.y - dx);
+        if (result.moved || result.actionTaken) return true;
 
         return false;
     },
@@ -3808,6 +3996,15 @@ class RenderSystem {
                 sprite.zIndex = 5; // Below actors but above floor
                 sprite.tint = item.tint;
 
+                // Apply horizontal/vertical flip using anchor at center
+                if (item.flipH || item.flipV) {
+                    sprite.anchor.set(0.5, 0.5);
+                    sprite.x += globalVars.TILE_WIDTH / 2;
+                    sprite.y += globalVars.TILE_HEIGHT / 2;
+                    sprite.scale.x = item.flipH ? -1 : 1;
+                    sprite.scale.y = item.flipV ? -1 : 1;
+                }
+
                 this.entityContainer.addChild(sprite);
                 item.sprite = sprite;
 
@@ -4152,9 +4349,11 @@ class InputManager {
                     hazardCheck.message,
                     () => {
                         // On confirm - execute the move
-                        const moved = player.moveBy(dir.dx, dir.dy);
-                        if (moved) {
+                        const result = player.moveBy(dir.dx, dir.dy);
+                        if (result.moved) {
                             this.engine.playSoundVaried('feets', 0.4, 0.1, 1.0, 0.06);
+                        }
+                        if (result.actionTaken) {
                             this.onPlayerAction();
                         }
                     },
@@ -4165,13 +4364,15 @@ class InputManager {
                 return;
             }
 
-            const moved = player.moveBy(dir.dx, dir.dy);
-            if (moved) {
+            const result = player.moveBy(dir.dx, dir.dy);
+            if (result.moved) {
                 this.engine.playSoundVaried('feets', 0.4, 0.1, 1.0, 0.06);
-                this.onPlayerAction();
-            } else {
-                // Bumped into a wall or obstacle
+            } else if (!result.actionTaken) {
+                // Bumped into a wall or obstacle with no effect
                 this.engine.playSound('tap1');
+            }
+            if (result.actionTaken) {
+                this.onPlayerAction();
             }
             return;
         }

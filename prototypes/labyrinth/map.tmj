@@ -258,9 +258,9 @@
                 {
                  "height":30,
                  "id":21,
-                 "name":"red_door",
+                 "name":"Door",
                  "rotation":0,
-                 "type":"red_door",
+                 "type":"locked_door",
                  "visible":true,
                  "width":40,
                  "x":840,

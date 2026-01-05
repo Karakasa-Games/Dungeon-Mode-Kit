@@ -9,8 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Pie in the sky
 
-- First-person view pane (experimental)
-- Verbose text description of turns (experimental)
+- Continuity: start at any specified prototype as whatever that protos controllable actor is, OR enter from stairway as the previous player character, with inventory etc
+- Optional First-person view pane (for perspective dungeon style play)
+- Verbose text description of turns (for interactive fiction style, maybe adapt inform somehow)
 
 ### Planned
 
@@ -32,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - UI tweaks including thermometer UI for health and nutrition stats
+- Actors can have a non-item related collision_effect for melee attacks etc
 
 ### Changed
 

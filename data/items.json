@@ -2,12 +2,13 @@
   "gold_key": {
     "name": "Gold Key",
     "tileIndex": "WHITE_KEY",
-    "tint": "#FFD700",
+    "tint": "#FFCC00",
     "attributes": {
       "pickupable": true,
       "visible": true,
       "stackable": false,
       "flammable": false,
+      "consumable": true,
       "collision_effect": { "locked": false }
     }
   },
@@ -32,7 +33,8 @@
       "visible": true,
       "stackable": false,
       "flammable": false,
-      "collision_effect": { "health": -10 }
+      "collision_effect": { "health": -10 },
+      "collision_sound": "tap2"
     }
   },
 
@@ -59,14 +61,15 @@
       "visible": true,
       "stackable": true,
       "flammable": true,
-      "ammunition": true,
-      "collision_effect": { "health": -10 }
+      "ammunition": true
     }
   },
 
   "health_potion": {
     "name": "Health Potion",
-    "tileIndex": "EXCLAMATION_MARK",
+    "tileIndex": "FEMALE_SYMBOL",
+    "flipV": true,
+    "tint": "#FF0022",
     "attributes": {
       "pickupable": true,
       "visible": true,
@@ -74,9 +77,8 @@
       "flammable": false,
       "consumable": true,
       "use_verb": "Drink",
-      "use_effect": "restore_health",
-      "use_sound": "heal",
-      "restore_amount": 50
+      "use_effect": { "health": 20 },
+      "use_sound": "heal"
     }
   },
 
@@ -119,6 +121,18 @@
       "wearable": "top",
       "pickup_sound": "pickup",
       "wear_effect": { "strength": 2 }
+    }
+  },
+  "horns": {
+    "name": "Horns",
+    "tileIndex": "OPAQUE_CRADLE",
+    "attributes": {
+      "pickupable": true,
+      "visible": true,
+      "stackable": false,
+      "wearable": "top",
+      "wear_effect": { "strength": 5 },
+      "description": "A long pair of pale horns."
     }
   }
 }
