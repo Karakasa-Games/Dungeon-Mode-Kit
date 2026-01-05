@@ -7,16 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Pie in the sky
+
+- First-person view pane (experimental)
+- Verbose text description of turns (experimental)
+
 ### Planned
 
 - Item drops on death
-- First-person view pane (experimental)
-- Verbose text description of turns (experimental)
+- Mouse Input
+- Aiming UI
+- Treasure rooms with locked doors, color paired keys and doors
+- Test and build out fully generated levels
+- Brogue style deep sewage that floats items
+- Fire and smoke actors should dissipate
 
 ### In Progress
 
 - Multi-level state stack
 - Wildcard item/actor spawning (stubs exist)
+
+## [0.5a] 2026-01-05
+
+### Added
+
+- UI tweaks including thermometer UI for health and nutrition stats
+
+### Changed
+
+- Pulled actor and item data from prototype.json, use actors.json and items.json in the prototype folders
+- if there's no health for the player in prototype/actors.json, it's a one-hit death with no health bar
+
+### Fixed
+
+- Don't warn when walking into walls
 
 ## [0.4a] 2026-01-03
 

@@ -365,7 +365,6 @@ function getEuclideanDistance(x0, y0, x1, y1) {
 
 class DungeonEngine {
     constructor(config = {}) {
-        // Core systems
         this.app = null;
         this.scheduler = null;
         this.turnEngine = null;
@@ -528,8 +527,6 @@ class DungeonEngine {
     setupEventListeners() {
         createjs.Ticker.framerate = 60;
         createjs.Ticker.addEventListener("tick", createjs.Tween);
-
-        // Initialize input handling
         this.inputManager = new InputManager(this);
 
         console.log('Event listeners initialized');
@@ -543,7 +540,6 @@ class DungeonEngine {
         this.scheduler = new ROT.Scheduler.Simple();
         this.turnEngine = new ROT.Engine(this.scheduler);
 
-        // Track if there are any player-controlled actors
         this.hasControlledActor = false;
 
         // Only schedule actors that take turns (have personality or are player-controlled)
@@ -597,6 +593,11 @@ class DungeonEngine {
     onControlledActorDied() {
         console.log('Controlled actor died - transitioning to observer mode');
         this.hasControlledActor = false;
+
+        if (this.interfaceManager) {
+            this.interfaceManager.hidePlayerInfo();
+        }
+
         if (this.turnEngine && this.turnEngine._lock) {
             this.turnEngine.unlock();
         }
@@ -911,7 +912,7 @@ class DungeonEngine {
 }
 
 // ============================================================================
-// PROTOTYPE CLASS
+// PROTOTYPE CLASS  (levels)
 // ============================================================================
 
 class Prototype {
@@ -930,10 +931,14 @@ class Prototype {
         this.actors = { ...this.engine.globalActors, ...prototypeActors };
         this.items = { ...this.engine.globalItems, ...prototypeItems };
         this.personalities = { ...this.engine.globalPersonalities, ...prototypePersonalities };
-        
+
+        // Store prototype-specific keys for random distribution
+        this.prototypeActorTypes = Object.keys(prototypeActors);
+        this.prototypeItemTypes = Object.keys(prototypeItems);
+
         console.log(`Loaded assets for prototype: ${this.name}`);
-        console.log(`  Actors: ${Object.keys(this.actors).length} (${Object.keys(prototypeActors).length} prototype-specific)`);
-        console.log(`  Items: ${Object.keys(this.items).length} (${Object.keys(prototypeItems).length} prototype-specific)`);
+        console.log(`  Actors: ${Object.keys(this.actors).length} (${this.prototypeActorTypes.length} prototype-specific)`);
+        console.log(`  Items: ${Object.keys(this.items).length} (${this.prototypeItemTypes.length} prototype-specific)`);
         console.log(`  Personalities: ${Object.keys(this.personalities).length} (${Object.keys(prototypePersonalities).length} prototype-specific)`);
     }
     
@@ -1082,14 +1087,13 @@ class Actor extends Entity {
         
 
         this.stats = {};
-        // Load stats from actor definition (actors.json)
+
         if (data.stats) {
             Object.entries(data.stats).forEach(([stat, value]) => {
                 // Normalize to { max, current } format
                 if (typeof value === 'object' && value.max !== undefined) {
                     this.stats[stat] = { ...value };
                 } else {
-                    // Simple number format: use as both max and current
                     this.stats[stat] = { max: value, current: value };
                 }
             });
@@ -1146,7 +1150,7 @@ class Actor extends Entity {
             this.inventory.push(item);
             console.log(`${this.name} starts with ${item.name}`);
 
-            // Auto-equip wearable items
+            // Auto-equip wearable items for now
             const slot = item.getAttribute('wearable');
             if (slot && ['top', 'middle', 'lower'].includes(slot)) {
                 this.equipToSlot(item, slot);
@@ -1260,7 +1264,11 @@ class Actor extends Entity {
         }
     }
     
-    die() {
+    /**
+     * Kill the actor
+     * @param {boolean} spawnRemains - Whether to spawn remains entity (default: true)
+     */
+    die(spawnRemains = true) {
         this.isDead = true;
         this.setAttribute('solid', false);
 
@@ -1269,10 +1277,12 @@ class Actor extends Entity {
             this.dropItems(false);
         }
 
-        // Spawn remains entity if specified
-        const remains = this.getAttribute('remains');
-        if (remains) {
-            this.engine.entityManager.spawnEntity(remains, this.x, this.y);
+        // Spawn remains entity if specified (not when falling into void)
+        if (spawnRemains) {
+            const remains = this.getAttribute('remains');
+            if (remains) {
+                this.engine.entityManager.spawnEntity(remains, this.x, this.y);
+            }
         }
 
         if (this.spriteBase) {
@@ -1733,7 +1743,7 @@ class Actor extends Entity {
     fall() {
         console.log(`${this.name} fell into the void!`);
         this.dropItems(true); // Items lost to void
-        this.die();
+        this.die(false); // Don't spawn remains when falling into void
     }
 
     /**
@@ -2238,21 +2248,103 @@ class EntityManager {
     }
     
     async spawnEntities(prototypeConfig, entryDirection = null) {
+        // Track which actor/item types are placed in the map
+        const placedActorTypes = new Set();
+        const placedItemTypes = new Set();
+
         // Process object layers from Tiled map if available
         if (this.engine.mapManager.objectLayers) {
             for (const layer of this.engine.mapManager.objectLayers) {
                 if (layer.name === 'actors') {
-                    this.spawnActorsFromLayer(layer, entryDirection);
+                    this.spawnActorsFromLayer(layer, entryDirection, placedActorTypes);
                 } else if (layer.name === 'items') {
-                    this.spawnItemsFromLayer(layer);
+                    this.spawnItemsFromLayer(layer, placedItemTypes);
                 }
             }
         }
 
+        // Spawn unplaced actors/items from prototype's actors.json and items.json
+        this.spawnUnplacedEntities(placedActorTypes, placedItemTypes);
+
         console.log(`Entities spawned: ${this.actors.length} actors, ${this.items.length} items`);
     }
+
+    /**
+     * Spawn actors and items that are defined in the prototype folder but not placed in the map
+     * Only considers prototype-specific actors/items, not global defaults from data/
+     * @param {Set} placedActorTypes - Actor types already placed from the map
+     * @param {Set} placedItemTypes - Item types already placed from the map
+     */
+    spawnUnplacedEntities(placedActorTypes, placedItemTypes) {
+        const prototype = this.engine.currentPrototype;
+        if (!prototype) return;
+
+        const walkableTiles = this.engine.mapManager.walkableTiles;
+        if (!walkableTiles || walkableTiles.length === 0) {
+            console.warn('No walkable tiles available for spawning unplaced entities');
+            return;
+        }
+
+        // Get list of tiles not occupied by actors
+        const getAvailableTiles = () => {
+            const occupied = new Set();
+            for (const actor of this.actors) {
+                occupied.add(`${actor.x},${actor.y}`);
+            }
+            return walkableTiles.filter(t => !occupied.has(`${t.x},${t.y}`));
+        };
+
+        // Types to skip - these are structural or special and shouldn't be randomly spawned
+        const skipActorTypes = new Set(['player', 'wall', 'door', 'stairway_up', 'stairway_down']);
+
+        // Spawn unplaced actors (only prototype-specific ones)
+        for (const actorType of prototype.prototypeActorTypes || []) {
+            if (placedActorTypes.has(actorType)) continue;
+            if (skipActorTypes.has(actorType)) continue;
+
+            const actorData = prototype.getActorData(actorType);
+            if (!actorData) continue;
+
+            // Spawn 1-3 of each unplaced actor type
+            const count = Math.floor(Math.random() * 3) + 1;
+            const availableTiles = getAvailableTiles();
+
+            for (let i = 0; i < count && availableTiles.length > 0; i++) {
+                const tileIndex = Math.floor(Math.random() * availableTiles.length);
+                const tile = availableTiles.splice(tileIndex, 1)[0];
+
+                const actor = new Actor(tile.x, tile.y, actorType, actorData, this.engine);
+                this.addEntity(actor);
+                actor.loadDefaultItems();
+
+                console.log(`Randomly spawned ${actorType} at (${tile.x}, ${tile.y})`);
+            }
+        }
+
+        // Spawn unplaced items (only prototype-specific ones)
+        for (const itemType of prototype.prototypeItemTypes || []) {
+            if (placedItemTypes.has(itemType)) continue;
+
+            const itemData = prototype.getItemData(itemType);
+            if (!itemData) continue;
+
+            // Spawn 1-3 of each unplaced item type
+            const count = Math.floor(Math.random() * 3) + 1;
+            const availableTiles = getAvailableTiles();
+
+            for (let i = 0; i < count && availableTiles.length > 0; i++) {
+                const tileIndex = Math.floor(Math.random() * availableTiles.length);
+                const tile = availableTiles.splice(tileIndex, 1)[0];
+
+                const item = new Item(tile.x, tile.y, itemType, itemData, this.engine);
+                this.addEntity(item);
+
+                console.log(`Randomly spawned ${itemType} at (${tile.x}, ${tile.y})`);
+            }
+        }
+    }
     
-    spawnActorsFromLayer(layer, entryDirection = null) {
+    spawnActorsFromLayer(layer, entryDirection = null, placedActorTypes = null) {
         console.log(`Processing actors layer with ${layer.objects.length} objects`);
 
         for (const obj of layer.objects) {
@@ -2262,6 +2354,11 @@ class EntityManager {
             if (!actorType) {
                 console.warn('Object has no class, type, or name, skipping:', obj);
                 continue;
+            }
+
+            // Track that this actor type was placed in the map
+            if (placedActorTypes) {
+                placedActorTypes.add(actorType);
             }
 
             // Skip player actors when entering via stairway (player will be spawned at stairway)
@@ -2292,26 +2389,31 @@ class EntityManager {
         }
     }
     
-    spawnItemsFromLayer(layer) {
+    spawnItemsFromLayer(layer, placedItemTypes = null) {
         console.log(`Processing items layer with ${layer.objects.length} objects`);
 
         for (const obj of layer.objects) {
             // Get item type from Tiled's class property (newer) or type property (older), then name as fallback
             const itemType = obj.class || obj.type || obj.name;
             if (!itemType) continue;
-            
+
+            // Track that this item type was placed in the map
+            if (placedItemTypes) {
+                placedItemTypes.add(itemType);
+            }
+
             const tileX = Math.floor(obj.x / this.engine.config.tileWidth);
             const tileY = Math.floor(obj.y / this.engine.config.tileHeight);
-            
+
             const itemData = this.engine.currentPrototype.getItemData(itemType);
             if (!itemData) {
                 console.warn(`No item data found for type '${itemType}'`);
                 continue;
             }
-            
+
             const item = new Item(tileX, tileY, itemType, itemData, this.engine);
             this.addEntity(item);
-            
+
             console.log(`Spawned ${itemType} at tile (${tileX}, ${tileY})`);
         }
     }
@@ -4064,6 +4166,9 @@ class InputManager {
             if (moved) {
                 this.engine.playSoundVaried('feets', 0.4, 0.1, 1.0, 0.06);
                 this.onPlayerAction();
+            } else {
+                // Bumped into a wall or obstacle
+                this.engine.playSound('tap1');
             }
             return;
         }

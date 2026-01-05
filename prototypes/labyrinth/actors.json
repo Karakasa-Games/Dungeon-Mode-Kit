@@ -17,22 +17,5 @@
       "health": 100,
       "strength": 10
     }
-  },
-  "red_door": {
-    "name": "Door",
-    "tileIndexBase": "OPAQUE_DOOR_BOTTOM",
-    "tileIndexTop": "OPAQUE_DOOR_TOP",
-    "tileIndexTop_open": "OPAQUE_MEDIUM_LIGHT_SHADE_RIGHT_ONE_FIFTH_BLOCK",
-    "tileIndexBase_open": "OPAQUE_MEDIUM_LIGHT_SHADE_RIGHT_ONE_FIFTH_BLOCK",
-    "attributes": {
-      "solid": true,
-      "visible": true,
-      "openable": true,
-      "lockable": true
-    },
-    "state": {
-      "open": false,
-      "locked": false
-    }
   }
 }

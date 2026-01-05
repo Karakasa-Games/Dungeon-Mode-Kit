@@ -8,16 +8,5 @@
     "fog_of_war": true,
     "darkness": true
   },
-  "stats": {
-    "strength": {
-      "max": 100,
-      "current": 100
-    }
-  },
-  "inventory": {
-    "max_items": 1
-  },
-  "available_items": [],
-  "available_actors": [],
   "win_conditions": []
 }
