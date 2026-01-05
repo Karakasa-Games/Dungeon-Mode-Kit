@@ -10,20 +10,19 @@
       "visible": true,
       "flammable": true,
       "sighted": true,
-      "inventory": 5,
+      "inventory": 1,
       "remains": "skull"
     },
     "stats": {
-      "health": 100,
-      "strength": 10
+      "health": 1
     }
   },
-  
+    
   "skeleton": {
     "name": "Skeleton",
     "tileIndexBase": "SKELETON_LEGS",
     "tileIndexTop": "SKULL",
-    "personality": "aggressive_melee",
+    "personality": "stationed_melee",
     "attributes": {
       "hostile": true,
       "solid": true,

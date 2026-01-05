@@ -757,7 +757,7 @@ class DungeonEngine {
                 turn_based: true
             },
             stats: {
-                health: { max: 100, current: 100 }
+                health: { max: 1, current: 1 }
             },
             inventory: { max_items: 10 },
             available_items: ["key", "bow", "arrow"],
@@ -1082,9 +1082,16 @@ class Actor extends Entity {
         
 
         this.stats = {};
-        if (engine.currentPrototype && engine.currentPrototype.config.stats) {
-            Object.entries(engine.currentPrototype.config.stats).forEach(([stat, config]) => {
-                this.stats[stat] = { ...config };
+        // Load stats from actor definition (actors.json)
+        if (data.stats) {
+            Object.entries(data.stats).forEach(([stat, value]) => {
+                // Normalize to { max, current } format
+                if (typeof value === 'object' && value.max !== undefined) {
+                    this.stats[stat] = { ...value };
+                } else {
+                    // Simple number format: use as both max and current
+                    this.stats[stat] = { max: value, current: value };
+                }
             });
         }
         
@@ -4071,9 +4078,18 @@ class InputManager {
             case 'pickup':
                 const item = this.engine.entityManager.getItemAt(player.x, player.y);
                 if (item) {
-                    player.pickUpItem(item);
-                    this.engine.playSound('pickup');
-                    this.onPlayerAction();
+                    const pickedUp = player.pickUpItem(item);
+                    if (pickedUp) {
+                        this.engine.playSound('pickup');
+                        this.onPlayerAction();
+                    } else {
+                        // Inventory full - show message
+                        this.engine.interfaceManager?.showTextBox(
+                            'inventory_full',
+                            "You can't carry any more things!",
+                            { dismissOnMove: true }
+                        );
+                    }
                 } else {
                     console.log('Nothing to pick up here.');
                 }
@@ -4103,6 +4119,14 @@ class InputManager {
      */
     checkMovementHazard(player, targetX, targetY) {
         const entityManager = this.engine.entityManager;
+
+        // Check for solid actors at target (walls, closed doors, etc.)
+        // If blocked by a solid actor, no hazard warning needed - the move will just fail
+        for (const actor of entityManager.actors) {
+            if (actor.x === targetX && actor.y === targetY && !actor.isDead && actor.hasAttribute('solid')) {
+                return null; // Blocked by solid actor, no warning needed
+            }
+        }
 
         // Check for void (no floor)
         if (!player.hasFloorAt(targetX, targetY)) {

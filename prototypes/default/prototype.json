@@ -8,12 +8,7 @@
     "fog_of_war": false,
     "darkness": false
   },
-  "stats": {
-    "health": {
-      "max": 100,
-      "current": 100
-    }
-  },
+  "stats": {},
   "inventory": {
     "max_items": 10
   },

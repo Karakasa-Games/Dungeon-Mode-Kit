@@ -248,6 +248,83 @@ class InterfaceManager {
     }
 
     /**
+     * Check if a stat should be rendered as a thermometer bar
+     * @param {string} key - Stat key name
+     * @returns {boolean} True if stat should use thermometer display
+     */
+    isThermometerStat(key) {
+        return key === 'health' || key === 'nutrition';
+    }
+
+    /**
+     * Render a thermometer bar using FULL_BLOCK for fill and LIGHT_SHADE for background
+     * @param {PIXI.Container} container - Container to add sprites to
+     * @param {number} current - Current stat value
+     * @param {number} max - Maximum stat value
+     * @param {number} x - X position in pixels
+     * @param {number} y - Y position in pixels
+     */
+    renderThermometerBar(container, current, max, x, y) {
+        const totalTiles = Math.ceil(max / 10);
+        const filledTiles = Math.ceil(current / 10);
+
+        const fullBlockCoords = this.spriteLibrary.getTileByName('FULL_BLOCK');
+        const lightShadeCoords = this.spriteLibrary.getTileByName('LIGHT_SHADE');
+
+        if (!fullBlockCoords || !lightShadeCoords || !this.tileset) return;
+
+        for (let i = 0; i < totalTiles; i++) {
+            const tileCoords = i < filledTiles ? fullBlockCoords : lightShadeCoords;
+
+            const rect = new PIXI.Rectangle(
+                tileCoords.x * globalVars.TILE_WIDTH,
+                tileCoords.y * globalVars.TILE_HEIGHT,
+                globalVars.TILE_WIDTH,
+                globalVars.TILE_HEIGHT
+            );
+
+            const texture = new PIXI.Texture(this.tileset.texture.baseTexture, rect);
+            const sprite = new PIXI.Sprite(texture);
+
+            sprite.x = x + (i * globalVars.TILE_WIDTH);
+            sprite.y = y;
+
+            container.addChild(sprite);
+        }
+    }
+
+    /**
+     * Render an item's tile sprite at a position
+     * @param {PIXI.Container} container - Container to add sprite to
+     * @param {Item} item - The item to render
+     * @param {number} x - X position in pixels
+     * @param {number} y - Y position in pixels
+     */
+    renderItemTile(container, item, x, y) {
+        if (!item.tileIndex || !this.tileset) return;
+
+        const rect = new PIXI.Rectangle(
+            item.tileIndex.x * globalVars.TILE_WIDTH,
+            item.tileIndex.y * globalVars.TILE_HEIGHT,
+            globalVars.TILE_WIDTH,
+            globalVars.TILE_HEIGHT
+        );
+
+        const texture = new PIXI.Texture(this.tileset.texture.baseTexture, rect);
+        const sprite = new PIXI.Sprite(texture);
+
+        sprite.x = x;
+        sprite.y = y;
+
+        // Apply item tint if present
+        if (item.tint !== undefined && item.tint !== null) {
+            sprite.tint = item.tint;
+        }
+
+        container.addChild(sprite);
+    }
+
+    /**
      * Create a text sprite for a single character
      * @param {string} char - Single character
      * @param {number} x - X position in pixels
@@ -520,55 +597,87 @@ class InterfaceManager {
             this.removeBox(infoBoxId);
         }
 
-        // Gather stats
-        const stats = [];
+        // Gather stats, separating thermometer stats from regular stats
+        const regularStats = [];
+        const thermometerStats = []; // { key, current, max, lineIndex }
         if (player.stats) {
             for (const [key, value] of Object.entries(player.stats)) {
-                stats.push(`${this.capitalize(key)}: ${JSON.stringify(value)}`) //String.value results in [Object Object], but this adds unwanted quotes.
+                if (this.isThermometerStat(key)) {
+                    // Get current and max values (handle both object and simple number formats)
+                    const max = typeof value === 'object' ? value.max : value;
+                    const current = typeof value === 'object' ? value.current : value;
+                    // Skip thermometer stats with max <= 1 (1-hit death prototypes)
+                    if (max > 1) {
+                        thermometerStats.push({ key, current, max });
+                    }
+                } else {
+                    // Regular stat - display as text
+                    const displayValue = typeof value === 'object' ? value.current : value;
+                    regularStats.push(`${this.capitalize(key)}: ${displayValue}`);
+                }
             }
         }
 
         // Gather inventory items with letter prefixes
-        const inventoryItems = [];
+        const inventoryItems = []; // { text, item }
         if (player.inventory && player.inventory.length > 0) {
             for (let i = 0; i < player.inventory.length; i++) {
                 const item = player.inventory[i];
                 const letter = String.fromCharCode(97 + i); // 'a', 'b', 'c', etc.
-                let itemText = `${letter}) ${item.name}`;
+                let itemText = `${letter})  ${item.name}`; // Extra space for tile
                 // Mark equipped items
                 if (player.isItemEquipped(item)) {
                     itemText += ' (worn)';
                 }
-                inventoryItems.push(itemText);
+                inventoryItems.push({ text: itemText, item });
             }
         }
 
         // Build lines for the info box
         const lines = [];
+        const thermometerLineIndices = []; // Track which lines have thermometer bars
         lines.push(player.name);
         lines.push('');
-        // change this to thermometer ui with max stat as LIGHT_SHADE blocks and FULL_BLOCK for current stat. can divide stats by 10 to get number of tiles
-        if (stats.length > 0) {
+
+        const hasStats = thermometerStats.length > 0 || regularStats.length > 0;
+        if (hasStats) {
             lines.push('Stats:');
-            for (const stat of stats) {
+            // Add thermometer stats first
+            for (const stat of thermometerStats) {
+                const label = `  ${this.capitalize(stat.key)}: `;
+                thermometerLineIndices.push({ lineIndex: lines.length, label, stat });
+                lines.push(label); // Placeholder - bar will be rendered separately
+            }
+            // Add regular stats
+            for (const stat of regularStats) {
                 lines.push('  ' + stat);
             }
         }
 
+        const inventoryLineIndices = []; // Track which lines have item tiles
         if (inventoryItems.length > 0) {
-            if (stats.length > 0) lines.push('');
+            if (hasStats) lines.push('');
             lines.push('Inventory:');
-            for (const item of inventoryItems) {
-                lines.push('  ' + item);
+            for (const { text, item } of inventoryItems) {
+                inventoryLineIndices.push({ lineIndex: lines.length, item });
+                lines.push('  ' + text);
             }
         } else {
-            if (stats.length > 0) lines.push('');
+            if (hasStats) lines.push('');
             lines.push('Inventory: (empty)');
         }
 
-        // Calculate dimensions
+        // Calculate dimensions - account for thermometer bar widths
         const padding = 1;
-        const maxLineLength = Math.max(...lines.map(l => l.length), 10);
+        let maxLineLength = Math.max(...lines.map(l => l.length), 10);
+        // Check if any thermometer bars would be wider
+        for (const { label, stat } of thermometerLineIndices) {
+            const barWidth = Math.ceil(stat.max / 10);
+            const totalWidth = label.length + barWidth;
+            if (totalWidth > maxLineLength) {
+                maxLineLength = totalWidth;
+            }
+        }
         const contentWidth = maxLineLength;
         const contentHeight = lines.length;
         const boxWidth = contentWidth + (padding * 2) + 2;
@@ -611,6 +720,21 @@ class InterfaceManager {
                     boxContainer.addChild(sprite);
                 }
             }
+        }
+
+        // Render thermometer bars for health/nutrition stats
+        for (const { lineIndex, label, stat } of thermometerLineIndices) {
+            const barX = textStartX + (label.length * globalVars.TILE_WIDTH);
+            const barY = textStartY + (lineIndex * globalVars.TILE_HEIGHT);
+            this.renderThermometerBar(boxContainer, stat.current, stat.max, barX, barY);
+        }
+
+        // Render item tiles in inventory list
+        // Format is "  a) [tile] Item Name" - tile goes after ") " which is at offset 5 (2 spaces + letter + ) + space)
+        for (const { lineIndex, item } of inventoryLineIndices) {
+            const tileX = textStartX + (5 * globalVars.TILE_WIDTH); // Position after "  a) "
+            const tileY = textStartY + (lineIndex * globalVars.TILE_HEIGHT);
+            this.renderItemTile(boxContainer, item, tileX, tileY);
         }
 
         // Enable inventory selection mode

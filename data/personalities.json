@@ -8,6 +8,15 @@
       "random_walk"
     ]
   },
+
+  "stationed_melee": {
+    "name": "Stationed Melee",
+    "hostile": true,
+    "behaviors": [
+      "attack_adjacent",
+      "pursue_target"
+    ]
+  },
   
   "ranged_attacker": {
     "name": "Ranged Attacker",
