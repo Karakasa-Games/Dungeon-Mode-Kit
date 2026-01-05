@@ -4119,6 +4119,9 @@ class InputManager {
         // Prevent default for game keys (don't scroll page with arrows, etc.)
         event.preventDefault();
 
+        // Ignore key repeat events to prevent stacking inputs when holding keys
+        //if (event.repeat) return;
+
         this.executeAction(action, player);
     }
 

@@ -120,6 +120,11 @@ class LightingManager {
             }
         }
 
+        // Cache whether we have controlled actors (used heavily in getDarknessAlpha/getEntityVisibility)
+        this._hasControlledActors = this.engine.entityManager.actors.some(
+            a => a.hasAttribute('controlled') && !a.isDead
+        );
+
         // Compute visibility for all controlled actors
         this.computeVisibility();
 
@@ -229,6 +234,10 @@ class LightingManager {
     }
 
     hasControlledActors() {
+        // Use cached value from computeLighting() if available
+        if (this._hasControlledActors !== undefined) {
+            return this._hasControlledActors;
+        }
         return this.engine.entityManager.actors.some(
             a => a.hasAttribute('controlled') && !a.isDead
         );

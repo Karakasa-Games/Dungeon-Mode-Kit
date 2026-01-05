@@ -42,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Don't warn when walking into walls
+- performance issue with fog of war related to multiple controlled actors
 
 ## [0.4a] 2026-01-03
 
