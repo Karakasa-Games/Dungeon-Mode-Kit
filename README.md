@@ -33,14 +33,97 @@ A hierarchical, attribute-based system:
 
 - Height: 1 tile
 - Default attribute: `pickupable: true`
-- In the future items will have a data file similar to actor's personality files that will add effects and verbs
+
+Item JSON schema:
+```json
+{
+  "item_id": {
+    "name": "Display Name",
+    "tileIndex": "TILE_NAME",       // or {x, y} coordinates
+    "tint": "#RRGGBB",              // optional color tint
+    "flipH": false,                 // optional horizontal flip
+    "flipV": false,                 // optional vertical flip
+    "attributes": {
+      "pickupable": true,
+      "visible": true,
+      "stackable": false,
+      "flammable": false,
+      "consumable": false,
+      "collision_effect": { "stat": value },  // applied when holder collides
+      "collision_sound": "sound_name",
+      "use_verb": "Drink",                    // action menu label
+      "use_effect": { "health": 20 },         // stat modification on use
+      "use_sound": "sound_name",
+      "wearable": "top|middle|lower",         // equipment slot
+      "wear_effect": { "strength": 2 }        // stat bonus when worn
+    }
+  }
+}
+```
 
 **Actor (extends Entity)** - Interactive 2-tile entities (player, monsters, doors, walls)
 
 - Height: 2 tiles (base sprite + top sprite)
 - Has `stats`, `inventory`, and `personality`
-   stats are totally data driven and can be different for each prototype, could be anything.
-- Methods: `modify()`, `die()`, `pickUpItem()`, `act()`
+- Stats are data-driven `{ max, current }` objects that change during gameplay
+- Methods: `die()`, `pickUpItem()`, `flash()`, `applyCollisionEffects()`
+
+Actor JSON schema (organized by property type):
+```json
+{
+  "actor_id": {
+    // IDENTITY - display/rendering properties
+    "name": "Display Name",
+    "tileIndexBase": "TILE_NAME",    // or {x, y} coordinates
+    "tileIndexTop": "TILE_NAME",
+    "tint": "#RRGGBB",
+    "animated": true,
+    "animation_frames": "fire",
+    "flipBaseH": false,
+    "flipTopV": false,
+
+    // BEHAVIOR - AI and interaction config
+    "personality": "personality_name",
+    "vision_range": 8,
+    "collision_effect": { "health": -5 },  // damage/effects on collision
+    "collision_sound": "hit",
+    "death_sound": "ouch",
+    "damage_per_turn": 10,                 // for hazards like fire
+    "spread_chance": 0.3,
+    "lifetime": 5,
+    "default_items": ["item_id"],          // items actor spawns with
+
+    // STATS - numeric values with max/current that change during gameplay
+    "stats": {
+      "health": 30,      // becomes { max: 30, current: 30 }
+      "strength": 5
+    },
+
+    // ATTRIBUTES - boolean flags/capabilities
+    "attributes": {
+      "solid": true,           // blocks movement
+      "visible": true,
+      "controlled": false,     // player-controlled
+      "hostile": false,
+      "flammable": true,
+      "pushable": false,       // can be pushed by player
+      "breakable": false,
+      "openable": false,       // doors, chests
+      "lockable": false,
+      "sighted": false,        // AI avoids hazards
+      "light_source": false,
+      "inventory": 1,          // max inventory size
+      "remains": "skull"       // entity spawned on death
+    },
+
+    // STATE - for interactive actors (doors, etc.)
+    "state": {
+      "open": false,
+      "locked": false
+    }
+  }
+}
+```
 
 #### Personality System
 
