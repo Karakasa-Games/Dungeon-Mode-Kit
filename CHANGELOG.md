@@ -34,6 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - UI tweaks including thermometer UI for health and nutrition stats
 - Actors can have a non-item related collision_effect for melee attacks etc
+- pushable actors work
+- melee attacks use actor collision_effect
 
 ### Changed
 
