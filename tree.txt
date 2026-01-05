@@ -1,10 +1,10 @@
 .
 ├── assets
 │   ├── audio
-│   │   ├── effects.ac3
-│   │   ├── effects.m4a
-│   │   ├── effects.mp3
-│   │   └── effects.ogg
+│   │   ├── sounds.ac3
+│   │   ├── sounds.m4a
+│   │   ├── sounds.mp3
+│   │   └── sounds.ogg
 │   ├── favicon.ico
 │   ├── fonts
 │   │   ├── cmunrm-webfont.woff
@@ -26,7 +26,7 @@
 │       └── static-tiles.png
 ├── data
 │   ├── actors.json
-│   ├── effects.json
+│   ├── sounds.json
 │   ├── items.json
 │   ├── personalities.json
 │   └── static-tiles.json

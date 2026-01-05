@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Pulled actor and item data from prototype.json, use actors.json and items.json in the prototype folders
 - if there's no health for the player in prototype/actors.json, it's a one-hit death with no health bar
+- changed effects.json to sounds.json as well as all supporting files and references
 
 ### Fixed
 

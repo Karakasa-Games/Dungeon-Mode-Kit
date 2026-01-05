@@ -124,11 +124,12 @@ data/              # Global entity definitions
   actors.json      # Actor templates (player, skeleton, wall, fire, etc.)
   items.json       # Item templates (key, bow, potions, etc.)
   personalities.json # AI behavior definitions
-  effects.json     # Audio sprite configuration
+  sounds.json      # Audio sprite configuration
 prototypes/        # Game definitions
   default/
-    prototype.json # Game rules (mechanics, stats, win conditions)
-    actors.json    # Prototype-specific overrides
+    prototype.json # Game rules (mechanics, win conditions)
+    actors.json    # Prototype-specific actor overrides, player stats (if actors not manually placed in map.tmj, randomly distributed)
+    items.json     # Prototype-speficic items (if items not manually placed in map.tmj, randomly distributed)
     map.tmj        # Tiled map (optional)
 ```
 
@@ -142,10 +143,10 @@ See [CHANGELOG.md](CHANGELOG.md) for version history and implementation status.
 .
 ├── assets
 │   ├── audio
-│   │   ├── effects.ac3
-│   │   ├── effects.m4a
-│   │   ├── effects.mp3
-│   │   └── effects.ogg
+│   │   ├── sounds.ac3
+│   │   ├── sounds.m4a
+│   │   ├── sounds.mp3
+│   │   └── sounds.ogg
 │   ├── favicon.ico
 │   ├── fonts
 │   │   ├── cmunrm-webfont.woff
@@ -168,7 +169,7 @@ See [CHANGELOG.md](CHANGELOG.md) for version history and implementation status.
 ├── data
 │   ├── actors.json
 │   ├── colors.json
-│   ├── effects.json
+│   ├── sounds.json
 │   ├── items.json
 │   ├── personalities.json
 │   └── static-tiles.json

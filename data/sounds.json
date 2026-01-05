@@ -1,8 +1,8 @@
 {
   "urls": [
-    "/assets/audio/effects.mp3",
-    "/assets/audio/effects.ogg",
-    "/assets/audio/effects.m4a"
+    "/assets/audio/sounds.mp3",
+    "/assets/audio/sounds.ogg",
+    "/assets/audio/sounds.m4a"
   ],
   "sprite": {
     "arrow_hit": [

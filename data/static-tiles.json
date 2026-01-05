@@ -1,6 +1,6 @@
 {
     "spritesheetPath": "libuse40x30-cp437.png",
-    "audioSpritesheetPath": "./data/effects.json",
+    "audioSpritesheetPath": "./data/sounds.json",
     "tilePixelWidth": 40,
     "tilePixelHeight": 30,
     "tileDisplayWidth": 20,

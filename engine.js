@@ -498,7 +498,7 @@ class DungeonEngine {
         
 
         try {
-            const audioData = await fetch("./data/effects.json").then(r => r.json());
+            const audioData = await fetch("./data/sounds.json").then(r => r.json());
             this.audioManager = new AudioManager(audioData);
             console.log('Audio loaded successfully');
         } catch (error) {
