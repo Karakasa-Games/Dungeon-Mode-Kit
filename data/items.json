@@ -1,26 +1,16 @@
 {
-  "gold_key": {
-    "name": "Gold Key",
+  "key": {
+    "name": "Key",
     "tileIndex": "WHITE_KEY",
-    "tint": "#FFCC00",
+    "random_color": true,
+    "unidentified_template": "[color] key",
     "attributes": {
       "pickupable": true,
       "visible": true,
       "stackable": false,
       "flammable": false,
       "consumable": true,
-      "collision_effect": { "locked": false }
-    }
-  },
-
-  "black_key": {
-    "name": "Black Key",
-    "tileIndex": "BLACK_KEY",
-    "attributes": {
-      "pickupable": true,
-      "visible": true,
-      "stackable": false,
-      "flammable": false,
+      "key": true,
       "collision_effect": { "locked": false }
     }
   },
@@ -66,10 +56,14 @@
   },
 
   "health_potion": {
-    "name": "Health Potion",
+    "name": "Potion",
     "tileIndex": "FEMALE_SYMBOL",
     "flipV": true,
-    "tint": "#FF0022",
+    "random_color": true,
+    "identified": false,
+    "unidentified_template": "[color] potion",
+    "identified_template": "Potion of Healing",
+    "use_description": "The [item_name] has [a-an] [adjectives.yucky] taste.",
     "attributes": {
       "pickupable": true,
       "visible": true,
@@ -79,6 +73,46 @@
       "use_verb": "Drink",
       "use_effect": { "health": 20 },
       "use_sound": "heal"
+    }
+  },
+
+  "poison_potion": {
+    "name": "Potion",
+    "tileIndex": "FEMALE_SYMBOL",
+    "flipV": true,
+    "random_color": true,
+    "identified": false,
+    "unidentified_template": "[color] potion",
+    "identified_template": "Potion of Poison",
+    "use_description": "The [item_name] tastes [adjectives.yucky].",
+    "attributes": {
+      "pickupable": true,
+      "visible": true,
+      "stackable": true,
+      "flammable": false,
+      "consumable": true,
+      "use_verb": "Drink",
+      "use_effect": { "health": -15 }
+    }
+  },
+
+  "strength_potion": {
+    "name": "Potion",
+    "tileIndex": "FEMALE_SYMBOL",
+    "flipV": true,
+    "random_color": true,
+    "identified": false,
+    "unidentified_template": "[color] potion",
+    "identified_template": "Potion of Strength",
+    "use_description": "The [item_name] tastes [adjectives.yucky].",
+    "attributes": {
+      "pickupable": true,
+      "visible": true,
+      "stackable": true,
+      "flammable": false,
+      "consumable": true,
+      "use_verb": "Drink",
+      "use_effect": { "strength": 2 }
     }
   },
 

@@ -321,6 +321,15 @@ class InterfaceManager {
             sprite.tint = item.tint;
         }
 
+        // Apply horizontal/vertical flip using anchor at center
+        if (item.flipH || item.flipV) {
+            sprite.anchor.set(0.5, 0.5);
+            sprite.x += globalVars.TILE_WIDTH / 2;
+            sprite.y += globalVars.TILE_HEIGHT / 2;
+            sprite.scale.x = item.flipH ? -1 : 1;
+            sprite.scale.y = item.flipV ? -1 : 1;
+        }
+
         container.addChild(sprite);
     }
 
@@ -624,7 +633,9 @@ class InterfaceManager {
             for (let i = 0; i < player.inventory.length; i++) {
                 const item = player.inventory[i];
                 const letter = String.fromCharCode(97 + i); // 'a', 'b', 'c', etc.
-                let itemText = `${letter})  ${item.name}`; // Extra space for tile
+                // Use getDisplayName() for identification-aware display
+                const displayName = item.getDisplayName ? item.getDisplayName() : item.name;
+                let itemText = `${letter})  ${displayName}`; // Extra space for tile
                 // Mark equipped items
                 if (player.isItemEquipped(item)) {
                     itemText += ' (worn)';
@@ -752,6 +763,25 @@ class InterfaceManager {
         this.inventoryMode = false;
         this.currentPlayer = null;
         this.selectedItemIndex = null;
+    }
+
+    /**
+     * Update the player info box if it's currently visible
+     * Call this after turns complete to reflect stat changes
+     */
+    updatePlayerInfo() {
+        if (this.inventoryMode && this.currentPlayer && this.boxes.has('player_info')) {
+            // Re-render the player info box with updated stats
+            this.showPlayerInfo(this.currentPlayer);
+        }
+    }
+
+    /**
+     * Check if the player info box is currently visible
+     * @returns {boolean}
+     */
+    isPlayerInfoVisible() {
+        return this.boxes.has('player_info');
     }
 
     /**

@@ -139,6 +139,32 @@ function generateColorVariation(baseColor, variation = 0x101008) {
     };
 }
 
+/**
+ * Get the indefinite article ('a' or 'an') for a word
+ * @param {string} word - The word to get the article for
+ * @returns {string} 'a' or 'an'
+ */
+function getIndefiniteArticle(word) {
+    if (!word || word.length === 0) return 'a';
+    const firstLetter = word.charAt(0).toLowerCase();
+    const vowels = ['a', 'e', 'i', 'o', 'u'];
+    return vowels.includes(firstLetter) ? 'an' : 'a';
+}
+
+/**
+ * Process [a-an] template markers in a string
+ * Replaces [a-an] with 'a' or 'an' based on the following word
+ * @param {string} text - The text containing [a-an] markers
+ * @returns {string} The processed text with proper articles
+ */
+function processArticleTemplates(text) {
+    // Match [a-an] followed by optional whitespace and capture the next word
+    return text.replace(/\[a-an\]\s*(\w+)/gi, (_match, nextWord) => {
+        const article = getIndefiniteArticle(nextWord);
+        return `${article} ${nextWord}`;
+    });
+}
+
 // ============================================================================
 // PATHFINDING UTILITIES
 // ============================================================================
@@ -407,23 +433,33 @@ class DungeonEngine {
     async loadGlobalData() {
         try {
             // Load global entity definitions
-            const [actorsRes, itemsRes, personalitiesRes, entitiesRes] = await Promise.all([
+            const [actorsRes, itemsRes, personalitiesRes, entitiesRes, colorsRes, adjectivesRes, attacksRes] = await Promise.all([
                 fetch('./data/actors.json'),
                 fetch('./data/items.json'),
                 fetch('./data/personalities.json'),
-                fetch('./data/entities.json')
+                fetch('./data/entities.json'),
+                fetch('./data/colors.json'),
+                fetch('./data/adjectives.json'),
+                fetch('./data/attacks.json')
             ]);
 
             this.globalActors = await actorsRes.json();
             this.globalItems = await itemsRes.json();
             this.globalPersonalities = await personalitiesRes.json();
             this.globalEntities = await entitiesRes.json();
+            const colorsData = await colorsRes.json();
+            this.globalColors = colorsData.colors || [];
+            this.globalAdjectives = await adjectivesRes.json();
+            this.globalAttacks = await attacksRes.json();
 
             console.log('Global data loaded:', {
                 actors: Object.keys(this.globalActors).length,
                 items: Object.keys(this.globalItems).length,
                 personalities: Object.keys(this.globalPersonalities).length,
-                entities: Object.keys(this.globalEntities).length
+                entities: Object.keys(this.globalEntities).length,
+                colors: this.globalColors.length,
+                adjectives: Object.keys(this.globalAdjectives).length,
+                attacks: Object.keys(this.globalAttacks).length
             });
         } catch (error) {
             console.error('Failed to load global data:', error);
@@ -431,6 +467,9 @@ class DungeonEngine {
             this.globalItems = {};
             this.globalPersonalities = {};
             this.globalEntities = {};
+            this.globalColors = [];
+            this.globalAdjectives = {};
+            this.globalAttacks = {};
         }
     }
     
@@ -921,8 +960,21 @@ class Prototype {
         this.config = config;
         this.engine = engine;
         this.basePath = `prototypes/${name}/`;
+
+        // Identification tracking: maps item type -> true if identified this session
+        this.identifiedTypes = new Set();
+
+        // Random color assignments: maps item type -> assigned color object
+        // This ensures all instances of the same item type get the same random color
+        this.itemColorAssignments = new Map();
+
+        // Lock pairing system: tracks color-locked doors and their assigned colors
+        // Each locked door gets a unique color, keys are assigned to match
+        this.lockColors = [];           // Array of assigned lock colors (color objects)
+        this.usedLockColors = new Set(); // Track which colors have been used
+        this.unpairedLockColors = [];    // Colors assigned to doors but not yet to keys
     }
-    
+
     async loadAssets() {
 
         const prototypeActors = await this.loadJSON('actors.json', {});
@@ -941,7 +993,108 @@ class Prototype {
         console.log(`  Items: ${Object.keys(this.items).length} (${this.prototypeItemTypes.length} prototype-specific)`);
         console.log(`  Personalities: ${Object.keys(this.personalities).length} (${Object.keys(prototypePersonalities).length} prototype-specific)`);
     }
-    
+
+    /**
+     * Check if an item type has been identified in this prototype session
+     */
+    isTypeIdentified(itemType) {
+        return this.identifiedTypes.has(itemType);
+    }
+
+    /**
+     * Mark an item type as identified, affecting all items of that type
+     */
+    identifyType(itemType) {
+        if (!this.identifiedTypes.has(itemType)) {
+            this.identifiedTypes.add(itemType);
+            console.log(`Item type '${itemType}' has been identified!`);
+
+            // Update all existing items of this type
+            if (this.engine.entityManager) {
+                for (const item of this.engine.entityManager.items) {
+                    if (item.type === itemType) {
+                        item.identified = true;
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Get or assign a random color for an item type
+     * Ensures all items of the same type get the same color within this prototype
+     */
+    getColorForItemType(itemType) {
+        if (this.itemColorAssignments.has(itemType)) {
+            return this.itemColorAssignments.get(itemType);
+        }
+
+        // Assign a random color from the global colors list
+        const colors = this.engine.globalColors;
+        if (colors && colors.length > 0) {
+            const randomColor = colors[Math.floor(Math.random() * colors.length)];
+            this.itemColorAssignments.set(itemType, randomColor);
+            console.log(`Assigned color '${randomColor.color}' (${randomColor.hex}) to item type '${itemType}'`);
+            return randomColor;
+        }
+
+        return null;
+    }
+
+    /**
+     * Assign a unique color to a locked door
+     * Each door gets its own color that a matching key must have
+     * @returns {Object|null} The assigned color object {color, hex}
+     */
+    assignLockColor() {
+        const colors = this.engine.globalColors;
+        if (!colors || colors.length === 0) return null;
+
+        // Find an unused color
+        const availableColors = colors.filter(c => !this.usedLockColors.has(c.color));
+
+        if (availableColors.length === 0) {
+            // All colors used, pick a random one (allows duplicate colors)
+            const color = colors[Math.floor(Math.random() * colors.length)];
+            this.lockColors.push(color);
+            this.unpairedLockColors.push(color);
+            console.log(`Assigned lock color '${color.color}' (reused, all colors taken)`);
+            return color;
+        }
+
+        // Pick a random unused color
+        const color = availableColors[Math.floor(Math.random() * availableColors.length)];
+        this.usedLockColors.add(color.color);
+        this.lockColors.push(color);
+        this.unpairedLockColors.push(color);
+        console.log(`Assigned lock color '${color.color}' to door`);
+        return color;
+    }
+
+    /**
+     * Get a color for a key that matches an unpaired locked door
+     * @returns {Object|null} The assigned color object {color, hex}
+     */
+    getKeyColor() {
+        // If there are unpaired doors, assign the key to one of them
+        if (this.unpairedLockColors.length > 0) {
+            const color = this.unpairedLockColors.shift(); // Take the first unpaired color
+            console.log(`Assigned key color '${color.color}' to match a door`);
+            return color;
+        }
+
+        // No unpaired doors - this key won't match anything yet
+        // Assign a random color (the door might be spawned later)
+        const colors = this.engine.globalColors;
+        if (colors && colors.length > 0) {
+            const color = colors[Math.floor(Math.random() * colors.length)];
+            console.log(`Assigned key color '${color.color}' (no unpaired doors)`);
+            return color;
+        }
+
+        return null;
+    }
+
     async loadJSON(filename, defaultValue) {
         try {
             const response = await fetch(this.basePath + filename);
@@ -1031,16 +1184,158 @@ class Item extends Entity {
         this.name = data.name || type;
         this.tileIndex = engine.spriteLibrary.resolveTile(data.tileIndex) || {x: 0, y: 0};
         this.height = 1;
-        this.tint = parseTint(data.tint);
         this.flipH = data.flipH || false;
         this.flipV = data.flipV || false;
         this.setAttribute('pickupable', true);
         this.setAttribute('visible', true);
+
+        // Identification system
+        this.unidentifiedTemplate = data.unidentified_template || null;
+        this.identifiedTemplate = data.identified_template || null;
+        // Store template variables for substitution (copy so we can modify per-instance)
+        this.templateVars = { ...(data.template_vars || {}) };
+
+        // Handle random color assignment for items with random_color flag
+        if (data.random_color && engine.currentPrototype) {
+            let assignedColor;
+
+            // Keys use the lock pairing system - each key gets a color matching a door
+            if (data.attributes?.key) {
+                assignedColor = engine.currentPrototype.getKeyColor();
+                if (assignedColor) {
+                    // Store the lock_color for matching with doors
+                    this.setAttribute('lock_color', assignedColor.color);
+                }
+            } else {
+                // Other items (potions, etc.) use type-based color assignment
+                assignedColor = engine.currentPrototype.getColorForItemType(type);
+            }
+
+            if (assignedColor) {
+                // Set the color name for template substitution
+                this.templateVars.color = assignedColor.color;
+                // Set the tint from the hex value
+                this.tint = parseTint(assignedColor.hex);
+            } else {
+                this.tint = parseTint(data.tint);
+            }
+        } else {
+            this.tint = parseTint(data.tint);
+        }
+
+        // Identification status - check if this type was already identified
+        if (data.identified === false) {
+            // Item starts unidentified, but check if type was already identified this session
+            this.identified = engine.currentPrototype?.isTypeIdentified(type) ?? false;
+        } else {
+            this.identified = data.identified ?? true;
+        }
+
+        // Use description template (shown when item is used)
+        this.useDescription = data.use_description || null;
+
         if (data.attributes) {
             Object.entries(data.attributes).forEach(([key, value]) => {
                 this.setAttribute(key, value);
             });
         }
+    }
+
+    /**
+     * Get the display name based on identification status
+     * Processes templates like "[color] [name]" or "[name] of [effect]"
+     * @returns {string} The name to display
+     */
+    getDisplayName() {
+        const template = this.identified ? this.identifiedTemplate : this.unidentifiedTemplate;
+
+        // If no template, return base name
+        if (!template) {
+            return this.name;
+        }
+
+        // Process template by replacing [key] with values from templateVars or item properties
+        return template.replace(/\[(\w+)\]/g, (match, key) => {
+            // Check templateVars first
+            if (this.templateVars[key] !== undefined) {
+                return this.templateVars[key];
+            }
+            // Check item properties
+            if (this[key] !== undefined) {
+                return this[key];
+            }
+            // Check attributes
+            const attrValue = this.getAttribute(key);
+            if (attrValue !== undefined) {
+                return attrValue;
+            }
+            // Return the key itself if no substitution found
+            return match;
+        });
+    }
+
+    /**
+     * Identify this item and all items of the same type in this prototype
+     */
+    identify() {
+        this.identified = true;
+        // Notify the prototype so all items of this type become identified
+        if (this.engine.currentPrototype) {
+            this.engine.currentPrototype.identifyType(this.type);
+        }
+    }
+
+    /**
+     * Get the use description with template substitution
+     * Supports [item_name], [key], and [adjectives.category] for random adjective selection
+     * @returns {string|null} The processed use description or null if none
+     */
+    getUseDescription() {
+        if (!this.useDescription) return null;
+
+        let result = this.useDescription.replace(/\[([^\]]+)\]/g, (match, key) => {
+            // Skip [a-an] - will be processed after all other substitutions
+            if (key.toLowerCase() === 'a-an') {
+                return match;
+            }
+
+            // Handle adjectives.category syntax (e.g., [adjectives.yucky])
+            if (key.startsWith('adjectives.')) {
+                const category = key.substring('adjectives.'.length);
+                const adjectives = this.engine.globalAdjectives?.[category];
+                if (adjectives && adjectives.length > 0) {
+                    return adjectives[Math.floor(Math.random() * adjectives.length)];
+                }
+                return match;
+            }
+
+            // Handle special item_name key
+            if (key === 'item_name') {
+                return this.getDisplayName();
+            }
+
+            // Check templateVars
+            if (this.templateVars[key] !== undefined) {
+                return this.templateVars[key];
+            }
+
+            // Check item properties
+            if (this[key] !== undefined) {
+                return this[key];
+            }
+
+            // Check attributes
+            const attrValue = this.getAttribute(key);
+            if (attrValue !== undefined) {
+                return attrValue;
+            }
+
+            // Return the key itself if no substitution found
+            return match;
+        });
+
+        // Process [a-an] templates after all other substitutions
+        return processArticleTemplates(result);
     }
 
     use(actor) {
@@ -1126,6 +1421,9 @@ class Actor extends Entity {
         if (data.collision_sound) {
             this.setAttribute('collision_sound', data.collision_sound);
         }
+        if (data.collision_description) {
+            this.setAttribute('collision_description', data.collision_description);
+        }
         if (data.death_sound) {
             this.setAttribute('death_sound', data.death_sound);
         }
@@ -1136,6 +1434,15 @@ class Actor extends Entity {
         // Store alternate tile indices for state changes
         this.tileIndexBase_open = engine.spriteLibrary.resolveTile(data.tileIndexBase_open) || null;
         this.tileIndexTop_open = engine.spriteLibrary.resolveTile(data.tileIndexTop_open) || null;
+
+        // Handle random color assignment for color-locked doors
+        if (data.random_color && this.hasAttribute('color_locked') && engine.currentPrototype) {
+            const assignedColor = engine.currentPrototype.assignLockColor();
+            if (assignedColor) {
+                this.setAttribute('lock_color', assignedColor.color);
+                this.tint = parseTint(assignedColor.hex);
+            }
+        }
 
         this.isDead = false;
 
@@ -1204,6 +1511,7 @@ class Actor extends Entity {
         }
         this.engine.playSound('plunk3');
         console.log(`${this.name} opened`);
+        this.engine.inputManager?.showMessage(`The ${this.name} opens.`);
     }
 
     close() {
@@ -1235,8 +1543,9 @@ class Actor extends Entity {
         }
 
         console.log(`${this.name} closed`);
+        this.engine.inputManager?.showMessage(`The ${this.name} closes.`);
     }
-    
+
     loadPersonality(personalityName) {
         const personalityData = this.engine.currentPrototype.getPersonality(personalityName);
         if (personalityData) {
@@ -1252,6 +1561,10 @@ class Actor extends Entity {
         // Player-controlled actors lock the engine and wait for input
         if (this.hasAttribute('controlled')) {
             this.engine.turnEngine.lock();
+
+            // Update player info box if visible (reflects stat changes from previous turn)
+            this.engine.interfaceManager?.updatePlayerInfo();
+
             return Promise.resolve();
         }
 
@@ -1284,6 +1597,15 @@ class Actor extends Entity {
     die(spawnRemains = true) {
         this.isDead = true;
         this.setAttribute('solid', false);
+
+        // Show death message for visible actors
+        if (this.hasAttribute('visible')) {
+            if (this.hasAttribute('controlled')) {
+                this.engine.inputManager?.showMessage(`You die...`);
+            } else {
+                this.engine.inputManager?.showMessage(`The ${this.name} dies.`);
+            }
+        }
 
         // Play death sound if specified
         const deathSound = this.getAttribute('death_sound');
@@ -1345,10 +1667,15 @@ class Actor extends Entity {
         this.engine.entityManager.removeEntity(item);
         console.log(`${this.name} picked up ${item.name}`);
 
-        // Play pickup sound if this is the player
+        // Play pickup sound and show message if this is the player
         if (this.hasAttribute('controlled')) {
             const pickupSound = item.getAttribute('pickup_sound') || 'tone3';
             this.engine.playSound(pickupSound);
+
+            // Show pickup message in description element
+            const displayName = item.getDisplayName ? item.getDisplayName() : item.name;
+            const article = this.engine.inputManager?.getIndefiniteArticle(displayName) || 'a';
+            this.engine.inputManager?.showMessage(`You pick up ${article} ${displayName}.`);
         }
 
         // Auto-equip wearable items
@@ -1591,6 +1918,26 @@ class Actor extends Entity {
             console.log(`${item.name} was consumed`);
         }
 
+        // Show use description to player if available (before identification changes the name)
+        if (success && this.hasAttribute('controlled') && this.engine.inputManager) {
+            const useDescription = item.getUseDescription();
+            if (useDescription) {
+                this.engine.inputManager.showMessage(useDescription);
+            }
+        }
+
+        // Identify the item after successful use (reveals what it does)
+        if (success && !item.identified) {
+            item.identify();
+            const identifiedName = item.getDisplayName();
+            console.log(`${this.name} identified the ${identifiedName}!`);
+
+            // Show identification message to player (stacks with use description)
+            if (this.hasAttribute('controlled') && this.engine.inputManager) {
+                this.engine.inputManager.showMessage(`You identified the ${identifiedName}!`);
+            }
+        }
+
         return success;
     }
 
@@ -1649,6 +1996,53 @@ class Actor extends Entity {
     }
 
     /**
+     * Get the collision description with template substitution
+     * @param {Actor} target - The actor being attacked
+     * @returns {string|null} The processed description or null if none
+     */
+    getCollisionDescription(target) {
+        const template = this.getAttribute('collision_description');
+        if (!template) return null;
+
+        let result = template.replace(/\[([^\]]+)\]/g, (match, key) => {
+            // Skip [a-an] - will be processed after all other substitutions
+            if (key.toLowerCase() === 'a-an') {
+                return match;
+            }
+
+            // Handle attacks.category for random attack verbs
+            if (key.startsWith('attacks.')) {
+                const category = key.substring('attacks.'.length);
+                const attacks = this.engine.globalAttacks?.[category];
+                if (attacks && attacks.length > 0) {
+                    return attacks[Math.floor(Math.random() * attacks.length)];
+                }
+                return match;
+            }
+            // Handle adjectives.category
+            if (key.startsWith('adjectives.')) {
+                const category = key.substring('adjectives.'.length);
+                const adjectives = this.engine.globalAdjectives?.[category];
+                if (adjectives && adjectives.length > 0) {
+                    return adjectives[Math.floor(Math.random() * adjectives.length)];
+                }
+                return match;
+            }
+            // Handle special keys
+            if (key === 'actor_name') {
+                return this.name;
+            }
+            if (key === 'attacked_actor_name') {
+                return target.name;
+            }
+            return match;
+        });
+
+        // Process [a-an] templates after all other substitutions
+        return processArticleTemplates(result);
+    }
+
+    /**
      * Apply collision effects from actor or held items to a target actor
      * @param {Actor} target - The actor being collided with
      * @returns {{effectApplied: boolean, targetPassable: boolean}}
@@ -1662,12 +2056,18 @@ class Actor extends Entity {
         for (const item of this.inventory) {
             const itemEffect = item.getAttribute('collision_effect');
             if (itemEffect) {
-                sources.push({ name: item.name, effect: itemEffect, sound: item.getAttribute('collision_sound') });
+                sources.push({
+                    name: item.name,
+                    effect: itemEffect,
+                    sound: item.getAttribute('collision_sound'),
+                    item: item,  // Include item reference for key color checking
+                    lockColor: item.getAttribute('lock_color')
+                });
             }
         }
         const actorEffect = this.getAttribute('collision_effect');
         if (actorEffect) {
-            sources.push({ name: this.name, effect: actorEffect, sound: this.getAttribute('collision_sound') });
+            sources.push({ name: this.name, effect: actorEffect, sound: this.getAttribute('collision_sound'), item: null, lockColor: null });
         }
 
         // Apply effects from ALL sources (stacking)
@@ -1727,8 +2127,40 @@ class Actor extends Entity {
                 }
                 // Handle boolean values (set directly)
                 else if (typeof value === 'boolean') {
-                    // Only apply if target has the attribute
-                    if (currentValue !== undefined) {
+                    // Special handling for locked attribute with color-locked doors
+                    if (key === 'locked' && value === false && target.hasAttribute('color_locked')) {
+                        const targetLockColor = target.getAttribute('lock_color');
+                        const sourceLockColor = source.lockColor;
+
+                        // Check if colors match
+                        if (targetLockColor && sourceLockColor && targetLockColor === sourceLockColor) {
+                            target.setAttribute(key, value);
+                            console.log(`${source.name} (${sourceLockColor}) unlocks ${target.name} (${targetLockColor})!`);
+                            sourceApplied = true;
+                            target.open();
+                            this.engine.updateLighting();
+                            targetPassable = !target.hasAttribute('solid');
+
+                            // Show unlock message
+                            if (this.hasAttribute('controlled')) {
+                                this.engine.inputManager?.showMessage(`The ${source.name} unlocks the ${targetLockColor} door!`);
+                            }
+
+                            // Consume the key if it has consumable attribute
+                            if (source.item && source.item.hasAttribute('consumable')) {
+                                this.inventory = this.inventory.filter(i => i !== source.item);
+                                console.log(`${source.name} was consumed`);
+                            }
+                        } else {
+                            // Wrong color - show message but don't apply effect
+                            console.log(`${source.name} (${sourceLockColor || 'no color'}) doesn't match ${target.name} (${targetLockColor})`);
+                            if (this.hasAttribute('controlled') && targetLockColor) {
+                                this.engine.inputManager?.showMessage(`The ${targetLockColor} door requires a ${targetLockColor} key.`);
+                            }
+                        }
+                    }
+                    // Standard boolean handling for non-color-locked targets
+                    else if (currentValue !== undefined) {
                         target.setAttribute(key, value);
                         console.log(`${source.name}: set ${target.name}'s ${key} to ${value}`);
                         sourceApplied = true;
@@ -1756,6 +2188,14 @@ class Actor extends Entity {
         // Flash the target for visual feedback if any effect was applied
         if (effectApplied && target.flash) {
             target.flash();
+        }
+
+        // Show collision description if any effect was applied
+        if (effectApplied) {
+            const description = this.getCollisionDescription(target);
+            if (description) {
+                this.engine.inputManager?.showMessage(description);
+            }
         }
 
         return { effectApplied, targetPassable };
@@ -1846,6 +2286,14 @@ class Actor extends Entity {
      */
     fall() {
         console.log(`${this.name} fell into the void!`);
+
+        // Show fall message
+        if (this.hasAttribute('controlled')) {
+            this.engine.inputManager?.showMessage(`You plunge into the depths!`);
+        } else if (this.hasAttribute('visible')) {
+            this.engine.inputManager?.showMessage(`The ${this.name} falls into the void.`);
+        }
+
         this.dropItems(true); // Items lost to void
         this.die(false); // Don't spawn remains when falling into void
     }
@@ -1935,6 +2383,11 @@ class Actor extends Entity {
                     actorAtTarget.updateSpritePosition();
                     console.log(`${this.name} pushes ${actorAtTarget.name}`);
 
+                    // Show push message if player is pushing
+                    if (this.hasAttribute('controlled')) {
+                        this.engine.inputManager?.showMessage(`You push the ${actorAtTarget.name}.`);
+                    }
+
                     // Now move into the vacated space
                     this.x = newX;
                     this.y = newY;
@@ -1965,6 +2418,9 @@ class Actor extends Entity {
                 if (actorAtTarget.state?.locked) {
                     console.log(`${actorAtTarget.name} is locked`);
                     this.engine.playSound?.('tap1');
+                    if (this.hasAttribute('controlled')) {
+                        this.engine.inputManager?.showMessage(`The ${actorAtTarget.name} is locked.`);
+                    }
                     return { moved: false, actionTaken: false };
                 }
                 actorAtTarget.open();
@@ -2393,6 +2849,13 @@ const BehaviorLibrary = {
             if (!isSolid && !isLiquid) continue;
 
             console.log(`${actor.name} incinerates ${other.name}!`);
+
+            // Show incineration message for visible actors
+            if (other.hasAttribute('visible')) {
+                const otherName = other.hasAttribute('mass_noun') ? other.name : `the ${other.name}`;
+                actor.engine.inputManager?.showMessage(`The ${actor.name} incinerates ${otherName}!`);
+            }
+
             other.die();
 
             // Spawn replacement actor - smoke for liquids, fire for solids
@@ -2413,7 +2876,18 @@ const BehaviorLibrary = {
         );
 
         for (const item of itemsAtPosition) {
+            // Only incinerate flammable items
+            if (!item.hasAttribute('flammable')) continue;
+
             console.log(`${actor.name} incinerates ${item.name}!`);
+
+            // Show incineration message for visible items
+            if (item.hasAttribute('visible')) {
+                const displayName = item.getDisplayName ? item.getDisplayName() : item.name;
+                const article = actor.engine.inputManager?.getIndefiniteArticle(displayName) || 'a';
+                actor.engine.inputManager?.showMessage(`The ${actor.name} incinerates ${article} ${displayName}!`);
+            }
+
             entityManager.removeEntity(item);
             incinerated = true;
         }
@@ -4204,266 +4678,6 @@ class RenderSystem {
         } else if (!shouldPlay && sprite.playing) {
             sprite.stop();
         }
-    }
-}
-
-// ============================================================================
-// INPUT MANAGER
-// ============================================================================
-
-class InputManager {
-    constructor(engine) {
-        this.engine = engine;
-        this.enabled = true;
-
-        // Key mappings (supports multiple keys per action)
-        this.keyMap = {
-            // Arrow keys and WASD for movement
-            'ArrowUp': 'move_up',
-            'ArrowDown': 'move_down',
-            'ArrowLeft': 'move_left',
-            'ArrowRight': 'move_right',
-            'w': 'move_up',
-            'W': 'move_up',
-            's': 'move_down',
-            'S': 'move_down',
-            'a': 'move_left',
-            'A': 'move_left',
-            'd': 'move_right',
-            'D': 'move_right',
-            // Numpad for 8-directional movement
-            'Numpad8': 'move_up',
-            'Numpad2': 'move_down',
-            'Numpad4': 'move_left',
-            'Numpad6': 'move_right',
-            'Numpad7': 'move_up_left',
-            'Numpad9': 'move_up_right',
-            'Numpad1': 'move_down_left',
-            'Numpad3': 'move_down_right',
-            'Numpad5': 'wait',
-            // Vi keys
-            'k': 'move_up',
-            'j': 'move_down',
-            'h': 'move_left',
-            'l': 'move_right',
-            'y': 'move_up_left',
-            'u': 'move_up_right',
-            'b': 'move_down_left',
-            'n': 'move_down_right',
-            // Other actions
-            '.': 'wait',
-            'g': 'pickup',
-            ',': 'pickup',
-            'i': 'player_info',
-            'I': 'player_info'
-        };
-
-        // Global keys (work regardless of player state)
-        this.globalKeyMap = {
-            ' ': 'toggle_pause',
-            'Escape': 'reload'
-        };
-
-        // Direction vectors for movement actions
-        this.directions = {
-            'move_up': { dx: 0, dy: -1 },
-            'move_down': { dx: 0, dy: 1 },
-            'move_left': { dx: -1, dy: 0 },
-            'move_right': { dx: 1, dy: 0 },
-            'move_up_left': { dx: -1, dy: -1 },
-            'move_up_right': { dx: 1, dy: -1 },
-            'move_down_left': { dx: -1, dy: 1 },
-            'move_down_right': { dx: 1, dy: 1 }
-        };
-
-        this.setupListeners();
-    }
-
-    setupListeners() {
-        document.addEventListener('keydown', (e) => this.handleKeyDown(e));
-    }
-
-    handleKeyDown(event) {
-        if (!this.enabled) return;
-
-        // Check if confirmation dialog wants to handle this key first
-        if (this.engine.interfaceManager?.handleConfirmKey(event.key)) {
-            event.preventDefault();
-            return;
-        }
-
-        // Check if interface manager wants to handle this key (inventory interaction)
-        if (this.engine.interfaceManager?.handleInventoryKey(event.key)) {
-            event.preventDefault();
-            return;
-        }
-
-        // Check global keys first (work regardless of player state)
-        const globalAction = this.globalKeyMap[event.key] || this.globalKeyMap[event.code];
-        if (globalAction) {
-            event.preventDefault();
-            this.executeGlobalAction(globalAction);
-            return;
-        }
-
-        // Player-specific actions require a living player
-        const player = this.engine.entityManager?.player;
-        if (!player || player.isDead) return;
-
-        const action = this.keyMap[event.key] || this.keyMap[event.code];
-        if (!action) return;
-
-        // Prevent default for game keys (don't scroll page with arrows, etc.)
-        event.preventDefault();
-
-        // Ignore key repeat events to prevent stacking inputs when holding keys
-        //if (event.repeat) return;
-
-        this.executeAction(action, player);
-    }
-
-    executeGlobalAction(action) {
-        switch (action) {
-            case 'toggle_pause':
-                this.engine.toggleObserverPause();
-                break;
-
-            case 'reload':
-                this.engine.reloadPrototype();
-                break;
-        }
-    }
-
-    executeAction(action, player) {
-        // Handle movement actions
-        if (this.directions[action]) {
-            const dir = this.directions[action];
-            const targetX = player.x + dir.dx;
-            const targetY = player.y + dir.dy;
-
-            // Check for hazards that need confirmation
-            const hazardCheck = this.checkMovementHazard(player, targetX, targetY);
-            if (hazardCheck) {
-                // Show confirmation dialog
-                this.engine.interfaceManager?.showConfirmDialog(
-                    hazardCheck.message,
-                    () => {
-                        // On confirm - execute the move
-                        const result = player.moveBy(dir.dx, dir.dy);
-                        if (result.moved) {
-                            this.engine.playSoundVaried('feets', 0.4, 0.1, 1.0, 0.06);
-                        }
-                        if (result.actionTaken) {
-                            this.onPlayerAction();
-                        }
-                    },
-                    () => {
-                        // On cancel - do nothing
-                    }
-                );
-                return;
-            }
-
-            const result = player.moveBy(dir.dx, dir.dy);
-            if (result.moved) {
-                this.engine.playSoundVaried('feets', 0.4, 0.1, 1.0, 0.06);
-            } else if (!result.actionTaken) {
-                // Bumped into a wall or obstacle with no effect
-                this.engine.playSound('tap1');
-            }
-            if (result.actionTaken) {
-                this.onPlayerAction();
-            }
-            return;
-        }
-
-        // Handle other actions
-        switch (action) {
-            case 'wait':
-                console.log(`${player.name} waits.`);
-                this.onPlayerAction();
-                break;
-
-            case 'pickup':
-                const item = this.engine.entityManager.getItemAt(player.x, player.y);
-                if (item) {
-                    const pickedUp = player.pickUpItem(item);
-                    if (pickedUp) {
-                        this.engine.playSound('pickup');
-                        this.onPlayerAction();
-                    } else {
-                        // Inventory full - show message
-                        this.engine.interfaceManager?.showTextBox(
-                            'inventory_full',
-                            "You can't carry any more things!",
-                            { dismissOnMove: true }
-                        );
-                    }
-                } else {
-                    console.log('Nothing to pick up here.');
-                }
-                break;
-
-            case 'player_info':
-                if (this.engine.interfaceManager) {
-                    this.engine.interfaceManager.togglePlayerInfo(player);
-                }
-                break;
-        }
-    }
-
-    onPlayerAction() {
-        // Called after player takes an action - unlock the turn engine to let AI act
-        if (this.engine.turnEngine && this.engine.turnEngine._lock) {
-            this.engine.turnEngine.unlock();
-        }
-    }
-
-    /**
-     * Check if moving to a position would trigger a hazard warning
-     * @param {Actor} player - The player actor
-     * @param {number} targetX - Target X coordinate
-     * @param {number} targetY - Target Y coordinate
-     * @returns {{message: string}|null} Hazard info or null if safe
-     */
-    checkMovementHazard(player, targetX, targetY) {
-        const entityManager = this.engine.entityManager;
-
-        // Check for solid actors at target (walls, closed doors, etc.)
-        // If blocked by a solid actor, no hazard warning needed - the move will just fail
-        for (const actor of entityManager.actors) {
-            if (actor.x === targetX && actor.y === targetY && !actor.isDead && actor.hasAttribute('solid')) {
-                return null; // Blocked by solid actor, no warning needed
-            }
-        }
-
-        // Check for void (no floor)
-        if (!player.hasFloorAt(targetX, targetY)) {
-            return { message: "Dive into the depths?" };
-        }
-
-        // Check for lava_behavior actors at target position
-        if (!player.hasAttribute('fireproof')) {
-            for (const actor of entityManager.actors) {
-                if (actor.x !== targetX || actor.y !== targetY) continue;
-                if (actor.isDead) continue;
-
-                // Check if actor has lava_behavior personality
-                if (actor.personality?.name === 'Lava') {
-                    return { message: `Really step into ${actor.name}?` };
-                }
-            }
-        }
-
-        return null; // No hazard
-    }
-
-    enable() {
-        this.enabled = true;
-    }
-
-    disable() {
-        this.enabled = false;
     }
 }
 

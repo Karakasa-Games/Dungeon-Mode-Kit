@@ -11,7 +11,13 @@
         <p>Status: <span id="status">Ready</span></p>
     </div>
     
-    <div id="game"></div>
+    <div id="game">
+     
+    </div>
+    <details id="description">
+        <summary>Description</summary>
+        The Description of the Dungeon could optionally go here and open when mousing over or when there is feedback
+    </details>   
 
     <!-- Libraries -->
     <script src="lib/rot.js"></script>
@@ -22,7 +28,9 @@
     <script src="lighting.js"></script>
     <script src="sound.js"></script>
     <script src="interface.js"></script>
+    <script src="input.js"></script>
     <script src="engine.js"></script>
+    
 
     <script>
         const statusEl = document.getElementById('status');

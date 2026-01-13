@@ -2,6 +2,8 @@
 
 A modular web-based roguelike framework built on rot.js and pixi.js
 
+**[Original Design Notes](/DUNGEON_MODE_KIT_DESIGN.md)**
+
 ### Core Architecture
 
 #### DungeonEngine
@@ -35,6 +37,7 @@ A hierarchical, attribute-based system:
 - Default attribute: `pickupable: true`
 
 Item JSON schema:
+
 ```json
 {
   "item_id": {
@@ -61,6 +64,8 @@ Item JSON schema:
 }
 ```
 
+**[Items](/ITEMS.md)**
+
 **Actor (extends Entity)** - Interactive 2-tile entities (player, monsters, doors, walls)
 
 - Height: 2 tiles (base sprite + top sprite)
@@ -69,6 +74,7 @@ Item JSON schema:
 - Methods: `die()`, `pickUpItem()`, `flash()`, `applyCollisionEffects()`
 
 Actor JSON schema (organized by property type):
+
 ```json
 {
   "actor_id": {
@@ -168,6 +174,8 @@ Actors render as two sprites stacked vertically (base at position, top one tile 
 - `wildcards` (tilelayer) - Special tiles that trigger procedural generation
 - `actors` (objectgroup) - Objects with `type` or `class` matching actor definitions
 - `items` (objectgroup) - Objects with `type` matching item definitions
+
+**[Lighting](/LIGHTING.md)**
 
 #### EntityManager
 

@@ -386,6 +386,17 @@
                  "width":40,
                  "x":600,
                  "y":660
+                }, 
+                {
+                 "height":30,
+                 "id":36,
+                 "name":"Health Potion",
+                 "rotation":0,
+                 "type":"health_potion",
+                 "visible":true,
+                 "width":40,
+                 "x":1040,
+                 "y":540
                 }],
          "opacity":1,
          "type":"objectgroup",
@@ -394,7 +405,7 @@
          "y":0
         }],
  "nextlayerid":7,
- "nextobjectid":36,
+ "nextobjectid":37,
  "orientation":"orthogonal",
  "renderorder":"right-down",
  "tiledversion":"1.11.2",

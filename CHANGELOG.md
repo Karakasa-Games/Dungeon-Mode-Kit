@@ -16,9 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Planned
 
 - Item drops on death
-- Mouse Input
 - Aiming UI
-- Treasure rooms with locked doors, color paired keys and doors
 - Test and build out fully generated levels
 - Brogue style deep sewage that floats items
 - Fire and smoke actors should dissipate
@@ -27,6 +25,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Multi-level state stack
 - Wildcard item/actor spawning (stubs exist)
+
+## [0.6a] 2026-01-13
+
+### Added
+
+- Mouse hover descriptions: hovering over tiles shows "You see a [entity]" in description element
+- Fog of war memory: "You remember seeing [entity]" for explored but not visible tiles
+- Message stacking: multiple events in same turn display together (e.g., attack + death)
+- Item identification system (Brogue-style):
+  - Items can have `random_color: true` for randomized appearance per prototype
+  - Unidentified/identified name templates (e.g., "blue potion" → "Potion of Healing")
+  - Using an item identifies it and all items of that type
+- Color-paired keys and locked doors:
+  - Keys and locked doors get matching random colors when spawned
+  - "The blue key unlocks the blue door!" / "The red door requires a red key"
+  - Keys consumed on successful unlock
+- Description text templates with `[a-an]` for automatic article selection
+- Template variables: `[adjectives.category]`, `[attacks.melee_verbs]`, `[item_name]`, `[actor_name]`
+- `collision_description` attribute for actors (templated attack messages)
+- `use_description` attribute for items (templated use messages)
+- Event description messages: death, push, door open/close/locked, fall, incineration
+- Player info box auto-updates after each turn to reflect stat changes
+- Global data loading: colors.json, adjectives.json, attacks.json
+
+### Changed
+
+- Added some .json data for templated text (substances, reagents, adjectives, attacks)
+- Default Keys now use color-based unlocking instead of universal unlock
+
+### Fixed
+
+- Item tiles in inventory now respect flipH/flipV properties
 
 ## [0.5a] 2026-01-05
 

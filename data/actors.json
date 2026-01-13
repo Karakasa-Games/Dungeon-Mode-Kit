@@ -28,6 +28,7 @@
     "personality": "stationed_melee",
     "collision_effect": { "health": -5 },
     "collision_sound": "hit",
+    "collision_description": "The [actor_name] [attacks.melee_verbs] the [attacked_actor_name]!",
     "attributes": {
       "hostile": true,
       "solid": true,
@@ -140,11 +141,13 @@
     "tileIndexTop": "OPAQUE_DOOR_TOP",
     "tileIndexTop_open": "OPAQUE_MEDIUM_LIGHT_SHADE_RIGHT_ONE_FIFTH_BLOCK",
     "tileIndexBase_open": "OPAQUE_MEDIUM_LIGHT_SHADE_RIGHT_ONE_FIFTH_BLOCK",
+    "random_color": true,
     "attributes": {
       "solid": true,
       "visible": true,
       "openable": true,
-      "lockable": true
+      "lockable": true,
+      "color_locked": true
     },
     "state": {
       "open": false,
@@ -165,7 +168,8 @@
       "spreads": false,
       "liquid": true,
       "ignites": true,
-      "paint_tile": "OPAQUE_DOTTED_LIGHT_SHADE"
+      "paint_tile": "OPAQUE_DOTTED_LIGHT_SHADE",
+      "mass_noun": true
     }
   },
   "lava": {
@@ -183,7 +187,8 @@
       "spreads": false,
       "ignites": false,
       "light_source": true,
-      "paint_tile": "DOUBLE_EXCLAMATION_MARK"
+      "paint_tile": "DOUBLE_EXCLAMATION_MARK",
+      "mass_noun": true
     }
   },
   "fire": {
