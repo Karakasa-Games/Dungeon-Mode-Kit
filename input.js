@@ -145,7 +145,6 @@ class InputManager {
     handleMouseLeave() {
         this.hoveredTile.x = -1;
         this.hoveredTile.y = -1;
-        this.clearDescription();
     }
 
     updateDescription(tileX, tileY) {
@@ -167,9 +166,8 @@ class InputManager {
         // Determine if this is a "remembered" tile (explored but not currently visible, with fog of war on)
         const isRemembered = !isVisible && fogOfWar && isExplored;
 
-        // If not visible and not remembered, show nothing
+        // If not visible and not remembered, keep current description
         if (!isVisible && !isRemembered) {
-            this.clearDescription();
             return;
         }
 
@@ -217,8 +215,6 @@ class InputManager {
             }
             // Open the details element to show the description
             this.descriptionElement.open = true;
-        } else {
-            this.clearDescription();
         }
     }
 
@@ -287,11 +283,17 @@ class InputManager {
                 .filter(node => node !== summary);
             existingText.forEach(node => node.remove());
 
-            // Join all messages with line breaks
+            // Add messages with proper line breaks
             if (this.messageStack.length > 0) {
                 const combinedMessage = this.messageStack.join('\n');
-                const textNode = document.createTextNode('\n' + combinedMessage);
-                this.descriptionElement.appendChild(textNode);
+                // Split by newlines and insert <br> elements between lines
+                const lines = combinedMessage.split('\n');
+                lines.forEach((line, index) => {
+                    if (index > 0) {
+                        this.descriptionElement.appendChild(document.createElement('br'));
+                    }
+                    this.descriptionElement.appendChild(document.createTextNode(line));
+                });
             }
         }
         // Open the details element to show the messages

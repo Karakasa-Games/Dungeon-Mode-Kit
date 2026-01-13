@@ -1,5 +1,6 @@
 {
   "name": "Cretan Labyrinth",
+  "description": "It's dark inside these winding corridors.",
   "loaded_sound": "levelout",
   "depth": 2,
   "turn_speed": 50,

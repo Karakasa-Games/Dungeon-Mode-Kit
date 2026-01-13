@@ -761,6 +761,12 @@ class DungeonEngine {
             this.playSound(prototypeConfig.loaded_sound);
         }
 
+        // Show prototype description in the description element
+        if (prototypeConfig.description && this.inputManager) {
+            this.inputManager.clearMessageStack();
+            this.inputManager.showMessage(prototypeConfig.description);
+        }
+
         console.log(`Prototype ${prototypeName} loaded successfully`);
         console.log(`Map size: ${this.mapManager.width}x${this.mapManager.height} tiles`);
         console.log(`Canvas size: ${this.canvasWidth}x${this.canvasHeight}px`);
