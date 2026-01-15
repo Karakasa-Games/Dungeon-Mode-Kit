@@ -4619,6 +4619,9 @@ class RenderSystem {
         const fogOfWar = this.engine.currentPrototype?.config?.mechanics?.fog_of_war;
 
         for (const actor of this.engine.entityManager.actors) {
+            // Skip dead actors - their sprites should stay hidden
+            if (actor.isDead) continue;
+
             const vis = lightingManager.getEntityVisibility(actor.x, actor.y, fogOfWar);
 
             if (actor.spriteBase) actor.spriteBase.visible = vis.showBase;

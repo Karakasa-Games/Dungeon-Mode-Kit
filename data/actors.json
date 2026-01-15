@@ -17,8 +17,9 @@
       "remains": "skull"
     },
     "stats": {
-      "health": 1
-    }
+      "health": 100
+    },
+    "default_items": ["sword"]
   },
     
   "skeleton": {

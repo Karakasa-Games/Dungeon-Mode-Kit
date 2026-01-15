@@ -17,6 +17,9 @@ class LightingManager {
 
         this.ambientLight = 0.0;
         this.playerLightRadius = 6;
+
+        // Shadow entities cast by actors blocking colored light sources
+        this.shadowEntities = new Map(); // "x,y" -> Entity
     }
 
     initialize(width, height, config = {}) {
@@ -134,9 +137,12 @@ class LightingManager {
         for (const source of sources) {
             this.currentSource = source;
 
-            const sr = (source.color >> 16) & 0xFF;
-            const sg = (source.color >> 8) & 0xFF;
-            const sb = source.color & 0xFF;
+            // Only accumulate color from non-white light sources
+            // White light (player) contributes intensity but not color tint
+            const isColoredLight = source.color && source.color !== 0xFFFFFF;
+            const sr = isColoredLight ? (source.color >> 16) & 0xFF : 0;
+            const sg = isColoredLight ? (source.color >> 8) & 0xFF : 0;
+            const sb = isColoredLight ? source.color & 0xFF : 0;
 
             this.fov.compute(source.x, source.y, source.radius, (x, y, r, visibility) => {
                 if (x < 0 || x >= this.width || y < 0 || y >= this.height) return;
@@ -153,6 +159,134 @@ class LightingManager {
             });
         }
         this.currentSource = null;
+
+        // Update shadow entities for actors blocking colored light
+        this.updateShadows();
+    }
+
+    updateShadows() {
+        const neededShadows = new Map(); // "x,y" -> { tileName, actor }
+
+        // Get colored light sources
+        const coloredSources = this.engine.entityManager.actors.filter(actor =>
+            actor.hasAttribute('light_source') &&
+            !actor.isDead &&
+            actor.tint &&
+            actor.tint !== 0xFFFFFF
+        );
+
+        // For each colored light source, check for nearby actors that block it
+        for (const lightSource of coloredSources) {
+            const lx = lightSource.x;
+            const ly = lightSource.y;
+            const radius = lightSource.lightRadius || 5;
+
+            // Check actors within light radius
+            for (const actor of this.engine.entityManager.actors) {
+                if (actor === lightSource || actor.isDead) continue;
+
+                const ax = actor.x;
+                const ay = actor.y;
+                const dx = ax - lx; // positive = actor is right of light
+                const dy = ay - ly; // positive = actor is below light
+
+                // Skip if actor is too far from light source
+                const dist = Math.abs(dx) + Math.abs(dy);
+                if (dist > radius || dist === 0) continue;
+
+                // Determine shadow position and tile based on light direction
+                let shadowX, shadowY, tileName;
+
+                if (dx === 0 && dy > 0) {
+                    // Light is directly above actor, shadow below
+                    shadowX = ax;
+                    shadowY = ay + 1;
+                    tileName = 'LIGHT_SHADE';
+                } else if (dx === 0 && dy < 0) {
+                    // Light is directly below actor, shadow above
+                    // Skip if actor has a top tile (two-tile actor)
+                    if (actor.spriteTop) continue;
+                    shadowX = ax;
+                    shadowY = ay - 1;
+                    tileName = 'LIGHT_SHADE';
+                } else if (dx > 0 && dy > 0) {
+                    // Light is upper-left of actor, shadow to lower-right
+                    shadowX = ax;
+                    shadowY = ay + 1;
+                    tileName = 'LIGHT_SHADE_UPPER_RIGHT_TRIANGLE';
+                } else if (dx < 0 && dy > 0) {
+                    // Light is upper-right of actor, shadow to lower-left
+                    shadowX = ax;
+                    shadowY = ay + 1;
+                    tileName = 'LIGHT_SHADE_UPPER_LEFT_TRIANGLE';
+                } else if (dx > 0 && dy < 0) {
+                    // Light is lower-left of actor, shadow to upper-right
+                    // Skip if actor has a top tile
+                    if (actor.spriteTop) continue;
+                    shadowX = ax;
+                    shadowY = ay - 1;
+                    tileName = 'LIGHT_SHADE_UPPER_RIGHT_TRIANGLE';
+                } else if (dx < 0 && dy < 0) {
+                    // Light is lower-right of actor, shadow to upper-left
+                    // Skip if actor has a top tile
+                    if (actor.spriteTop) continue;
+                    shadowX = ax;
+                    shadowY = ay - 1;
+                    tileName = 'LIGHT_SHADE_LOWER_RIGHT_TRIANGLE';
+                } else {
+                    continue;
+                }
+
+                // Skip if shadow position is out of bounds or has no floor
+                if (shadowX < 0 || shadowX >= this.width || shadowY < 0 || shadowY >= this.height) continue;
+                const floorTile = this.engine.mapManager?.floorMap[shadowY]?.[shadowX];
+                if (!floorTile || !floorTile.tileId) continue;
+
+                const key = `${shadowX},${shadowY}`;
+                neededShadows.set(key, { tileName, x: shadowX, y: shadowY });
+            }
+        }
+
+        // Remove shadows that are no longer needed
+        for (const [key, entity] of this.shadowEntities) {
+            if (!neededShadows.has(key)) {
+                this.engine.entityManager.removeEntity(entity);
+                this.shadowEntities.delete(key);
+            }
+        }
+
+        // Create or update needed shadows
+        for (const [key, shadowData] of neededShadows) {
+            const existing = this.shadowEntities.get(key);
+            if (existing) {
+                // Update tile if needed
+                const newTileIndex = this.engine.spriteLibrary.resolveTile(shadowData.tileName);
+                if (existing.tileIndex?.x !== newTileIndex?.x || existing.tileIndex?.y !== newTileIndex?.y) {
+                    // Remove old and create new
+                    this.engine.entityManager.removeEntity(existing);
+                    this.shadowEntities.delete(key);
+                    const newEntity = this.createShadowEntity(shadowData.x, shadowData.y, shadowData.tileName);
+                    if (newEntity) this.shadowEntities.set(key, newEntity);
+                }
+            } else {
+                // Create new shadow
+                const newEntity = this.createShadowEntity(shadowData.x, shadowData.y, shadowData.tileName);
+                if (newEntity) this.shadowEntities.set(key, newEntity);
+            }
+        }
+    }
+
+    createShadowEntity(x, y, tileName) {
+        const entity = new Entity(x, y, 'light_shadow', this.engine);
+        entity.name = 'shadow';
+        entity.tileIndex = this.engine.spriteLibrary.resolveTile(tileName);
+        entity.tint = 0xFFFFFF;
+        entity.setAttribute('light_shadow', true);
+
+        this.engine.renderer?.createEntitySprite(entity);
+        this.engine.entityManager.entities.push(entity);
+
+        return entity;
     }
 
     computeVisibility() {
@@ -324,12 +458,22 @@ class LightingManager {
     }
 
     getLightColorOverlay(x, y) {
+        // Only apply colored light overlays on dark levels
+        const darknessEnabled = this.engine.currentPrototype?.config?.mechanics?.darkness;
+        if (!darknessEnabled) {
+            return { tint: 0xFFFFFF, alpha: 0 };
+        }
+
         const hasControlled = this.hasControlledActors();
         const light = this.getLightLevel(x, y);
         const visible = this.isVisible(x, y);
         const lightTint = this.getLightTint(light);
 
-        if (light.intensity > 0 && lightTint !== 0xFFFFFF) {
+        // Only tint walkable floor tiles, not void/background
+        const floorTile = this.engine.mapManager?.floorMap[y]?.[x];
+        const hasFloor = floorTile && floorTile.tileId;
+
+        if (hasFloor && light.intensity > 0 && lightTint !== 0xFFFFFF) {
             if (visible || !hasControlled) {
                 return {
                     tint: lightTint,
@@ -341,6 +485,12 @@ class LightingManager {
     }
 
     reset() {
+        // Clean up shadow entities
+        for (const entity of this.shadowEntities.values()) {
+            this.engine.entityManager.removeEntity(entity);
+        }
+        this.shadowEntities.clear();
+
         this.lightMap = [];
         this.visibilityMap = [];
         this.exploredMap = [];
