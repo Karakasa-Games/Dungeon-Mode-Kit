@@ -4,6 +4,7 @@
     "tileIndex": null,
     "fillColor": "#8B0000",
     "attributes": {
+      "walk_description": "You trod through a pool of blood.",
       "visible": true
     }
   },
@@ -11,7 +12,8 @@
     "name": "Rubble",
     "tileIndex": "UPWARD_POINTING_TRIANGLE",
     "attributes": {
-      "visible": true
+      "visible": true,
+      "walk_description": "You crunch through loose rubble."
     }
   },
   "skull": {

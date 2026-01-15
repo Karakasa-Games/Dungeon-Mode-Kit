@@ -2476,6 +2476,14 @@ class Actor extends Entity {
             this.pickUpItem(itemAtTarget);
         }
 
+        // Check for entity walk descriptions (only for player-controlled actors)
+        if (this.hasAttribute('controlled')) {
+            const entityAtTarget = this.engine.entityManager.getEntityAt(newX, newY);
+            if (entityAtTarget && entityAtTarget.hasAttribute('walk_description')) {
+                this.engine.inputManager?.showMessage(entityAtTarget.getAttribute('walk_description'));
+            }
+        }
+
         // Check for stairway actors (only for player-controlled actors)
         if (this.hasAttribute('controlled')) {
             const stairway = this.engine.entityManager.getOtherActorAt(newX, newY, this);
