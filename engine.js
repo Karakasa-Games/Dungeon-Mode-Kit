@@ -1666,6 +1666,11 @@ class Actor extends Entity {
 
         if (this.inventory.length >= maxInventory) {
             console.log(`${this.name}'s inventory is full`);
+            if (this.hasAttribute('controlled')) {
+                const displayName = item.getDisplayName ? item.getDisplayName() : item.name;
+                const article = this.engine.inputManager?.getIndefiniteArticle(displayName) || 'a';
+                this.engine.inputManager?.showMessage(`Your inventory is full. You can't pick up ${article} ${displayName}.`);
+            }
             return false;
         }
 
@@ -2056,6 +2061,7 @@ class Actor extends Entity {
     applyCollisionEffects(target) {
         let effectApplied = false;
         let targetPassable = false;
+        let targetShouldDie = false;
 
         // Gather all effect sources: items first, then actor's own effect (unarmed)
         const sources = [];
@@ -2093,9 +2099,9 @@ class Actor extends Entity {
                         console.log(`${source.name}: ${target.name}'s ${key} ${value >= 0 ? '+' : ''}${value} (${oldValue} -> ${stat.current})`);
                         sourceApplied = true;
 
-                        // Check if this killed the target
+                        // Mark for death after effects are shown (don't call die() yet)
                         if (key === 'health' && stat.current <= 0) {
-                            target.die();
+                            targetShouldDie = true;
                             targetPassable = true;
                         }
                     } else if (typeof stat === 'number') {
@@ -2125,9 +2131,9 @@ class Actor extends Entity {
                     console.log(`${source.name}: ${target.name}'s ${key} ${value >= 0 ? '+' : ''}${value} (now ${newValue})`);
                     sourceApplied = true;
 
-                    // Check if this killed the target (health reached 0 or below)
+                    // Mark for death after effects are shown (don't call die() yet)
                     if (key === 'health' && newValue <= 0) {
-                        target.die();
+                        targetShouldDie = true;
                         targetPassable = true;
                     }
                 }
@@ -2205,6 +2211,11 @@ class Actor extends Entity {
             if (description) {
                 this.engine.inputManager?.showMessage(description);
             }
+        }
+
+        // Now trigger death after collision description is shown
+        if (targetShouldDie) {
+            target.die();
         }
 
         return { effectApplied, targetPassable };

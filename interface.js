@@ -581,13 +581,13 @@ class InterfaceManager {
     togglePlayerInfo(player) {
         const infoBoxId = 'player_info';
 
-        // If already showing, remove it
+        // If already showing, hide it (resets inventory mode)
         if (this.boxes.has(infoBoxId)) {
-            this.removeBox(infoBoxId);
+            this.hidePlayerInfo();
             return false;
         }
 
-        // Build info text
+        // Show player info and enable inventory mode
         this.showPlayerInfo(player);
         return true;
     }
