@@ -15,7 +15,7 @@ class SpriteLibrary {
     
     async load() {
         try {
-            const response = await fetch('./data/static-tiles.json');
+            const response = await fetch(`${globalVars.BASE_PATH}/data/static-tiles.json`);
             const data = await response.json();
             this.tiles = data.tiles;
             this.animations = {
@@ -434,13 +434,13 @@ class DungeonEngine {
         try {
             // Load global entity definitions
             const [actorsRes, itemsRes, personalitiesRes, entitiesRes, colorsRes, adjectivesRes, attacksRes] = await Promise.all([
-                fetch('./data/actors.json'),
-                fetch('./data/items.json'),
-                fetch('./data/personalities.json'),
-                fetch('./data/entities.json'),
-                fetch('./data/colors.json'),
-                fetch('./data/adjectives.json'),
-                fetch('./data/attacks.json')
+                fetch(`${globalVars.BASE_PATH}/data/actors.json`),
+                fetch(`${globalVars.BASE_PATH}/data/items.json`),
+                fetch(`${globalVars.BASE_PATH}/data/personalities.json`),
+                fetch(`${globalVars.BASE_PATH}/data/entities.json`),
+                fetch(`${globalVars.BASE_PATH}/data/colors.json`),
+                fetch(`${globalVars.BASE_PATH}/data/adjectives.json`),
+                fetch(`${globalVars.BASE_PATH}/data/attacks.json`)
             ]);
 
             this.globalActors = await actorsRes.json();
@@ -516,9 +516,9 @@ class DungeonEngine {
                     
                     PIXI.Loader.shared
                         .add('tiles', globalVars.SPRITESHEET_PATH)
-                        .add('fire', './assets/sprites/fire-animation.png')
-                        .add('smoke', './assets/sprites/smoke-animation.png')
-                        .add('fluid', './assets/sprites/fluid-animation.png')
+                        .add('fire', `${globalVars.BASE_PATH}/assets/sprites/fire-animation.png`)
+                        .add('smoke', `${globalVars.BASE_PATH}/assets/sprites/smoke-animation.png`)
+                        .add('fluid', `${globalVars.BASE_PATH}/assets/sprites/fluid-animation.png`)
                         .load(() => {
                             this.setupAnimationFrames();
                             resolve();
@@ -537,7 +537,7 @@ class DungeonEngine {
         
 
         try {
-            const audioData = await fetch("./data/sounds.json").then(r => r.json());
+            const audioData = await fetch(`${globalVars.BASE_PATH}/data/sounds.json`).then(r => r.json());
             this.audioManager = new AudioManager(audioData);
             console.log('Audio loaded successfully');
         } catch (error) {
@@ -715,7 +715,7 @@ class DungeonEngine {
         this.mapManager = new MapManager(this);
         const hasAuthoredMap = await this.checkForAuthoredMap(prototypeName);
         if (hasAuthoredMap) {
-            await this.mapManager.loadTiledMap(`prototypes/${prototypeName}/map.tmj`);
+            await this.mapManager.loadTiledMap(`${globalVars.BASE_PATH}/prototypes/${prototypeName}/map.tmj`);
         } else {
             this.mapManager.generateProceduralMap();
         }
@@ -777,17 +777,17 @@ class DungeonEngine {
     
     async loadPrototypeConfig(prototypeName) {
         try {
-            const response = await fetch(`prototypes/${prototypeName}/prototype.json`);
+            const response = await fetch(`${globalVars.BASE_PATH}/prototypes/${prototypeName}/prototype.json`);
             return await response.json();
         } catch (error) {
             console.error(`Failed to load prototype config for ${prototypeName}:`, error);
             return this.getDefaultPrototypeConfig();
         }
     }
-    
+
     async checkForAuthoredMap(prototypeName) {
         try {
-            const response = await fetch(`prototypes/${prototypeName}/map.tmj`, { method: 'HEAD' });
+            const response = await fetch(`${globalVars.BASE_PATH}/prototypes/${prototypeName}/map.tmj`, { method: 'HEAD' });
             return response.ok;
         } catch {
             return false;
@@ -965,7 +965,7 @@ class Prototype {
         this.name = name;
         this.config = config;
         this.engine = engine;
-        this.basePath = `prototypes/${name}/`;
+        this.basePath = `${globalVars.BASE_PATH}/prototypes/${name}/`;
 
         // Identification tracking: maps item type -> true if identified this session
         this.identifiedTypes = new Set();
@@ -2141,6 +2141,8 @@ class Actor extends Entity {
                         // Check if colors match
                         if (targetLockColor && sourceLockColor && targetLockColor === sourceLockColor) {
                             target.setAttribute(key, value);
+                            // Also update state.locked so open() will work
+                            if (target.state) target.state.locked = false;
                             console.log(`${source.name} (${sourceLockColor}) unlocks ${target.name} (${targetLockColor})!`);
                             sourceApplied = true;
                             target.open();
@@ -2173,6 +2175,7 @@ class Actor extends Entity {
 
                         // Check if setting locked to false should open something
                         if (key === 'locked' && value === false && target.hasAttribute('openable')) {
+                            if (target.state) target.state.locked = false;
                             target.open();
                             this.engine.updateLighting();
                             // Door is now open, can pass through
@@ -2237,11 +2240,11 @@ class Actor extends Entity {
             return false;
         }
 
-        // Check for walls
-        const wallTile = this.engine.mapManager.wallMap[y][x];
+        // Check for walls don't need this since all walls in play are actors
+        /* const wallTile = this.engine.mapManager.wallMap[y][x];
         if (wallTile !== null) {
             return false;
-        }
+        } */
 
         // Check for blocking actors
         const actorAt = this.engine.entityManager.getActorAt(x, y);
@@ -4704,9 +4707,28 @@ async function initializeGame() {
         
         engine = new DungeonEngine();
         await engine.initialize();
-        
-        // Load first prototype (could be from URL param or config)
-        const firstPrototype = 'default'; // or get from URL: new URLSearchParams(window.location.search).get('prototype')
+
+        // Determine which prototype to load (priority order):
+        // 1. URL parameter: ?prototype=labyrinth
+        // 2. Data attribute on game container: <div id="game" data-prototype="labyrinth">
+        // 3. Global config object: window.DUNGEON_CONFIG = { prototype: 'labyrinth' }
+        // 4. Default: 'default'
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlPrototype = urlParams.get('prototype');
+        const dataPrototype = gameContainer.dataset.prototype;
+        const configPrototype = window.DUNGEON_CONFIG?.prototype;
+
+        // Normalize prototype name - extract just the name if a full path was provided
+        const normalizePrototypeName = (name) => {
+            if (!name) return null;
+            // Remove leading slashes and any path prefix, keep only the last segment
+            return name.replace(/^\/+/, '').split('/').pop();
+        };
+
+        const rawPrototype = urlPrototype || dataPrototype || configPrototype || 'default';
+        const firstPrototype = normalizePrototypeName(rawPrototype);
+        console.log(`Loading prototype: ${firstPrototype} (source: ${urlPrototype ? 'URL' : dataPrototype ? 'data-attribute' : configPrototype ? 'config' : 'default'})`);
+
         await engine.loadPrototype(firstPrototype);
         
         console.log('Game initialized successfully');

@@ -74,13 +74,15 @@
       "solid": true,
       "visible": true,
       "flammable": true,
-      "inventory": 1
+      "inventory": 1,
+      "remains": "skull"
     },
     "stats": {
       "health": 30,
       "strength": 8
     },
     "default_items": ["horns"]
+    
   },
   
   "wall": {

@@ -20,17 +20,17 @@ class AudioManager {
             // Use URLs from sprite data if available, otherwise construct default paths
             let urls = this.audioSpriteData.urls;
 
-            // If URLs are relative and start with /, make them relative to current directory
+            // If URLs are relative and start with /, prepend BASE_PATH
             if (urls && urls.length > 0) {
                 urls = urls.map(url => {
                     if (url.startsWith('/')) {
-                        return '.' + url; // Convert /assets/... to ./assets/...
+                        return globalVars.BASE_PATH + url;
                     }
                     return url;
                 });
             } else {
                 // Fallback to default paths
-                const basePath = './assets/audio/effects';
+                const basePath = `${globalVars.BASE_PATH}/assets/audio/effects`;
                 const formats = ['mp3', 'ogg', 'm4a'];
                 urls = formats.map(ext => `${basePath}.${ext}`);
             }

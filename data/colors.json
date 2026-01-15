@@ -189,11 +189,7 @@
         {
             "color": "light slate-gray",
                 "hex": "#646464"
-        },     
-        {
-            "color": "matte black",
-                "hex": "#2a3400"
-        },     
+        },    
         {
             "color": "midnight blue",
                 "hex": "#4607c2"
@@ -241,11 +237,7 @@
         {
             "color": "greenhouse",
                 "hex": "#15b100"
-        },     
-        {
-            "color": "blackgrouse",
-                "hex": "#002f00"
-        },     
+        },    
         {
             "color": "goldenly",
                 "hex": "#def314"
@@ -269,11 +261,7 @@
         {
             "color": "yellowly",
                 "hex": "#e9f600"
-        },     
-        {
-            "color": "blackened",
-                "hex": "#110000"
-        },     
+        },    
         {
             "color": "bronzegold",
                 "hex": "#eadf08"
@@ -281,11 +269,7 @@
         {
             "color": "greyeyed",
                 "hex": "#323310"
-        },     
-        {
-            "color": "blackguardlooking",
-                "hex": "#1f0000"
-        },     
+        },   
         {
             "color": "bluecoat",
                 "hex": "#2d007b"
@@ -305,15 +289,7 @@
         {
             "color": "green",
                 "hex": "#00c200"
-        },     
-        {
-            "color": "blackmail",
-                "hex": "#000000"
-        },     
-        {
-            "color": "blackrimmed",
-                "hex": "#002300"
-        },     
+        },    
         {
             "color": "lemonyellow",
                 "hex": "#e6e600"
@@ -353,19 +329,11 @@
         {
             "color": "greenhouses",
                 "hex": "#009b00"
-        },     
-        {
-            "color": "blackbearded",
-                "hex": "#000000"
-        },     
+        }, 
         {
             "color": "sadcoloured",
                 "hex": "#b42d3f"
-        },     
-        {
-            "color": "blackmasked",
-                "hex": "#000018"
-        },     
+        },   
         {
             "color": "winecoloured",
                 "hex": "#c0ce46"
@@ -381,11 +349,7 @@
         {
             "color": "Yellowgreen",
                 "hex": "#24ba00"
-        },     
-        {
-            "color": "blackberry",
-                "hex": "#000000"
-        },     
+        },    
         {
             "color": "greenish",
                 "hex": "#009c00"
@@ -474,11 +438,7 @@
         {
             "color": "orangeblossom",
                 "hex": "#d37b14"
-        },     
-        {
-            "color": "shoeblack",
-                "hex": "#343200"
-        },     
+        },    
         {
             "color": "orangeflower",
                 "hex": "#efa947"
@@ -506,11 +466,7 @@
         {
             "color": "yellowjohn",
                 "hex": "#d7fe00"
-        },     
-        {
-            "color": "black",
-                "hex": "#160e00"
-        },        
+        },      
         {
             "color": "whitest",
                 "hex": "#ffffff"
@@ -614,11 +570,7 @@
         {
             "color": "whitearsed",
                 "hex": "#ffffff"
-        },     
-        {
-            "color": "blackspectacled",
-                "hex": "#000000"
-        },     
+        },    
         {
             "color": "saltwhite",
                 "hex": "#ffffef"
@@ -630,11 +582,7 @@
         {
             "color": "orangepeels",
                 "hex": "#c9e300"
-        },     
-        {
-            "color": "bootblack",
-                "hex": "#000000"
-        },     
+        },    
         {
             "color": "whitewash",
                 "hex": "#ffffe2"
@@ -678,11 +626,7 @@
         {
             "color": "bluey",
                 "hex": "#2000a9"
-        },     
-        {
-            "color": "blackbeetles",
-                "hex": "#000000"
-        },     
+        },    
         {
             "color": "yellowslobbered",
                 "hex": "#dcd100"
@@ -708,17 +652,9 @@
                 "hex": "#ffffff"
         },     
         {
-            "color": "blackdraped",
-                "hex": "#002300"
-        },     
-        {
             "color": "whitewashed",
                 "hex": "#ecffeb"
-        },     
-        {
-            "color": "blacknailed",
-                "hex": "#002701"
-        },     
+        },  
         {
             "color": "snotgreen",
                 "hex": "#0cfd00"
@@ -786,11 +722,7 @@
         {
             "color": "evergreen",
                 "hex": "#00db00"
-        },     
-        {
-            "color": "blacked",
-                "hex": "#002302"
-        },     
+        },   
         {
             "color": "greenroom",
                 "hex": "#5ab600"
@@ -838,11 +770,7 @@
         {
             "color": "whitesmocked",
                 "hex": "#ffffff"
-        },     
-        {
-            "color": "blackthumbed",
-                "hex": "#360000"
-        },     
+        },    
         {
             "color": "bluest",
                 "hex": "#000088"
@@ -850,14 +778,6 @@
         {
             "color": "white",
                 "hex": "#ffffca"
-        },     
-        {
-            "color": "coalblack",
-                "hex": "#000017"
-        },     
-        {
-            "color": "blackbottom",
-                "hex": "#350009"
         },
 
         {
@@ -2402,11 +2322,6 @@
         {
             "color": "yellow/green",
             "hex": "#c8fd3d"
-        },
-
-        {
-            "color": "almost black",
-            "hex": "#070d0d"
         },
 
         {
@@ -5129,11 +5044,6 @@
         {
             "color": "hot pink",
             "hex": "#ff028d"
-        },
-
-        {
-            "color": "black",
-            "hex": "#000000"
         },
 
         {
