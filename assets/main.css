@@ -11,6 +11,19 @@
   font-weight: normal;
   font-style: normal;
 }
+.message-age-1 {
+  color: #878787;
+}
+
+.message-age-2 {
+  color: #adadad;
+}
+
+.message-hover {
+  color: #444;
+  font-style: italic;
+}
+
 #game {
   line-height: 0;
 }

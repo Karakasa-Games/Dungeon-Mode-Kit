@@ -18,6 +18,14 @@ class InputManager {
         // Message stacking for turn-based events
         this.messageStack = [];
 
+        // Turn history - stores all past turns for future history viewer
+        // Each entry is an array of messages from that turn
+        this.turnHistory = [];
+        // Number of recent turns to display (current + 2 older)
+        this.visibleTurnCount = 3;
+        // Temporary hover description (doesn't affect turn history)
+        this.hoverDescription = null;
+
         // Key mappings (supports multiple keys per action)
         this.keyMap = {
             // Arrow keys and WASD for movement
@@ -145,13 +153,13 @@ class InputManager {
     handleMouseLeave() {
         this.hoveredTile.x = -1;
         this.hoveredTile.y = -1;
+        // Clear hover description and redisplay turn history
+        this.hoverDescription = null;
+        this.displayMessages();
     }
 
     updateDescription(tileX, tileY) {
         if (!this.descriptionElement) return;
-
-        // Clear any stacked messages when hovering (new context)
-        this.messageStack = [];
 
         const lightingManager = this.engine.lightingManager;
         const entityManager = this.engine.entityManager;
@@ -166,8 +174,10 @@ class InputManager {
         // Determine if this is a "remembered" tile (explored but not currently visible, with fog of war on)
         const isRemembered = !isVisible && fogOfWar && isExplored;
 
-        // If not visible and not remembered, keep current description
+        // If not visible and not remembered, clear hover and keep turn history
         if (!isVisible && !isRemembered) {
+            this.hoverDescription = null;
+            this.displayMessages();
             return;
         }
 
@@ -195,27 +205,15 @@ class InputManager {
             entities.push(this.getEntityDescription(item));
         }
 
-        // Update the description element
+        // Set hover description (or clear if nothing found)
         if (entities.length > 0) {
-            // Build natural sentence based on visibility state
-            const description = this.formatEntityList(entities, isRemembered);
-
-            // Find the summary element within the details
-            const summary = this.descriptionElement.querySelector('summary');
-            if (summary) {
-                // Update the content after the summary
-                // Remove existing description text (everything after summary)
-                const existingText = Array.from(this.descriptionElement.childNodes)
-                    .filter(node => node !== summary);
-                existingText.forEach(node => node.remove());
-
-                // Add new description
-                const textNode = document.createTextNode('\n' + description);
-                this.descriptionElement.appendChild(textNode);
-            }
-            // Open the details element to show the description
-            this.descriptionElement.open = true;
+            this.hoverDescription = this.formatEntityList(entities, isRemembered);
+        } else {
+            this.hoverDescription = null;
         }
+
+        // Redisplay with hover description included
+        this.displayMessages();
     }
 
     formatEntityList(entities, isRemembered = false) {
@@ -264,14 +262,20 @@ class InputManager {
     }
 
     /**
-     * Clear the message stack (call at the start of a new turn/action)
+     * Commit current turn messages to history and start a new turn
+     * Called at the start of each new player action
      */
     clearMessageStack() {
+        // Only commit to history if there were messages this turn
+        if (this.messageStack.length > 0) {
+            this.turnHistory.push([...this.messageStack]);
+        }
         this.messageStack = [];
     }
 
     /**
-     * Display all messages in the stack
+     * Display recent turn messages (current turn + previous turns from history)
+     * Older turns are styled with CSS class for visual hierarchy
      */
     displayMessages() {
         if (!this.descriptionElement) return;
@@ -283,21 +287,69 @@ class InputManager {
                 .filter(node => node !== summary);
             existingText.forEach(node => node.remove());
 
-            // Add messages with proper line breaks
+            // Gather turns to display: recent history + current
+            // Calculate how many history turns to show (visibleTurnCount - 1 for current)
+            const historyToShow = Math.min(this.turnHistory.length, this.visibleTurnCount - 1);
+            const recentHistory = this.turnHistory.slice(-historyToShow);
+
+            // Build display: older turns first, then current turn
+            // Age 0 = oldest shown, age increases toward current
+            const turnsToDisplay = [];
+            recentHistory.forEach((turn, index) => {
+                // Age relative to current: historyToShow - index (older = higher number from current)
+                const ageFromCurrent = historyToShow - index;
+                turnsToDisplay.push({ messages: turn, age: ageFromCurrent });
+            });
+            // Current turn is age 0 (newest)
             if (this.messageStack.length > 0) {
-                const combinedMessage = this.messageStack.join('\n');
-                // Split by newlines and insert <br> elements between lines
-                const lines = combinedMessage.split('\n');
-                lines.forEach((line, index) => {
-                    if (index > 0) {
-                        this.descriptionElement.appendChild(document.createElement('br'));
+                turnsToDisplay.push({ messages: this.messageStack, age: 0 });
+            }
+
+            // Render each turn
+            turnsToDisplay.forEach((turn, turnIndex) => {
+                // Add separator between turns (not before first)
+                if (turnIndex > 0) {
+                    this.descriptionElement.appendChild(document.createElement('br'));
+                }
+
+                // Create span for this turn's messages with age-based styling
+                const turnSpan = document.createElement('span');
+                if (turn.age > 0) {
+                    turnSpan.className = `message-age-${Math.min(turn.age, 2)}`;
+                }
+
+                // Add messages for this turn
+                const lines = turn.messages.join('\n').split('\n');
+                lines.forEach((line, lineIndex) => {
+                    if (lineIndex > 0) {
+                        turnSpan.appendChild(document.createElement('br'));
                     }
-                    this.descriptionElement.appendChild(document.createTextNode(line));
+                    turnSpan.appendChild(document.createTextNode(line));
                 });
+
+                this.descriptionElement.appendChild(turnSpan);
+            });
+
+            // Add hover description at the bottom (if present)
+            if (this.hoverDescription) {
+                // Add separator if there was turn content
+                if (turnsToDisplay.length > 0) {
+                    this.descriptionElement.appendChild(document.createElement('br'));
+                }
+
+                // Hover descriptions are styled distinctly
+                const hoverSpan = document.createElement('span');
+                hoverSpan.className = 'message-hover';
+                hoverSpan.appendChild(document.createTextNode(this.hoverDescription));
+                this.descriptionElement.appendChild(hoverSpan);
             }
         }
-        // Open the details element to show the messages
-        this.descriptionElement.open = this.messageStack.length > 0;
+
+        // Open if there's anything to show (history, current, or hover)
+        const hasContent = this.messageStack.length > 0 ||
+            this.turnHistory.slice(-(this.visibleTurnCount - 1)).length > 0 ||
+            this.hoverDescription;
+        this.descriptionElement.open = hasContent;
     }
 
     getEntityDescription(entity) {
