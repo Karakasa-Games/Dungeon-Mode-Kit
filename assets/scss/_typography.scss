@@ -20,18 +20,3 @@
     font-style: normal;
 
 }
-
-// Message age styling for description element
-// Older turn messages fade to gray to emphasize the newest
-.message-age-1 {
-    color: #878787;
-}
-
-.message-age-2 {
-    color: #adadad;
-}
-
-// Hover description styling (shown below turn history)
-.message-hover {
-    font-style: italic;
-}

@@ -30,10 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Mouse hover descriptions: hovering over tiles shows "You see a [entity]" in description element
+- Description html element shows verbose descriptions of actions and moused-over entities. List of three descriptions (Brogue style)
 - Fog of war memory: "You remember seeing [entity]" for explored but not visible tiles
 - Message stacking: multiple events in same turn display together (e.g., attack + death)
-- Item identification system (Brogue-style):
+- Item identification system:
   - Items can have `random_color: true` for randomized appearance per prototype
   - Unidentified/identified name templates (e.g., "blue potion" → "Potion of Healing")
   - Using an item identifies it and all items of that type
@@ -45,7 +45,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Template variables: `[adjectives.category]`, `[attacks.melee_verbs]`, `[item_name]`, `[actor_name]`
 - `collision_description` attribute for actors (templated attack messages)
 - `use_description` attribute for items (templated use messages)
-- Event description messages: death, push, door open/close/locked, fall, incineration
 - Player info box auto-updates after each turn to reflect stat changes
 - Global data loading: colors.json, adjectives.json, attacks.json
 
@@ -57,6 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Item tiles in inventory now respect flipH/flipV properties
+- player info window stops listening for item buttons when closed
 
 ## [0.5a] 2026-01-05
 

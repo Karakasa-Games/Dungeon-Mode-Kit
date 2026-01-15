@@ -206,29 +206,11 @@ Howler.js wrapper for audio sprite playback with multi-format support.
            └─> RenderSystem.renderTestPattern() + renderActors()
 ```
 
-### File Structure
-
-```
-engine.js          # Core engine (this file)
-globals.js         # Global variables
-data/              # Global entity definitions
-  actors.json      # Actor templates (player, skeleton, wall, fire, etc.)
-  items.json       # Item templates (key, bow, potions, etc.)
-  personalities.json # AI behavior definitions
-  sounds.json      # Audio sprite configuration
-prototypes/        # Game definitions
-  default/
-    prototype.json # Game rules (mechanics, win conditions)
-    actors.json    # Prototype-specific actor overrides, player stats (if actors not manually placed in map.tmj, randomly distributed)
-    items.json     # Prototype-speficic items (if items not manually placed in map.tmj, randomly distributed)
-    map.tmj        # Tiled map (optional)
-```
-
 ---
 
 See [CHANGELOG.md](CHANGELOG.md) for version history and implementation status.
 
-### File Tree
+### File Structure
 
 ```
 .
@@ -249,6 +231,7 @@ See [CHANGELOG.md](CHANGELOG.md) for version history and implementation status.
 │   ├── main.scss
 │   ├── scss
 │   │   ├── _base.scss
+│   │   ├── _details.css
 │   │   ├── _game.scss
 │   │   └── _typography.scss
 │   └── sprites
@@ -257,17 +240,28 @@ See [CHANGELOG.md](CHANGELOG.md) for version history and implementation status.
 │       ├── smoke-animation.png
 │       └── static-tiles.png
 ├── CHANGELOG.md
-├── data
-│   ├── actors.json
-│   ├── colors.json
-│   ├── sounds.json
-│   ├── items.json
-│   ├── personalities.json
-│   └── static-tiles.json
+├── data # Global entity definitions
+│   ├── actors.json  # Actor templates (player, skeleton, wall, fire, etc.)
+│   ├── adjectives.json #wordstuff
+│   ├── attacks.json #wordstuff
+│   ├── colors.json  #color names and hex values
+│   ├── entities.json # decoration and description tiles
+│   ├── items.json  # Item templates (key, bow, potions, etc.)
+│   ├── personalities.json # AI behavior definitions
+│   ├── reagents.json #unused magic potion ingredients
+│   ├── sounds.json #named sounds in soundsprite
+│   ├── static-tiles.json #main tileset
+│   └── substances.json #wordstuff
+├── deploy.sh
+├── DESCRIPTIONS.md
 ├── DUNGEON_MODE_KIT_DESIGN.md
-├── engine.js
-├── globals.js
+├── embed-example.html
+├── engine.js # Core engine
+├── globals.js # Global variables leftover from prototype
 ├── index.html
+├── input.js
+├── interface.js
+├── ITEMS.md
 ├── lib
 │   ├── howler.js
 │   ├── pixi.min.js
@@ -277,18 +271,23 @@ See [CHANGELOG.md](CHANGELOG.md) for version history and implementation status.
 │   ├── tweenjs.js
 │   └── tweenjs.min.js
 ├── LICENSE.txt
-├── prototypes
-│   └── default
+├── lighting.js
+├── LIGHTING.md
+├── prototypes # individual level definitions and overrides
+│   ├── default #each level gets a folder with a map and json files to override or suppliment data
+│   │   ├── actors.json
+│   │   ├── items.json
+│   │   ├── map.tmj
+│   │   └── prototype.json # Level rules and mechanics
+│   └── labyrinth
 │       ├── actors.json
-│       ├── items.json
 │       ├── map.tmj
 │       └── prototype.json
 ├── README.md
-├── tiled
-│   ├── dungeonkit.tiled-project
-│   ├── dungeonkit.tiled-session
-│   └── static-tiles.tsj
-└── tree.txt
-```
+├── sound.js
+└── tiled
+    ├── dungeonkit.tiled-project
+    ├── dungeonkit.tiled-session
+    └── static-tiles.tsj
 
 See [LICENSE.txt](LICENSE.txt) for license info

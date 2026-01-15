@@ -1,0 +1,16 @@
+details {
+    min-height: 100px;
+
+    .message-age-1 {
+        color: #878787;
+    }
+
+    .message-age-2 {
+        color: #adadad;
+    }
+
+    .message-hover {
+        font-style: italic;
+    }
+
+}
