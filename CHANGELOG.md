@@ -11,11 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Continuity: start at any specified prototype as whatever that protos controllable actor is, OR enter from stairway as the previous player character, with inventory etc
 - Optional First-person view pane (for perspective dungeon style play)
-- Verbose text description of turns (for interactive fiction style, maybe adapt inform somehow)
+- Extend the text discription area to optionally plug into parallel text environments for a paried room in Evennia or inform7 etc for text adventure or mud stuff
 
 ### Planned
 
-- Item drops on death
 - Aiming UI
 - Test and build out fully generated levels
 - Brogue style deep sewage that floats items
@@ -25,6 +24,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Multi-level state stack
 - Wildcard item/actor spawning (stubs exist)
+- Item drops on death (what should multiple items do, should enemies ever have more than one inventory slot?)
+
+## [0.6b] 2025-01-15
+
+### Added
+
+- Entity `walk_description` attribute for messages when walking over entities
+- Actor shadows cast from colored light sources (sorta works)
+
+### Fixed
+
+- Dead actors now stay hidden on dark levels
+- White light sources no longer wash out colored light tints
+- Floor-only colored light tinting (excludes void tiles)
+- Fixed npc deaths on dark levels
 
 ## [0.6a] 2026-01-13
 

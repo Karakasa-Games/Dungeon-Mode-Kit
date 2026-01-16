@@ -2356,9 +2356,13 @@ class Actor extends Entity {
             return;
         }
 
-        // Drop items to available positions
+        // Drop items to available positions (skip items with drop: false)
         let posIndex = 0;
         for (const item of this.inventory) {
+            if (item.getAttribute('drop') === false) {
+                console.log(`${item.name} was not dropped (drop: false)`);
+                continue;
+            }
             const pos = dropPositions[posIndex % dropPositions.length];
             item.x = pos.x;
             item.y = pos.y;

@@ -162,6 +162,7 @@
     "tileIndex": "OPAQUE_CRADLE",
     "attributes": {
       "pickupable": true,
+      "drop": false,
       "visible": true,
       "stackable": false,
       "wearable": "top",
