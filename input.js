@@ -105,14 +105,18 @@ class InputManager {
                 if (this.currentCanvas) {
                     this.currentCanvas.removeEventListener('mousemove', this.boundMouseMove);
                     this.currentCanvas.removeEventListener('mouseleave', this.boundMouseLeave);
+                    this.currentCanvas.removeEventListener('click', this.boundMouseClick);
                 }
 
                 // Store bound handlers so we can remove them later
                 this.boundMouseMove = (e) => this.handleMouseMove(e);
                 this.boundMouseLeave = () => this.handleMouseLeave();
 
+                this.boundMouseClick = (e) => this.handleMouseClick(e);
+
                 canvas.addEventListener('mousemove', this.boundMouseMove);
                 canvas.addEventListener('mouseleave', this.boundMouseLeave);
+                canvas.addEventListener('click', this.boundMouseClick);
                 this.currentCanvas = canvas;
             }
 
@@ -147,6 +151,12 @@ class InputManager {
             this.hoveredTile.y = tileY;
 
             this.updateDescription(tileX, tileY);
+            this.updateTileHighlight(tileX, tileY);
+
+            // Update throw path if in aiming mode
+            if (this.engine.interfaceManager?.isThrowAiming()) {
+                this.engine.interfaceManager.updateThrowPath();
+            }
         }
     }
 
@@ -156,6 +166,42 @@ class InputManager {
         // Clear hover description and redisplay turn history
         this.hoverDescription = null;
         this.displayMessages();
+        // Hide tile highlight
+        this.engine.renderer?.hideTileHighlight();
+        // Hide throw path if in aiming mode
+        this.engine.renderer?.hideLinePath();
+    }
+
+    handleMouseClick(event) {
+        if (!this.enabled) return;
+
+        // Check if in throw aiming mode
+        if (this.engine.interfaceManager?.handleThrowClick()) {
+            event.preventDefault();
+            return;
+        }
+    }
+
+    /**
+     * Update tile highlight based on visibility
+     * @param {number} tileX - Tile X coordinate
+     * @param {number} tileY - Tile Y coordinate
+     */
+    updateTileHighlight(tileX, tileY) {
+        const renderer = this.engine.renderer;
+        if (!renderer) return;
+
+        const lightingManager = this.engine.lightingManager;
+
+        // Check if tile is visible (or if darkness is disabled)
+        const isVisible = lightingManager ? lightingManager.isVisible(tileX, tileY) : true;
+
+        // Only highlight visible tiles
+        if (isVisible) {
+            renderer.showTileHighlight(tileX, tileY);
+        } else {
+            renderer.hideTileHighlight();
+        }
     }
 
     updateDescription(tileX, tileY) {
@@ -374,6 +420,12 @@ class InputManager {
 
     handleKeyDown(event) {
         if (!this.enabled) return;
+
+        // Check if throw aiming mode wants to handle this key first
+        if (this.engine.interfaceManager?.handleThrowKey(event.key)) {
+            event.preventDefault();
+            return;
+        }
 
         // Check if confirmation dialog wants to handle this key first
         if (this.engine.interfaceManager?.handleConfirmKey(event.key)) {

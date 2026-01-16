@@ -4134,8 +4134,174 @@ class RenderSystem {
         this.lightColorSprites = [];
         this.floorSprites = [];
         this.backgroundSprites = [];
+
+        // Tile highlight for hover/aiming
+        this.highlightFilter = null;
+        this.highlightedSprites = [];
+        this.highlightEnabled = false;
+
+        // Line path highlight for throwing/aiming
+        this.linePathSprites = [];
     }
-    
+
+    /**
+     * Show a highlight effect on a specific tile using color inversion
+     * Applies invert filter directly to the sprites at that tile position
+     * @param {number} tileX - Tile X coordinate
+     * @param {number} tileY - Tile Y coordinate
+     */
+    showTileHighlight(tileX, tileY) {
+        // First, clear any existing highlight
+        this.hideTileHighlight();
+
+        // Create invert filter if it doesn't exist
+        if (!this.highlightFilter) {
+            this.highlightFilter = new PIXI.filters.ColorMatrixFilter();
+            this.highlightFilter.negative();
+        }
+
+        // Track which sprites we're highlighting
+        this.highlightedSprites = [];
+
+        // Apply filter to background sprite at this tile
+        const bgSprite = this.backgroundSprites[tileY]?.[tileX];
+        if (bgSprite) {
+            bgSprite.filters = bgSprite.filters ? [...bgSprite.filters, this.highlightFilter] : [this.highlightFilter];
+            this.highlightedSprites.push(bgSprite);
+        }
+
+        // Apply filter to floor sprite at this tile
+        const floorSprite = this.floorSprites[tileY]?.[tileX];
+        if (floorSprite) {
+            floorSprite.filters = floorSprite.filters ? [...floorSprite.filters, this.highlightFilter] : [this.highlightFilter];
+            this.highlightedSprites.push(floorSprite);
+        }
+
+        // Apply filter to any actors at this tile
+        const actor = this.engine.entityManager?.getActorAt(tileX, tileY);
+        if (actor && !actor.isDead) {
+            if (actor.spriteBase) {
+                actor.spriteBase.filters = actor.spriteBase.filters ? [...actor.spriteBase.filters, this.highlightFilter] : [this.highlightFilter];
+                this.highlightedSprites.push(actor.spriteBase);
+            }
+            if (actor.spriteTop) {
+                actor.spriteTop.filters = actor.spriteTop.filters ? [...actor.spriteTop.filters, this.highlightFilter] : [this.highlightFilter];
+                this.highlightedSprites.push(actor.spriteTop);
+            }
+        }
+
+        // Apply filter to any items at this tile
+        const item = this.engine.entityManager?.getItemAt(tileX, tileY);
+        if (item && item.sprite) {
+            item.sprite.filters = item.sprite.filters ? [...item.sprite.filters, this.highlightFilter] : [this.highlightFilter];
+            this.highlightedSprites.push(item.sprite);
+        }
+
+        this.highlightEnabled = true;
+    }
+
+    /**
+     * Hide the tile highlight by removing invert filter from highlighted sprites
+     */
+    hideTileHighlight() {
+        if (this.highlightedSprites && this.highlightFilter) {
+            for (const sprite of this.highlightedSprites) {
+                if (sprite.filters) {
+                    sprite.filters = sprite.filters.filter(f => f !== this.highlightFilter);
+                    if (sprite.filters.length === 0) sprite.filters = null;
+                }
+            }
+        }
+        this.highlightedSprites = [];
+        this.highlightEnabled = false;
+    }
+
+    /**
+     * Show a line path highlight for aiming (e.g., throwing)
+     * Uses red-tinted overlay for path tiles, stops at blocking actors
+     * @param {number} startX - Starting tile X
+     * @param {number} startY - Starting tile Y
+     * @param {number} endX - Target tile X
+     * @param {number} endY - Target tile Y
+     * @returns {{path: Array, blockedAt: {x,y}|null}} The path and where it was blocked (if any)
+     */
+    showLinePath(startX, startY, endX, endY) {
+        // Clear any existing path highlight
+        this.hideLinePath();
+
+        const tileWidth = this.engine.config.tileWidth;
+        const tileHeight = this.engine.config.tileHeight;
+
+        // Get the line path using Bresenham's algorithm
+        const fullPath = getLinePath(startX, startY, endX, endY);
+
+        // Track where path is blocked (skip start position)
+        let blockedAt = null;
+        const displayPath = [];
+
+        for (let i = 1; i < fullPath.length; i++) {
+            const point = fullPath[i];
+
+            // Check for solid actors that would block the path
+            const actor = this.engine.entityManager?.getActorAt(point.x, point.y);
+            if (actor && !actor.isDead && actor.hasAttribute('solid')) {
+                blockedAt = point;
+                displayPath.push(point); // Include the blocked tile
+                break;
+            }
+
+            displayPath.push(point);
+        }
+
+        // Create path overlay sprites
+        this.linePathSprites = [];
+
+        for (let i = 0; i < displayPath.length; i++) {
+            const point = displayPath[i];
+            const isBlocked = blockedAt && point.x === blockedAt.x && point.y === blockedAt.y;
+            const isTarget = i === displayPath.length - 1;
+
+            // Create a colored overlay
+            const graphics = new PIXI.Graphics();
+
+            if (isTarget || isBlocked) {
+                // Target/blocked tile - brighter red, inverted
+                graphics.beginFill(0xFF0000, 0.3);
+            } else {
+                // Path tile - faint red
+                graphics.beginFill(0xFF0000, 0.15);
+            }
+
+            graphics.drawRect(0, 0, tileWidth, tileHeight);
+            graphics.endFill();
+
+            graphics.x = point.x * tileWidth;
+            graphics.y = point.y * tileHeight;
+            graphics.zIndex = 8;
+
+            this.uiContainer.addChild(graphics);
+            this.linePathSprites.push(graphics);
+        }
+
+        return {
+            path: displayPath,
+            blockedAt: blockedAt
+        };
+    }
+
+    /**
+     * Hide the line path highlight
+     */
+    hideLinePath() {
+        if (this.linePathSprites) {
+            for (const sprite of this.linePathSprites) {
+                this.uiContainer.removeChild(sprite);
+                sprite.destroy();
+            }
+        }
+        this.linePathSprites = [];
+    }
+
     render() {
         // Render loop would update sprites based on entity positions
         console.log('Rendering frame');
@@ -4561,6 +4727,10 @@ class RenderSystem {
         this.lightColorSprites = [];
         this.floorSprites = [];
         this.backgroundSprites = [];
+        this.highlightFilter = null;
+        this.highlightedSprites = [];
+        this.highlightEnabled = false;
+        this.linePathSprites = [];
     }
 
     initializeDarkness(width, height) {

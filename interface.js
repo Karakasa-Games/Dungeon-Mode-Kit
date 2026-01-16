@@ -19,6 +19,10 @@ class InterfaceManager {
 
         // Confirmation dialog state
         this.confirmDialog = null; // { message, onConfirm, onCancel }
+
+        // Throw aiming mode state
+        this.throwAimingMode = false;
+        this.throwItem = null; // Item being thrown
     }
 
     get container() {
@@ -844,6 +848,10 @@ class InterfaceManager {
             actionNum++;
         }
 
+        // Throw is always available
+        lines.push(`  ${actionNum}) Throw`);
+        actionNum++;
+
         // Calculate dimensions
         const padding = 1;
         const maxLineLength = Math.max(...lines.map(l => l.length), 12);
@@ -1008,6 +1016,13 @@ class InterfaceManager {
             }
             currentAction++;
         }
+
+        // Throw action (always available)
+        if (actionNum === currentAction) {
+            this.enterThrowAimingMode(item);
+            return true;
+        }
+        currentAction++;
 
         return false;
     }
@@ -1188,5 +1203,330 @@ class InterfaceManager {
      */
     hasConfirmDialog() {
         return this.confirmDialog !== null;
+    }
+
+    // ========================================================================
+    // THROW AIMING MODE
+    // ========================================================================
+
+    /**
+     * Enter throw aiming mode for an item
+     * @param {Item} item - The item to throw
+     */
+    enterThrowAimingMode(item) {
+        this.throwAimingMode = true;
+        this.throwItem = item;
+
+        // Close the menus but keep player reference
+        this.closeItemActionMenu();
+        this.removeBox('player_info');
+
+        // Show instruction message
+        this.showTextBox('throw_instructions', 'Aim with mouse, click to throw. Esc to cancel.', {
+            dismissOnMove: false
+        });
+
+        // Update the throw path based on current mouse position
+        this.updateThrowPath();
+    }
+
+    /**
+     * Exit throw aiming mode without throwing
+     */
+    exitThrowAimingMode() {
+        this.throwAimingMode = false;
+        this.throwItem = null;
+
+        // Hide the line path
+        this.engine.renderer?.hideLinePath();
+
+        // Remove instruction message
+        this.removeTextBox('throw_instructions');
+
+        // Re-enable normal tile highlight
+        this.engine.renderer?.hideTileHighlight();
+    }
+
+    /**
+     * Update the throw path line based on current mouse position
+     */
+    updateThrowPath() {
+        if (!this.throwAimingMode || !this.currentPlayer) return;
+
+        const inputManager = this.engine.inputManager;
+        if (!inputManager) return;
+
+        const targetX = inputManager.hoveredTile.x;
+        const targetY = inputManager.hoveredTile.y;
+
+        // Don't draw path if mouse is off-screen or on player
+        if (targetX < 0 || targetY < 0) {
+            this.engine.renderer?.hideLinePath();
+            return;
+        }
+
+        if (targetX === this.currentPlayer.x && targetY === this.currentPlayer.y) {
+            this.engine.renderer?.hideLinePath();
+            return;
+        }
+
+        // Show the line path from player to target
+        this.engine.renderer?.showLinePath(
+            this.currentPlayer.x,
+            this.currentPlayer.y,
+            targetX,
+            targetY
+        );
+    }
+
+    /**
+     * Execute the throw at the current target position
+     */
+    executeThrow() {
+        if (!this.throwAimingMode || !this.currentPlayer || !this.throwItem) return;
+
+        const inputManager = this.engine.inputManager;
+        if (!inputManager) return;
+
+        const targetX = inputManager.hoveredTile.x;
+        const targetY = inputManager.hoveredTile.y;
+
+        // Don't throw if mouse is off-screen or on player
+        if (targetX < 0 || targetY < 0) return;
+        if (targetX === this.currentPlayer.x && targetY === this.currentPlayer.y) return;
+
+        // Get the actual landing position (may be blocked by solid actor)
+        const pathResult = this.engine.renderer?.showLinePath(
+            this.currentPlayer.x,
+            this.currentPlayer.y,
+            targetX,
+            targetY
+        );
+
+        if (!pathResult || pathResult.path.length === 0) return;
+
+        // Store references before exiting aiming mode
+        const item = this.throwItem;
+        const player = this.currentPlayer;
+        const path = pathResult.path;
+
+        // Unequip item if it's being worn
+        if (player.isItemEquipped(item)) {
+            player.unequipItem(item);
+        }
+
+        // Remove item from inventory
+        const index = player.inventory.indexOf(item);
+        if (index > -1) {
+            player.inventory.splice(index, 1);
+        }
+
+        // Exit aiming mode (hides line path)
+        this.exitThrowAimingMode();
+
+        // Determine if we'll hit something (for sound selection)
+        const landingPoint = path[path.length - 1];
+        const hitActor = this.engine.entityManager?.getActorAt(landingPoint.x, landingPoint.y);
+        const willHit = hitActor && !hitActor.isDead && hitActor.hasAttribute('solid');
+
+        // Play sound before animation starts so they sync better
+        if (willHit) {
+            const collisionSound = item.getAttribute('collision_sound') || 'arrow_hit';
+            this.engine.playSound(collisionSound);
+        } else {
+            this.engine.playSound('arrow_miss');
+        }
+
+        // Animate the projectile, then apply effects
+        this.animateProjectile(item, path, () => {
+            this.completeThrow(item, player, path, willHit);
+        });
+    }
+
+    /**
+     * Animate a projectile moving along a path
+     * @param {Item} item - The item being thrown
+     * @param {Array} path - Array of {x, y} points
+     * @param {Function} onComplete - Callback when animation finishes
+     */
+    animateProjectile(item, path, onComplete) {
+        const renderer = this.engine.renderer;
+        if (!renderer || path.length === 0) {
+            onComplete();
+            return;
+        }
+
+        const tileWidth = this.engine.config.tileWidth;
+        const tileHeight = this.engine.config.tileHeight;
+        const tileset = PIXI.Loader.shared.resources.tiles;
+
+        if (!tileset || !item.tileIndex) {
+            onComplete();
+            return;
+        }
+
+        // Create projectile sprite
+        const rect = new PIXI.Rectangle(
+            item.tileIndex.x * tileWidth,
+            item.tileIndex.y * tileHeight,
+            tileWidth,
+            tileHeight
+        );
+        const texture = new PIXI.Texture(tileset.texture.baseTexture, rect);
+        const projectileSprite = new PIXI.Sprite(texture);
+
+        // Apply item tint if present
+        if (item.tint !== undefined && item.tint !== null) {
+            projectileSprite.tint = item.tint;
+        }
+
+        // Apply flip if present
+        if (item.flipH || item.flipV) {
+            projectileSprite.anchor.set(0.5, 0.5);
+            projectileSprite.scale.x = item.flipH ? -1 : 1;
+            projectileSprite.scale.y = item.flipV ? -1 : 1;
+        }
+
+        projectileSprite.zIndex = 100; // Above everything
+        renderer.uiContainer.addChild(projectileSprite);
+
+        // Animate through path
+        let currentIndex = 0;
+        const frameDelay = 25; // milliseconds per tile
+
+        const animateFrame = () => {
+            if (currentIndex >= path.length) {
+                // Animation complete - remove sprite and call callback
+                renderer.uiContainer.removeChild(projectileSprite);
+                projectileSprite.destroy();
+                onComplete();
+                return;
+            }
+
+            const point = path[currentIndex];
+
+            // Position sprite (account for anchor if flipped)
+            if (item.flipH || item.flipV) {
+                projectileSprite.x = point.x * tileWidth + tileWidth / 2;
+                projectileSprite.y = point.y * tileHeight + tileHeight / 2;
+            } else {
+                projectileSprite.x = point.x * tileWidth;
+                projectileSprite.y = point.y * tileHeight;
+            }
+
+            currentIndex++;
+            setTimeout(animateFrame, frameDelay);
+        };
+
+        // Start animation
+        animateFrame();
+    }
+
+    /**
+     * Complete the throw after animation - apply effects and place item
+     * @param {Item} item - The thrown item
+     * @param {Actor} player - The player who threw it
+     * @param {Array} path - The path the item traveled
+     * @param {boolean} willHit - Whether the throw hits a solid actor
+     */
+    completeThrow(item, player, path, willHit) {
+        const landingPoint = path[path.length - 1];
+
+        if (willHit) {
+            // Get the actor we're hitting
+            const hitActor = this.engine.entityManager?.getActorAt(landingPoint.x, landingPoint.y);
+
+            if (hitActor) {
+                // Apply collision effect if the item has one
+                const collisionEffect = item.getAttribute('collision_effect');
+                if (collisionEffect) {
+                    // Apply effects manually (similar to applyCollisionEffects but simpler)
+                    for (const [key, rawValue] of Object.entries(collisionEffect)) {
+                        // Resolve attribute references
+                        const value = player.resolveAttributeValue(rawValue, player);
+
+                        if (hitActor.stats && hitActor.stats[key] !== undefined) {
+                            const stat = hitActor.stats[key];
+                            if (typeof stat === 'object' && stat.current !== undefined) {
+                                stat.current = Math.max(0, stat.current + value);
+                                if (key === 'health' && stat.current <= 0) {
+                                    hitActor.die();
+                                }
+                            }
+                        }
+                    }
+                    hitActor.flash?.();
+                }
+
+                // Show hit message
+                const displayName = item.getDisplayName ? item.getDisplayName() : item.name;
+                this.engine.inputManager?.showMessage(`The ${displayName} hits the ${hitActor.name}!`);
+            }
+
+            // Item lands at the tile before the hit (or destroyed if breakable)
+            // Items are breakable_on_throw by default (like Brogue) unless explicitly set to false
+            const breakable = item.getAttribute('breakable_on_throw') !== false;
+            if (breakable) {
+                // Item is destroyed on impact
+                console.log(`${item.name} was destroyed on impact`);
+            } else if (path.length > 1) {
+                // Land one tile before the blocked tile
+                const landBeforeHit = path[path.length - 2];
+                item.x = landBeforeHit.x;
+                item.y = landBeforeHit.y;
+                this.engine.entityManager.addEntity(item);
+            } else {
+                // Path was only 1 tile, land at player's feet
+                item.x = player.x;
+                item.y = player.y;
+                this.engine.entityManager.addEntity(item);
+            }
+        } else {
+            // No hit - item lands at target
+            item.x = landingPoint.x;
+            item.y = landingPoint.y;
+            this.engine.entityManager.addEntity(item);
+
+            const displayName = item.getDisplayName ? item.getDisplayName() : item.name;
+            this.engine.inputManager?.showMessage(`You throw the ${displayName}.`);
+        }
+
+        // This counts as a player action
+        this.engine.inputManager?.onPlayerAction();
+    }
+
+    /**
+     * Handle keyboard input during throw aiming mode
+     * @param {string} key - The key pressed
+     * @returns {boolean} True if key was handled
+     */
+    handleThrowKey(key) {
+        if (!this.throwAimingMode) return false;
+
+        if (key === 'Escape') {
+            this.exitThrowAimingMode();
+            return true;
+        }
+
+        return true; // Consume all keys while in throw mode
+    }
+
+    /**
+     * Handle mouse click during throw aiming mode
+     * @returns {boolean} True if click was handled
+     */
+    handleThrowClick() {
+        if (!this.throwAimingMode) return false;
+
+        this.executeThrow();
+        return true;
+    }
+
+    /**
+     * Check if in throw aiming mode
+     * @returns {boolean}
+     */
+    isThrowAiming() {
+        return this.throwAimingMode;
     }
 }
