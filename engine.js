@@ -2054,6 +2054,31 @@ class Actor extends Entity {
     }
 
     /**
+     * Resolve attribute references in a value string or number
+     * Supports patterns like "{strength}" or "-{strength}" which get replaced with actor attribute values
+     * @param {any} value - The value to resolve (string like "-{strength}" or a number)
+     * @param {Actor} sourceActor - The actor whose attributes to use for resolution
+     * @returns {any} - The resolved value (number if pattern matched, original value otherwise)
+     */
+    resolveAttributeValue(value, sourceActor) {
+        if (typeof value === 'string') {
+            // Match patterns like "{attr}", "-{attr}", or "+{attr}"
+            const match = value.match(/^([+-]?)?\{(\w+)\}$/);
+            if (match) {
+                const sign = match[1] || '+';
+                const attrName = match[2];
+                const attrValue = sourceActor.getAttribute(attrName);
+                if (typeof attrValue === 'number') {
+                    return sign === '-' ? -attrValue : attrValue;
+                }
+                console.warn(`Attribute '${attrName}' not found or not a number on ${sourceActor.name}`);
+                return 0;
+            }
+        }
+        return value;
+    }
+
+    /**
      * Apply collision effects from actor or held items to a target actor
      * @param {Actor} target - The actor being collided with
      * @returns {{effectApplied: boolean, targetPassable: boolean}}
@@ -2073,13 +2098,14 @@ class Actor extends Entity {
                     effect: itemEffect,
                     sound: item.getAttribute('collision_sound'),
                     item: item,  // Include item reference for key color checking
-                    lockColor: item.getAttribute('lock_color')
+                    lockColor: item.getAttribute('lock_color'),
+                    sourceActor: this  // The actor wielding the item
                 });
             }
         }
         const actorEffect = this.getAttribute('collision_effect');
         if (actorEffect) {
-            sources.push({ name: this.name, effect: actorEffect, sound: this.getAttribute('collision_sound'), item: null, lockColor: null });
+            sources.push({ name: this.name, effect: actorEffect, sound: this.getAttribute('collision_sound'), item: null, lockColor: null, sourceActor: this });
         }
 
         // Apply effects from ALL sources (stacking)
@@ -2087,7 +2113,10 @@ class Actor extends Entity {
             let sourceApplied = false;
 
             // Apply each effect in the collision_effect object
-            for (const [key, value] of Object.entries(source.effect)) {
+            for (const [key, rawValue] of Object.entries(source.effect)) {
+                // Resolve attribute references like "{strength}" or "-{strength}"
+                const value = this.resolveAttributeValue(rawValue, source.sourceActor);
+
                 // Auto-detect: check stats first, then attributes
                 // Stats priority - check if target has this as a stat
                 if (target.stats && target.stats[key] !== undefined) {

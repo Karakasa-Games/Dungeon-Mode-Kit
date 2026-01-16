@@ -52,7 +52,7 @@ Item JSON schema:
       "stackable": false,
       "flammable": false,
       "consumable": false,
-      "collision_effect": { "stat": value },  // applied when holder collides
+      "collision_effect": { "stat": value },  // applied when holder collides (supports "-{attr}" refs)
       "collision_sound": "sound_name",
       "use_verb": "Drink",                    // action menu label
       "use_effect": { "health": 20 },         // stat modification on use
@@ -91,7 +91,9 @@ Actor JSON schema (organized by property type):
     // BEHAVIOR - AI and interaction config
     "personality": "personality_name",
     "vision_range": 8,
-    "collision_effect": { "health": -5 },  // damage/effects on collision
+    // Collision effects can use attribute references: "{attr}", "-{attr}", "+{attr}"
+    // Example: "collision_effect": { "health": "-{strength}" } uses actor's strength as damage
+    "collision_effect": { "health": -5 },
     "collision_sound": "hit",
     "death_sound": "ouch",
     "damage_per_turn": 10,                 // for hazards like fire

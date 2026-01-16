@@ -64,12 +64,30 @@
     }
   },
 
-   "minotaur": {
+   "deer": {
+    "name": "Deer",
+    "tileIndexBase": "DOOR_TOP",
+    "tileIndexTop": "OPAQUE_DARK_SMILING_FACE",
+    "personality": "passive_wanderer",
+    "attributes": {
+      "hostile": false,
+      "solid": true,
+      "visible": true,
+      "flammable": true,
+      "inventory": 1,
+      "remains": "blood"
+    },
+    "stats": {
+      "health": 10
+    }
+  },
+
+  "minotaur": {
     "name": "Asterion",
     "tileIndexBase": "DOOR_TOP",
     "tileIndexTop": "CABESA_DE_VACA",
     "personality": "stationed_melee",
-    "collision_effect": { "health": -10 },
+    "collision_effect": { "health": "-{strength}"},
     "collision_sound": "hit",
     "attributes": {
       "hostile": true,
