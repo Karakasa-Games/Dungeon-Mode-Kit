@@ -67,7 +67,9 @@ class InputManager {
             'n': 'move_down_right',
             // Other actions
             'i': 'player_info',
-            'I': 'player_info'
+            'I': 'player_info',
+            't': 'throw_item',
+            'T': 'throw_item'
         };
 
         // Global keys (work regardless of player state)
@@ -191,6 +193,17 @@ class InputManager {
         // Check if inventory or other UI is open
         if (this.engine.interfaceManager?.inventoryMode) {
             return;
+        }
+
+        // Check if clicking on the player - open player info
+        const player = this.engine.entityManager?.player;
+        if (player && !player.isDead) {
+            const clickedOnPlayer = (this.hoveredTile.x === player.x && this.hoveredTile.y === player.y) ||
+                                    (player.height === 2 && this.hoveredTile.x === player.x && this.hoveredTile.y === player.y - 1);
+            if (clickedOnPlayer) {
+                this.engine.interfaceManager?.togglePlayerInfo(player);
+                return;
+            }
         }
 
         // Start auto-walk if there's a valid path
@@ -722,6 +735,12 @@ class InputManager {
             return;
         }
 
+        // Check if throw menu wants to handle this key
+        if (this.engine.interfaceManager?.handleThrowMenuKey(event.key)) {
+            event.preventDefault();
+            return;
+        }
+
         // Check if confirmation dialog wants to handle this key first
         if (this.engine.interfaceManager?.handleConfirmKey(event.key)) {
             event.preventDefault();
@@ -846,6 +865,12 @@ class InputManager {
             case 'player_info':
                 if (this.engine.interfaceManager) {
                     this.engine.interfaceManager.togglePlayerInfo(player);
+                }
+                break;
+
+            case 'throw_item':
+                if (this.engine.interfaceManager) {
+                    this.engine.interfaceManager.showThrowItemMenu(player);
                 }
                 break;
         }

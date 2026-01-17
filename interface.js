@@ -23,6 +23,9 @@ class InterfaceManager {
         // Throw aiming mode state
         this.throwAimingMode = false;
         this.throwItem = null; // Item being thrown
+
+        // Throw menu mode state (T key menu)
+        this.throwMenuMode = false;
     }
 
     get container() {
@@ -1468,7 +1471,8 @@ class InterfaceManager {
             const breakable = item.getAttribute('breakable_on_throw') !== false;
             if (breakable) {
                 // Item is destroyed on impact
-                console.log(`${item.name} was destroyed on impact`);
+                const displayName = item.getDisplayName ? item.getDisplayName() : item.name;
+                this.engine.inputManager?.showMessage(`The ${displayName} shatters!`);
             } else if (path.length > 1) {
                 // Land one tile before the blocked tile
                 const landBeforeHit = path[path.length - 2];
@@ -1528,5 +1532,138 @@ class InterfaceManager {
      */
     isThrowAiming() {
         return this.throwAimingMode;
+    }
+
+    // ========================================================================
+    // THROW ITEM MENU (T key)
+    // ========================================================================
+
+    /**
+     * Show a menu to select an item to throw
+     * @param {Actor} player - The player actor
+     */
+    showThrowItemMenu(player) {
+        if (!player || !player.inventory || player.inventory.length === 0) {
+            // No items to throw
+            this.showTextBox('throw_menu_empty', 'You have nothing to throw.', {
+                dismissOnMove: true
+            });
+            return;
+        }
+
+        this.currentPlayer = player;
+        this.throwMenuMode = true;
+
+        const menuId = 'throw_item_menu';
+
+        // Remove existing if present
+        if (this.boxes.has(menuId)) {
+            this.removeBox(menuId);
+        }
+
+        // Build menu lines
+        const lines = [];
+        lines.push('Throw which item?');
+        lines.push('');
+
+        // List all inventory items with letter keys
+        for (let i = 0; i < player.inventory.length; i++) {
+            const item = player.inventory[i];
+            const letter = String.fromCharCode(97 + i); // 'a', 'b', 'c', etc.
+            const displayName = item.getDisplayName ? item.getDisplayName() : item.name;
+            let itemText = `${letter})  ${displayName}`;
+            // Mark equipped items
+            if (player.isItemEquipped(item)) {
+                itemText += ' (worn)';
+            }
+            lines.push('  ' + itemText);
+        }
+
+        lines.push('');
+        lines.push('Esc to cancel');
+
+        // Calculate dimensions
+        const padding = 1;
+        const maxLineLength = Math.max(...lines.map(l => l.length), 16);
+        const contentWidth = maxLineLength;
+        const contentHeight = lines.length;
+        const boxWidth = contentWidth + (padding * 2) + 2;
+        const boxHeight = contentHeight + (padding * 2) + 2;
+
+        // Center the dialog
+        const mapWidth = this.engine.mapManager?.width || 30;
+        const mapHeight = this.engine.mapManager?.height || 20;
+        const x = Math.floor((mapWidth - boxWidth) / 2);
+        const y = Math.floor((mapHeight - boxHeight) / 2);
+
+        // Create the box
+        const boxContainer = this.createBox(menuId, x, y, boxWidth, boxHeight, {
+            fillColor: 0xFFFFFF,
+            borderTint: 0x000000
+        });
+
+        if (!boxContainer) return;
+
+        // Add text sprites
+        const textStartX = (padding + 1) * globalVars.TILE_WIDTH;
+        const textStartY = (padding + 1) * globalVars.TILE_HEIGHT;
+
+        for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+            const line = lines[lineIndex];
+            for (let charIndex = 0; charIndex < line.length; charIndex++) {
+                const char = line[charIndex];
+                const charX = textStartX + (charIndex * globalVars.TILE_WIDTH);
+                const charY = textStartY + (lineIndex * globalVars.TILE_HEIGHT);
+
+                const sprite = this.createCharSprite(char, charX, charY, 0x000000);
+                if (sprite) {
+                    boxContainer.addChild(sprite);
+                }
+            }
+        }
+
+        // Render item tiles (offset for "  a) " = 5 chars)
+        for (let i = 0; i < player.inventory.length; i++) {
+            const item = player.inventory[i];
+            const lineIndex = i + 2; // Account for header and blank line
+            const tileX = textStartX + (5 * globalVars.TILE_WIDTH);
+            const tileY = textStartY + (lineIndex * globalVars.TILE_HEIGHT);
+            this.renderItemTile(boxContainer, item, tileX, tileY);
+        }
+    }
+
+    /**
+     * Close the throw item menu
+     */
+    closeThrowItemMenu() {
+        this.removeBox('throw_item_menu');
+        this.throwMenuMode = false;
+    }
+
+    /**
+     * Handle keyboard input for throw item menu
+     * @param {string} key - The key pressed
+     * @returns {boolean} True if key was handled
+     */
+    handleThrowMenuKey(key) {
+        if (!this.throwMenuMode || !this.currentPlayer) return false;
+
+        if (key === 'Escape') {
+            this.closeThrowItemMenu();
+            return true;
+        }
+
+        // Handle letter keys for item selection (a-z)
+        if (key.length === 1 && key >= 'a' && key <= 'z') {
+            const itemIndex = key.charCodeAt(0) - 97; // 'a' = 0, 'b' = 1, etc.
+            if (itemIndex < this.currentPlayer.inventory.length) {
+                const item = this.currentPlayer.inventory[itemIndex];
+                this.closeThrowItemMenu();
+                this.enterThrowAimingMode(item);
+                return true;
+            }
+        }
+
+        return true; // Consume all keys while menu is open
     }
 }

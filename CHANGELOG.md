@@ -15,7 +15,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Planned
 
-- Aiming UI
 - Test and build out fully generated levels
 - Brogue style deep sewage that floats items
 - Fire and smoke actors should dissipate
@@ -32,6 +31,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Entity `walk_description` attribute for messages when walking over entities
 - Actor shadows cast from colored light sources (sorta works)
+- Mouse-based tile highlighting with color inversion on hover
+- Throw action for all items:
+  - Aiming mode with red line path preview
+  - Path stops at solid actors
+  - Projectile animation showing item moving along path
+  - Items break on impact by default (Brogue-style), configurable via `breakable_on_throw: false`
+  - Collision effects apply to hit targets
+  - Worn items auto-unequip before throwing
+- Click-to-walk with A* pathfinding:
+  - Yellow path preview on hover
+  - Auto-walk with configurable delay
+  - Notable events interrupt auto-walk (hostile approaches, etc.)
+  - Cannot target dark/unexplored tiles
+- Collision effect attribute/stat references using `{attribute}` syntax (e.g., `"health": "-{strength}"`)
 
 ### Fixed
 
