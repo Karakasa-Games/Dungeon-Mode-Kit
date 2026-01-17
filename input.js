@@ -287,6 +287,32 @@ class InputManager {
         if (targetX < 0 || targetY < 0) return;
         if (targetX === player.x && targetY === player.y) return;
 
+        // Check if target tile has a hazardous actor
+        const targetActor = this.engine.entityManager?.getActorAt(targetX, targetY);
+        const damageType = targetActor?.getAttribute('damage_type');
+        if (damageType && !player.hasAttribute(`${damageType}_immune`)) {
+            // Show confirmation dialog for hazardous destination
+            const hazardName = targetActor.name || 'danger';
+            this.engine.interfaceManager?.showConfirmDialog(
+                `Walk into the ${hazardName}?`,
+                () => this.executeAutoWalk(targetX, targetY),
+                () => {} // Do nothing on cancel
+            );
+            return;
+        }
+
+        this.executeAutoWalk(targetX, targetY);
+    }
+
+    /**
+     * Execute the auto-walk after any confirmations
+     * @param {number} targetX - Target tile X
+     * @param {number} targetY - Target tile Y
+     */
+    executeAutoWalk(targetX, targetY) {
+        const player = this.engine.entityManager?.player;
+        if (!player || player.isDead) return;
+
         // Get the path
         const renderer = this.engine.renderer;
         const path = renderer?.showWalkPath(player.x, player.y, targetX, targetY);

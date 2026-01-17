@@ -1,0 +1,13 @@
+{
+  "name": "Catacombs",
+  "description": "It's dark inside these winding corridors. \nPress 'i' for info.",
+  "loaded_sound": "levelout",
+  "depth": 3,
+  "turn_speed": 50,
+  "previous_level": "labyrinth",
+  "mechanics": {
+    "fog_of_war": true,
+    "darkness": true
+  },
+  "win_conditions": []
+}

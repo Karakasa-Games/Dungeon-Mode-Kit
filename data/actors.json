@@ -186,10 +186,10 @@
     "attributes": {
       "solid": false,
       "visible": true,
-      "damages": false,
       "spreads": false,
       "liquid": true,
       "ignites": true,
+      "nauseates": true,
       "paint_tile": "OPAQUE_DOTTED_LIGHT_SHADE",
       "mass_noun": true
     }
@@ -205,7 +205,7 @@
     "attributes": {
       "solid": false,
       "visible": true,
-      "damages": true,
+      "damage_type": "fire",
       "spreads": false,
       "ignites": false,
       "light_source": true,
@@ -224,7 +224,7 @@
     "attributes": {
       "solid": false,
       "visible": true,
-      "damages": true,
+      "damage_type": "fire",
       "spreads": true,
       "ignites": true,
       "light_source": true,
@@ -261,6 +261,27 @@
     }
   },
 
+  "locked_down_stairway": {
+    "name": "Sealed Stairs",
+    "tileIndexBase": "EMPHASIZED_LATIN_CAPITAL_LETTER_X",
+    "tileIndexTop": "OPAQUE_QUADRANT_UPPER_LEFT_AND_LOWER_LEFT_AND_LOWER_RIGHT",
+    "tileIndexBase_open": "DOWNWARDS_ARROW_ON_LIGHT_SHADE",
+    "tileIndexTop_open": "OPAQUE_QUADRANT_UPPER_LEFT_AND_LOWER_LEFT_AND_LOWER_RIGHT",
+    "flipTopV": true,
+    "tint": "#84DCCF",
+    "attributes": {
+      "solid": true,
+      "visible": true,
+      "stairway": "down",
+      "openable": true,
+      "collision_description": "The stairs are sealed. You must fulfill your quest first."
+    },
+    "state": {
+      "open": false,
+      "locked": true
+    }
+  },
+
   "up_stairway": {
     "name": "Stairs Up",
     "tileIndexBase": "UPWARDS_ARROW_ON_LIGHT_SHADE",
@@ -273,19 +294,20 @@
       "stairway": "up"
     }
   },
-  "smoke": {
-    "name": "Smoke",
+  "cloud": {
+    "name": "Cloud",
     "tileIndexBase": "BLANK",
     "tileIndexTop": "BLANK",
     "animated": true,
     "animation_frames": "smoke",
+    "personality": "cloud_behavior",
     "attributes": {
       "solid": false,
       "visible": true,
-      "damages": true
+      "mass_noun": true
     },
-    "damage_per_turn": 2,
-    "lifetime": 5
+    "collision_effect": {},
+    "lifetime": 10
   }
  
 }

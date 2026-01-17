@@ -1,0 +1,15 @@
+{
+  "wall": {
+    "name": "Wall",
+    "tileIndexBase": "SKULL",
+    "tileIndexTop": "OPAQUE_MEDIUM_LIGHT_SHADE",
+    "attributes": {
+      "solid": true,
+      "visible": true,
+      "pushable": false,
+      "breakable": true,
+      "paint_tile": "WALL_TOP",
+      "remains": "rubble"
+    }
+  }
+}

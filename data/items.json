@@ -55,24 +55,25 @@
     }
   },
 
-  "Potion": {
+  "potion": {
     "name": "Potion",
     "tileIndex": "FEMALE_SYMBOL",
     "flipV": true,
     "random_color": true,
+    "random_effect": true,
     "identified": false,
     "unidentified_template": "[color] potion",
     "identified_template": "Potion of [reagents.reagents]",
-    "use_description": "The [item_name] has [a-an] [adjectives.yucky] taste",
+    "use_description": "The [item_name] has [a-an] [adjectives.yucky] taste. \n [effect_description].",
     "attributes": {
       "pickupable": true,
       "visible": true,
       "stackable": true,
       "flammable": false,
       "consumable": true,
+      "explosive": true,
       "use_verb": "Drink",
-      "use_effect": { "health": 20 },
-      "use_sound": "heal"
+      "description": "A mysterious potion with unknown effects."
     }
   },
 
@@ -84,7 +85,7 @@
     "identified": false,
     "unidentified_template": "[color] potion",
     "identified_template": "Potion of Healing",
-    "use_description": "The [item_name] tastes [adjectives.wine_descriptions].",
+    "use_description": "The [item_name] tastes [adjectives.wine_descriptions]. \n [effect_description].",
     "attributes": {
       "pickupable": true,
       "visible": true,
@@ -105,7 +106,7 @@
     "identified": false,
     "unidentified_template": "[color] potion",
     "identified_template": "Potion of Poison",
-    "use_description": "The [item_name] tastes [adjectives.yucky].",
+    "use_description": "The [item_name] tastes [adjectives.yucky]. \n [effect_description].",
     "attributes": {
       "pickupable": true,
       "visible": true,

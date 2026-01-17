@@ -606,6 +606,8 @@ class InterfaceManager {
     showPlayerInfo(player) {
         if (!player) return;
 
+        this.clearTargetingHighlights();
+
         const infoBoxId = 'player_info';
 
         // Remove existing if present
@@ -640,8 +642,9 @@ class InterfaceManager {
             for (let i = 0; i < player.inventory.length; i++) {
                 const item = player.inventory[i];
                 const letter = String.fromCharCode(97 + i); // 'a', 'b', 'c', etc.
-                // Use getDisplayName() for identification-aware display
-                const displayName = item.getDisplayName ? item.getDisplayName() : item.name;
+                // Use getDisplayName() for identification-aware display, truncated for UI
+                let displayName = item.getDisplayName ? item.getDisplayName() : item.name;
+                displayName = this.truncateText(displayName, 16);
                 let itemText = `${letter})  ${displayName}`; // Extra space for tile
                 // Mark equipped items
                 if (player.isItemEquipped(item)) {
@@ -798,6 +801,8 @@ class InterfaceManager {
     showItemActionMenu(itemIndex) {
         if (!this.currentPlayer || !this.inventoryMode) return;
         if (itemIndex < 0 || itemIndex >= this.currentPlayer.inventory.length) return;
+
+        this.clearTargetingHighlights();
 
         const item = this.currentPlayer.inventory[itemIndex];
         this.selectedItemIndex = itemIndex;
@@ -1103,6 +1108,29 @@ class InterfaceManager {
     }
 
     /**
+     * Truncate text to a maximum length, adding ellipsis if needed
+     * @param {string} text - The text to truncate
+     * @param {number} maxLength - Maximum length before truncation
+     * @returns {string} Truncated text with ellipsis if needed
+     */
+    truncateText(text, maxLength) {
+        if (text.length <= maxLength) {
+            return text;
+        }
+        return text.substring(0, maxLength - 1) + '~';
+    }
+
+    /**
+     * Clear targeting highlights (walk path, line path, tile highlight)
+     * Called when opening UI boxes to avoid visual clutter
+     */
+    clearTargetingHighlights() {
+        this.engine.renderer?.hideWalkPath();
+        this.engine.renderer?.hideLinePath();
+        this.engine.renderer?.hideTileHighlight();
+    }
+
+    /**
      * Show a confirmation dialog with Yes/No options
      * @param {string} message - The question to display
      * @param {function} onConfirm - Callback when user confirms (Y)
@@ -1111,6 +1139,8 @@ class InterfaceManager {
     showConfirmDialog(message, onConfirm, onCancel) {
         // Remove any existing confirm dialog
         this.closeConfirmDialog();
+
+        this.clearTargetingHighlights();
 
         // Store callbacks
         this.confirmDialog = { message, onConfirm, onCancel };
@@ -1434,6 +1464,18 @@ class InterfaceManager {
      */
     completeThrow(item, player, path, willHit) {
         const landingPoint = path[path.length - 1];
+        const isExplosive = item.hasAttribute('explosive');
+
+        // Handle explosive items - they create a cloud and are always destroyed
+        if (isExplosive) {
+            this.createExplosiveCloud(item, landingPoint.x, landingPoint.y);
+            const displayName = item.getDisplayName ? item.getDisplayName() : item.name;
+            this.engine.inputManager?.showMessage(`The ${displayName} explodes!`);
+
+            // This counts as a player action
+            this.engine.inputManager?.onPlayerAction();
+            return;
+        }
 
         if (willHit) {
             // Get the actor we're hitting
@@ -1500,6 +1542,43 @@ class InterfaceManager {
     }
 
     /**
+     * Create an explosive cloud from a thrown item
+     * Spawns a cloud actor with the item's tint and use_effect as collision_effect
+     * @param {Item} item - The explosive item
+     * @param {number} x - Landing X coordinate
+     * @param {number} y - Landing Y coordinate
+     */
+    createExplosiveCloud(item, x, y) {
+        const entityManager = this.engine.entityManager;
+        if (!entityManager) return;
+
+        // Spawn the origin cloud
+        const cloud = entityManager.spawnActor('cloud', x, y);
+        if (!cloud) return;
+
+        // Set cloud properties from the item
+        cloud.tint = item.tint;
+
+        // Use the item's use_effect as the cloud's collision_effect
+        const useEffect = item.getAttribute('use_effect');
+        if (useEffect && typeof useEffect === 'object') {
+            cloud.setAttribute('collision_effect', useEffect);
+        }
+
+        // Mark as origin cloud so it spreads
+        cloud.isCloudOrigin = true;
+        cloud.cloudOriginX = x;
+        cloud.cloudOriginY = y;
+
+        // Get lifetime from item, or fall back to cloud actor's default lifetime
+        cloud.cloudLifetime = item.getAttribute('cloud_lifetime') || cloud.lifetime || 10;
+
+        // Update sprite tints
+        if (cloud.spriteBase) cloud.spriteBase.tint = item.tint;
+        if (cloud.spriteTop) cloud.spriteTop.tint = item.tint;
+    }
+
+    /**
      * Handle keyboard input during throw aiming mode
      * @param {string} key - The key pressed
      * @returns {boolean} True if key was handled
@@ -1551,6 +1630,8 @@ class InterfaceManager {
             return;
         }
 
+        this.clearTargetingHighlights();
+
         this.currentPlayer = player;
         this.throwMenuMode = true;
 
@@ -1570,7 +1651,8 @@ class InterfaceManager {
         for (let i = 0; i < player.inventory.length; i++) {
             const item = player.inventory[i];
             const letter = String.fromCharCode(97 + i); // 'a', 'b', 'c', etc.
-            const displayName = item.getDisplayName ? item.getDisplayName() : item.name;
+            let displayName = item.getDisplayName ? item.getDisplayName() : item.name;
+            displayName = this.truncateText(displayName, 16);
             let itemText = `${letter})  ${displayName}`;
             // Mark equipped items
             if (player.isItemEquipped(item)) {

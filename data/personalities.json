@@ -65,5 +65,17 @@
       "incinerate_entities"
     ],
     "spawn_on_incinerate": "fire"
+  },
+
+  "cloud_behavior": {
+    "name": "Cloud",
+    "hostile": false,
+    "behaviors": [
+      "cloud_spread",
+      "cloud_affect_actors",
+      "cloud_lifetime"
+    ],
+    "spread_radius": 2,
+    "spread_turns": 4
   }
 }

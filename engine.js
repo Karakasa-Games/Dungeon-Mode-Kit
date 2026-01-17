@@ -433,14 +433,15 @@ class DungeonEngine {
     async loadGlobalData() {
         try {
             // Load global entity definitions
-            const [actorsRes, itemsRes, personalitiesRes, entitiesRes, colorsRes, adjectivesRes, attacksRes] = await Promise.all([
+            const [actorsRes, itemsRes, personalitiesRes, entitiesRes, colorsRes, adjectivesRes, attacksRes, reagentsRes] = await Promise.all([
                 fetch(`${globalVars.BASE_PATH}/data/actors.json`),
                 fetch(`${globalVars.BASE_PATH}/data/items.json`),
                 fetch(`${globalVars.BASE_PATH}/data/personalities.json`),
                 fetch(`${globalVars.BASE_PATH}/data/entities.json`),
                 fetch(`${globalVars.BASE_PATH}/data/colors.json`),
                 fetch(`${globalVars.BASE_PATH}/data/adjectives.json`),
-                fetch(`${globalVars.BASE_PATH}/data/attacks.json`)
+                fetch(`${globalVars.BASE_PATH}/data/attacks.json`),
+                fetch(`${globalVars.BASE_PATH}/data/reagents.json`)
             ]);
 
             this.globalActors = await actorsRes.json();
@@ -452,6 +453,10 @@ class DungeonEngine {
             this.globalAdjectives = await adjectivesRes.json();
             this.globalAttacks = await attacksRes.json();
 
+            // Load reagents and sample a random subset to keep in memory
+            const fullReagents = await reagentsRes.json();
+            this.globalReagents = this.sampleReagents(fullReagents, 100);
+
             console.log('Global data loaded:', {
                 actors: Object.keys(this.globalActors).length,
                 items: Object.keys(this.globalItems).length,
@@ -459,7 +464,8 @@ class DungeonEngine {
                 entities: Object.keys(this.globalEntities).length,
                 colors: this.globalColors.length,
                 adjectives: Object.keys(this.globalAdjectives).length,
-                attacks: Object.keys(this.globalAttacks).length
+                attacks: Object.keys(this.globalAttacks).length,
+                reagents: Object.keys(this.globalReagents).length
             });
         } catch (error) {
             console.error('Failed to load global data:', error);
@@ -470,7 +476,32 @@ class DungeonEngine {
             this.globalColors = [];
             this.globalAdjectives = {};
             this.globalAttacks = {};
+            this.globalReagents = {};
         }
+    }
+
+    /**
+     * Sample a random subset from a reagents data object
+     * @param {Object} fullData - The full reagents data with category arrays
+     * @param {number} sampleSize - Number of items to keep per category
+     * @returns {Object} Sampled data with same structure but fewer items
+     */
+    sampleReagents(fullData, sampleSize) {
+        const sampled = {};
+        for (const [category, items] of Object.entries(fullData)) {
+            if (Array.isArray(items)) {
+                // Fisher-Yates shuffle and take first sampleSize items
+                const shuffled = [...items];
+                for (let i = shuffled.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+                }
+                sampled[category] = shuffled.slice(0, Math.min(sampleSize, shuffled.length));
+            } else {
+                sampled[category] = items;
+            }
+        }
+        return sampled;
     }
     
     async initializeRenderer() {
@@ -834,6 +865,88 @@ class DungeonEngine {
         this.cleanup();
         await this.loadPrototype(previous.name);
         this.restoreGameState(previous.state);
+    }
+
+    /**
+     * Check if all win conditions for the current prototype are met
+     * @returns {boolean} True if all win conditions are satisfied
+     */
+    checkWinConditions() {
+        const config = this.currentPrototype?.config;
+        const winConditions = config?.win_conditions || [];
+
+        // No conditions = always unlocked
+        if (winConditions.length === 0) return true;
+
+        const player = this.entityManager?.player;
+        if (!player) return false;
+
+        for (const condition of winConditions) {
+            if (!this.checkWinCondition(condition, player)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Check a single win condition
+     * @param {string|object} condition - The condition to check
+     * @param {Actor} player - The player actor
+     * @returns {boolean} True if condition is met
+     */
+    checkWinCondition(condition, player) {
+        if (typeof condition === 'string') {
+            // Format: "wearing:item_type" - player must have item equipped
+            if (condition.startsWith('wearing:')) {
+                const itemType = condition.substring(8);
+                return player.inventory.some(item =>
+                    item.type === itemType && player.isItemEquipped(item)
+                );
+            }
+            // Format: "holding:item_type" - player must have item in inventory
+            if (condition.startsWith('holding:')) {
+                const itemType = condition.substring(8);
+                return player.inventory.some(item => item.type === itemType);
+            }
+            // Format: "killed:actor_type" - all actors of type must be dead
+            if (condition.startsWith('killed:')) {
+                const actorType = condition.substring(7);
+                return !this.entityManager.actors.some(actor =>
+                    actor.type === actorType && !actor.isDead
+                );
+            }
+        }
+
+        // Handle object conditions (for future expansion)
+        if (typeof condition === 'object') {
+            // Could add more complex conditions here
+        }
+
+        console.warn(`Unknown win condition: ${condition}`);
+        return false;
+    }
+
+    /**
+     * Unlock all locked stairways when win conditions are met
+     * This is called when a win condition is triggered (e.g., equipping an item)
+     */
+    unlockWinConditionStairways() {
+        const stairways = this.entityManager?.actors.filter(actor =>
+            actor.hasAttribute('stairway') && actor.state?.locked
+        );
+
+        if (!stairways || stairways.length === 0) return;
+
+        for (const stairway of stairways) {
+            stairway.state.locked = false;
+            stairway.setAttribute('collision_description', null);
+            stairway.open();
+            stairway.name = 'Stairs Down';
+        }
+
+        this.inputManager?.showMessage('The way forward is now open!');
     }
 
     /**
@@ -1245,11 +1358,69 @@ class Item extends Entity {
                 this.setAttribute(key, value);
             });
         }
+
+        // Handle random effect generation for generic potions
+        if (data.random_effect && engine.currentPrototype) {
+            this.generateRandomEffect(engine);
+        }
+    }
+
+    /**
+     * Generate a random stat effect for this item based on available player stats
+     * Sets use_effect attribute and generates an appropriate description
+     * @param {DungeonEngine} engine - The game engine
+     */
+    generateRandomEffect(engine) {
+        // Get player actor data to find available stats
+        const playerData = engine.currentPrototype.getActorData('player');
+        if (!playerData || !playerData.stats) {
+            // No player stats defined - potion has no effect
+            this.templateVars.effect_description = 'It has no effect';
+            return;
+        }
+
+        const statNames = Object.keys(playerData.stats);
+        if (statNames.length === 0) {
+            this.templateVars.effect_description = 'It has no effect';
+            return;
+        }
+
+        // Pick a random stat
+        const randomStat = statNames[Math.floor(Math.random() * statNames.length)];
+
+        // Determine effect magnitude and direction
+        // 70% chance positive, 30% chance negative
+        const isPositive = Math.random() < 0.7;
+        // Effect magnitude: 5-25 for health-like stats, 1-5 for strength-like stats
+        const statValue = playerData.stats[randomStat];
+        const maxStat = typeof statValue === 'object' ? statValue.max : statValue;
+        let magnitude;
+        if (maxStat >= 50) {
+            // Large stat (health, nutrition) - bigger effects
+            magnitude = Math.floor(Math.random() * 21) + 5; // 5-25
+        } else {
+            // Small stat (strength, etc.) - smaller effects
+            magnitude = Math.floor(Math.random() * 5) + 1; // 1-5
+        }
+
+        const effectValue = isPositive ? magnitude : -magnitude;
+
+        // Set the use_effect
+        this.setAttribute('use_effect', { [randomStat]: effectValue });
+
+        // Generate description based on effect
+        const statCapitalized = randomStat.charAt(0).toUpperCase() + randomStat.slice(1);
+        if (effectValue > 0) {
+            this.templateVars.effect_description = `It restores ${statCapitalized}`;
+        } else {
+            this.templateVars.effect_description = `It drains ${statCapitalized}`;
+        }
     }
 
     /**
      * Get the display name based on identification status
-     * Processes templates like "[color] [name]" or "[name] of [effect]"
+     * Processes templates like "[color] [name]" or "[name] of [reagents.reagents]"
+     * Supports [file.key] syntax for random selection from global data (reagents, adjectives)
      * @returns {string} The name to display
      */
     getDisplayName() {
@@ -1260,12 +1431,33 @@ class Item extends Entity {
             return this.name;
         }
 
-        // Process template by replacing [key] with values from templateVars or item properties
-        return template.replace(/\[(\w+)\]/g, (match, key) => {
-            // Check templateVars first
+        // Process template by replacing [key] or [file.key] with values
+        return template.replace(/\[([^\]]+)\]/g, (match, key) => {
+            // Check templateVars first (includes previously resolved random values)
             if (this.templateVars[key] !== undefined) {
                 return this.templateVars[key];
             }
+
+            // Handle file.key syntax (e.g., [reagents.reagents], [adjectives.yucky])
+            if (key.includes('.')) {
+                const [file, category] = key.split('.');
+                let dataSource = null;
+
+                if (file === 'reagents') {
+                    dataSource = this.engine.globalReagents;
+                } else if (file === 'adjectives') {
+                    dataSource = this.engine.globalAdjectives;
+                }
+
+                if (dataSource && dataSource[category] && dataSource[category].length > 0) {
+                    // Pick a random value and store it so it's consistent
+                    const randomValue = dataSource[category][Math.floor(Math.random() * dataSource[category].length)];
+                    this.templateVars[key] = randomValue;
+                    return randomValue;
+                }
+                return match;
+            }
+
             // Check item properties
             if (this[key] !== undefined) {
                 return this[key];
@@ -1434,6 +1626,9 @@ class Actor extends Entity {
             this.setAttribute('death_sound', data.death_sound);
         }
 
+        // Copy lifetime for actors that expire (clouds, fire, etc.)
+        this.lifetime = data.lifetime || null;
+
         // State for openable/interactive actors (doors, chests, etc.)
         this.state = data.state ? { ...data.state } : null;
 
@@ -1552,6 +1747,32 @@ class Actor extends Entity {
         this.engine.inputManager?.showMessage(`The ${this.name} closes.`);
     }
 
+    /**
+     * Update the tile index for base or top sprite
+     * @param {string|Object} tileRef - Tile name string or {x, y} coordinates
+     * @param {string} layer - 'base' or 'top'
+     */
+    updateTileIndex(tileRef, layer = 'base') {
+        const tileIndex = this.engine.spriteLibrary.resolveTile(tileRef);
+        if (!tileIndex) return;
+
+        const tileset = PIXI.Loader.shared.resources.tiles;
+        const rect = new PIXI.Rectangle(
+            tileIndex.x * globalVars.TILE_WIDTH,
+            tileIndex.y * globalVars.TILE_HEIGHT,
+            globalVars.TILE_WIDTH,
+            globalVars.TILE_HEIGHT
+        );
+
+        if (layer === 'base' && this.spriteBase) {
+            this.tileIndexBase = tileIndex;
+            this.spriteBase.texture = new PIXI.Texture(tileset.texture.baseTexture, rect);
+        } else if (layer === 'top' && this.spriteTop) {
+            this.tileIndexTop = tileIndex;
+            this.spriteTop.texture = new PIXI.Texture(tileset.texture.baseTexture, rect);
+        }
+    }
+
     loadPersonality(personalityName) {
         const personalityData = this.engine.currentPrototype.getPersonality(personalityName);
         if (personalityData) {
@@ -1604,8 +1825,8 @@ class Actor extends Entity {
         this.isDead = true;
         this.setAttribute('solid', false);
 
-        // Show death message for visible actors
-        if (this.hasAttribute('visible')) {
+        // Show death message for visible actors (skip for mass nouns like clouds)
+        if (this.hasAttribute('visible') && !this.hasAttribute('mass_noun')) {
             if (this.hasAttribute('controlled')) {
                 this.engine.inputManager?.showMessage(`You die...`);
             } else {
@@ -1654,8 +1875,13 @@ class Actor extends Entity {
         if (this.hasAttribute('controlled')) {
             this.engine.onControlledActorDied();
         }
+
+        // Check if this death triggers win conditions
+        if (!this.hasAttribute('controlled') && this.engine.checkWinConditions()) {
+            this.engine.unlockWinConditionStairways();
+        }
     }
-    
+
     pickUpItem(item) {
         // Check if actor has inventory capacity (inventory attribute)
         const maxInventory = this.getAttribute('inventory');
@@ -1724,6 +1950,11 @@ class Actor extends Entity {
         );
 
         console.log(`${this.name} equipped ${item.name} (${slot})`);
+
+        // Check if this triggers win conditions (for player only)
+        if (this.hasAttribute('controlled') && this.engine.checkWinConditions()) {
+            this.engine.unlockWinConditionStairways();
+        }
     }
 
     /**
@@ -1972,6 +2203,11 @@ class Actor extends Entity {
                             Math.max(0, this.stats[statName].current + amount)
                         );
                         console.log(`${this.name}'s ${statName}: ${oldValue} -> ${this.stats[statName].current}`);
+
+                        // Check for death if health dropped to 0
+                        if (statName === 'health' && this.stats[statName].current <= 0) {
+                            this.die();
+                        }
                     } else {
                         // Simple number stat
                         this.stats[statName] += amount;
@@ -2502,6 +2738,12 @@ class Actor extends Entity {
                 return { moved: false, actionTaken: true };
             }
 
+            // Check for collision_description attribute (for locked stairways, etc.)
+            if (this.hasAttribute('controlled') && actorAtTarget.hasAttribute('collision_description')) {
+                this.engine.inputManager?.showMessage(actorAtTarget.getAttribute('collision_description'));
+                return { moved: false, actionTaken: true };
+            }
+
             if (!collisionResult.effectApplied) {
                 console.log(`${this.name} blocked by ${actorAtTarget.name}`);
             }
@@ -2544,6 +2786,7 @@ class Actor extends Entity {
             const stairway = this.engine.entityManager.getOtherActorAt(newX, newY, this);
             if (stairway && stairway.hasAttribute('stairway')) {
                 const direction = stairway.getAttribute('stairway');
+
                 // Lock the turn engine to prevent further actions during transition
                 if (this.engine.turnEngine) {
                     this.engine.turnEngine.lock();
@@ -2976,6 +3219,129 @@ const BehaviorLibrary = {
         }
 
         return incinerated;
+    },
+
+    /**
+     * Cloud spreading behavior - gradually expands to fill an area
+     * Uses actor's spreadTurnsRemaining and origin position
+     */
+    cloud_spread: (actor, data) => {
+        // Only the origin cloud spreads
+        if (!actor.isCloudOrigin) return false;
+
+        // Initialize spread tracking on first call
+        if (actor.spreadTurnsRemaining === undefined) {
+            actor.spreadTurnsRemaining = data.spread_turns || 4;
+            actor.currentSpreadDistance = 0;
+        }
+
+        if (actor.spreadTurnsRemaining <= 0) return false;
+
+        actor.spreadTurnsRemaining--;
+        actor.currentSpreadDistance++;
+
+        const spreadRadius = data.spread_radius || 2;
+        const entityManager = actor.engine.entityManager;
+
+        // Don't spawn beyond spread radius
+        if (actor.currentSpreadDistance > spreadRadius) return false;
+
+        // Spread to tiles at the current distance from origin
+        const directions = [
+            {dx: -1, dy: -1}, {dx: 0, dy: -1}, {dx: 1, dy: -1},
+            {dx: -1, dy: 0},                   {dx: 1, dy: 0},
+            {dx: -1, dy: 1},  {dx: 0, dy: 1},  {dx: 1, dy: 1}
+        ];
+
+        // Get the origin cloud's lifetime (initialize if needed)
+        if (actor.cloudLifetime === undefined) {
+            actor.cloudLifetime = actor.lifetime || 10;
+        }
+
+        for (const dir of directions) {
+            const targetX = actor.cloudOriginX + dir.dx * actor.currentSpreadDistance;
+            const targetY = actor.cloudOriginY + dir.dy * actor.currentSpreadDistance;
+
+            // Check if tile is valid (has floor, not a wall)
+            const floorTile = actor.engine.mapManager?.floorMap[targetY]?.[targetX];
+            if (!floorTile || floorTile.tileId <= 0) continue;
+
+            // Check if there's already a cloud at this position
+            const existingCloud = entityManager.actors.find(
+                a => a.x === targetX && a.y === targetY && a.type === 'cloud' && !a.isDead
+            );
+            if (existingCloud) continue;
+
+            // Spawn a new cloud at this position
+            const newCloud = entityManager.spawnActor('cloud', targetX, targetY);
+            if (newCloud) {
+                // Copy properties from origin cloud
+                newCloud.tint = actor.tint;
+                newCloud.setAttribute('collision_effect', actor.getAttribute('collision_effect'));
+                // Give spawned clouds the same remaining lifetime as the origin
+                newCloud.cloudLifetime = actor.cloudLifetime;
+                // Update sprites with new tint
+                if (newCloud.spriteBase) newCloud.spriteBase.tint = actor.tint;
+                if (newCloud.spriteTop) newCloud.spriteTop.tint = actor.tint;
+            }
+        }
+
+        return true;
+    },
+
+    /**
+     * Apply cloud's collision effect to any actors standing in it
+     */
+    cloud_affect_actors: (actor) => {
+        const collisionEffect = actor.getAttribute('collision_effect');
+        if (!collisionEffect || Object.keys(collisionEffect).length === 0) return false;
+
+        const entityManager = actor.engine.entityManager;
+
+        // Find actors at this position
+        for (const other of entityManager.actors) {
+            if (other === actor) continue;
+            if (other.isDead) continue;
+            if (other.x !== actor.x || other.y !== actor.y) continue;
+            if (other.type === 'cloud') continue; // Don't affect other clouds
+
+            // Apply collision effect
+            for (const [key, value] of Object.entries(collisionEffect)) {
+                if (other.stats && other.stats[key] !== undefined) {
+                    const stat = other.stats[key];
+                    if (typeof stat === 'object' && stat.current !== undefined) {
+                        stat.current = Math.max(0, stat.current + value);
+                        if (key === 'health' && stat.current <= 0) {
+                            other.die();
+                        }
+                    }
+                }
+            }
+
+            // Flash the affected actor
+            other.flash?.();
+        }
+
+        return false; // Don't stop other behaviors
+    },
+
+    /**
+     * Countdown cloud lifetime and remove when expired
+     */
+    cloud_lifetime: (actor) => {
+        // Initialize lifetime from actor data if not set
+        if (actor.cloudLifetime === undefined) {
+            actor.cloudLifetime = actor.lifetime || 5;
+        }
+
+        actor.cloudLifetime--;
+
+        if (actor.cloudLifetime <= 0) {
+            actor.die();
+            return true;
+        }
+
+        return false;
     }
 };
 
@@ -3175,6 +3541,10 @@ class EntityManager {
             }
         } else if (entity instanceof Item) {
             this.items.push(entity);
+            // Create sprite for dynamically added items
+            if (this.engine.renderer) {
+                this.engine.renderer.createItemSprite(entity);
+            }
         }
     }
     
@@ -3287,6 +3657,11 @@ class EntityManager {
         // Create sprites if renderer exists
         if (this.engine.renderer) {
             this.engine.renderer.createActorSprites(actor);
+        }
+
+        // Add to scheduler if actor has a personality (takes turns)
+        if (actor.personality && this.engine.scheduler) {
+            this.engine.scheduler.add(actor, true);
         }
 
         return actor;
@@ -4361,6 +4736,14 @@ class RenderSystem {
             if (actor && !actor.isDead && actor.hasAttribute('solid')) {
                 return false;
             }
+            // Check for hazardous actors - avoid unless player has matching immunity
+            const damageType = actor?.getAttribute('damage_type');
+            if (damageType && !actor.isDead) {
+                const player = this.engine.entityManager?.player;
+                if (!player?.hasAttribute(`${damageType}_immune`)) {
+                    return false;
+                }
+            }
             // Check if tile is walkable (has floor)
             const floorTile = this.engine.mapManager?.floorMap[y]?.[x];
             return floorTile && floorTile.tileId > 0;
@@ -4833,6 +5216,44 @@ class RenderSystem {
         }
 
         console.log(`Rendered ${itemsRendered} items`);
+    }
+
+    /**
+     * Create a sprite for a single item (used when items are added dynamically)
+     * @param {Item} item - The item to create a sprite for
+     */
+    createItemSprite(item) {
+        if (!item.hasAttribute('visible')) return;
+        if (item.sprite) return; // Already has a sprite
+
+        const tileset = PIXI.Loader.shared.resources.tiles;
+        if (!tileset || !item.tileIndex) return;
+
+        const rect = new PIXI.Rectangle(
+            item.tileIndex.x * globalVars.TILE_WIDTH,
+            item.tileIndex.y * globalVars.TILE_HEIGHT,
+            globalVars.TILE_WIDTH,
+            globalVars.TILE_HEIGHT
+        );
+        const texture = new PIXI.Texture(tileset.texture.baseTexture, rect);
+        const sprite = new PIXI.Sprite(texture);
+
+        sprite.x = item.x * globalVars.TILE_WIDTH;
+        sprite.y = item.y * globalVars.TILE_HEIGHT;
+        sprite.zIndex = 5; // Below actors but above floor
+        sprite.tint = item.tint;
+
+        // Apply horizontal/vertical flip using anchor at center
+        if (item.flipH || item.flipV) {
+            sprite.anchor.set(0.5, 0.5);
+            sprite.x += globalVars.TILE_WIDTH / 2;
+            sprite.y += globalVars.TILE_HEIGHT / 2;
+            sprite.scale.x = item.flipH ? -1 : 1;
+            sprite.scale.y = item.flipV ? -1 : 1;
+        }
+
+        this.entityContainer.addChild(sprite);
+        item.sprite = sprite;
     }
 
     clear() {
