@@ -950,6 +950,43 @@ class DungeonEngine {
     }
 
     /**
+     * Lock stairways when win conditions are no longer met
+     * This is called when a win condition is broken (e.g., unequipping an item)
+     */
+    lockWinConditionStairways() {
+        // Find stairways that were unlocked (have openable attribute and are open)
+        const stairways = this.entityManager?.actors.filter(actor =>
+            actor.hasAttribute('stairway') &&
+            actor.hasAttribute('openable') &&
+            actor.state?.open
+        );
+
+        if (!stairways || stairways.length === 0) return;
+
+        for (const stairway of stairways) {
+            stairway.state.locked = true;
+            stairway.state.open = false;
+            stairway.setAttribute('solid', true);
+            stairway.setAttribute('collision_description', 'The stairs are sealed. You must fulfill your quest first.');
+            stairway.name = 'Sealed Stairs';
+
+            // Update tiles back to locked appearance
+            if (stairway.tileIndexBase && stairway.spriteBase) {
+                const tileset = PIXI.Loader.shared.resources.tiles;
+                const rect = new PIXI.Rectangle(
+                    stairway.tileIndexBase.x * globalVars.TILE_WIDTH,
+                    stairway.tileIndexBase.y * globalVars.TILE_HEIGHT,
+                    globalVars.TILE_WIDTH,
+                    globalVars.TILE_HEIGHT
+                );
+                stairway.spriteBase.texture = new PIXI.Texture(tileset.texture.baseTexture, rect);
+            }
+        }
+
+        this.inputManager?.showMessage('The way forward is sealed once more.');
+    }
+
+    /**
      * Use a stairway to transition to another level
      * @param {string} direction - 'up' or 'down'
      */
@@ -1978,6 +2015,11 @@ class Actor extends Entity {
         this.equipment[slot] = null;
 
         console.log(`${this.name} unequipped ${item.name}`);
+
+        // Check if this breaks win conditions (for player only)
+        if (this.hasAttribute('controlled') && !this.engine.checkWinConditions()) {
+            this.engine.lockWinConditionStairways();
+        }
     }
 
     /**

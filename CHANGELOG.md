@@ -29,6 +29,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Win conditions system for prototypes:
+  - `wearing:item_type` - player must have item equipped
+  - `holding:item_type` - player must have item in inventory
+  - `killed:actor_type` - all actors of that type must be dead
+  - Locked down stairways unlock when conditions are met
+  - Visual tile change and message when stairway unlocks
+- Generic `collision_description` attribute for solid actors
 - Entity `walk_description` attribute for messages when walking over entities
 - Actor shadows cast from colored light sources (sorta works)
 - Mouse-based tile highlighting with color inversion on hover
