@@ -18,6 +18,12 @@ class InputManager {
         // Message stacking for turn-based events
         this.messageStack = [];
 
+        // Auto-walk state
+        this.autoWalkPath = null; // Current path being walked
+        this.autoWalkIndex = 0; // Current position in path
+        this.autoWalking = false; // Whether auto-walk is in progress
+        this.autoWalkDelay = 100; // Milliseconds between steps (2 steps per second)
+
         // Turn history - stores all past turns for future history viewer
         // Each entry is an array of messages from that turn
         this.turnHistory = [];
@@ -50,7 +56,6 @@ class InputManager {
             'Numpad9': 'move_up_right',
             'Numpad1': 'move_down_left',
             'Numpad3': 'move_down_right',
-            'Numpad5': 'wait',
             // Vi keys
             'k': 'move_up',
             'j': 'move_down',
@@ -61,9 +66,6 @@ class InputManager {
             'b': 'move_down_left',
             'n': 'move_down_right',
             // Other actions
-            '.': 'wait',
-            'g': 'pickup',
-            ',': 'pickup',
             'i': 'player_info',
             'I': 'player_info'
         };
@@ -156,6 +158,9 @@ class InputManager {
             // Update throw path if in aiming mode
             if (this.engine.interfaceManager?.isThrowAiming()) {
                 this.engine.interfaceManager.updateThrowPath();
+            } else if (!this.autoWalking) {
+                // Show walk path when not in special modes
+                this.updateWalkPath(tileX, tileY);
             }
         }
     }
@@ -170,6 +175,8 @@ class InputManager {
         this.engine.renderer?.hideTileHighlight();
         // Hide throw path if in aiming mode
         this.engine.renderer?.hideLinePath();
+        // Hide walk path
+        this.engine.renderer?.hideWalkPath();
     }
 
     handleMouseClick(event) {
@@ -180,6 +187,14 @@ class InputManager {
             event.preventDefault();
             return;
         }
+
+        // Check if inventory or other UI is open
+        if (this.engine.interfaceManager?.inventoryMode) {
+            return;
+        }
+
+        // Start auto-walk if there's a valid path
+        this.startAutoWalk();
     }
 
     /**
@@ -202,6 +217,280 @@ class InputManager {
         } else {
             renderer.hideTileHighlight();
         }
+    }
+
+    /**
+     * Update walk path preview based on mouse position
+     * @param {number} tileX - Target tile X
+     * @param {number} tileY - Target tile Y
+     */
+    updateWalkPath(tileX, tileY) {
+        const renderer = this.engine.renderer;
+        const player = this.engine.entityManager?.player;
+
+        if (!renderer || !player || player.isDead) {
+            renderer?.hideWalkPath();
+            return;
+        }
+
+        // Don't show path if target is player's current position
+        if (tileX === player.x && tileY === player.y) {
+            renderer.hideWalkPath();
+            return;
+        }
+
+        // Don't show path if UI is open
+        if (this.engine.interfaceManager?.inventoryMode) {
+            renderer.hideWalkPath();
+            return;
+        }
+
+        // Don't show path to dark/unexplored tiles when darkness is enabled
+        const lightingManager = this.engine.lightingManager;
+        if (lightingManager) {
+            const isVisible = lightingManager.isVisible(tileX, tileY);
+            const isExplored = lightingManager.isExplored(tileX, tileY);
+            if (!isVisible && !isExplored) {
+                renderer.hideWalkPath();
+                return;
+            }
+        }
+
+        // Show walk path (returns null if no valid path)
+        renderer.showWalkPath(player.x, player.y, tileX, tileY);
+    }
+
+    /**
+     * Start auto-walking along the currently displayed path
+     */
+    startAutoWalk() {
+        const player = this.engine.entityManager?.player;
+        if (!player || player.isDead) return;
+
+        const targetX = this.hoveredTile.x;
+        const targetY = this.hoveredTile.y;
+
+        // Don't start if target is invalid or same as player position
+        if (targetX < 0 || targetY < 0) return;
+        if (targetX === player.x && targetY === player.y) return;
+
+        // Get the path
+        const renderer = this.engine.renderer;
+        const path = renderer?.showWalkPath(player.x, player.y, targetX, targetY);
+
+        if (!path || path.length <= 1) return;
+
+        // Start auto-walk
+        this.autoWalkPath = path;
+        this.autoWalkIndex = 1; // Skip first point (player's current position)
+        this.autoWalking = true;
+
+        // Reset notable event tracking for fresh detection
+        this.resetNotableEventTracking();
+
+        // Initialize tracking with currently visible entities
+        this.checkNotableEvents();
+
+        // Hide the walk path preview during auto-walk
+        renderer?.hideWalkPath();
+
+        // Take the first step
+        this.autoWalkStep();
+    }
+
+    /**
+     * Take one step along the auto-walk path
+     */
+    autoWalkStep() {
+        if (!this.autoWalking || !this.autoWalkPath) {
+            this.stopAutoWalk();
+            return;
+        }
+
+        const player = this.engine.entityManager?.player;
+        if (!player || player.isDead) {
+            this.stopAutoWalk();
+            return;
+        }
+
+        // Check if we've reached the end of the path
+        if (this.autoWalkIndex >= this.autoWalkPath.length) {
+            this.stopAutoWalk();
+            return;
+        }
+
+        // Check for notable events before taking the step (but allow at least one step)
+        const hasMovedAtLeastOnce = this.autoWalkIndex > 1;
+        if (hasMovedAtLeastOnce) {
+            const notableEvent = this.checkNotableEvents();
+            if (notableEvent) {
+                this.showMessage(notableEvent);
+                this.stopAutoWalk();
+                return;
+            }
+        }
+
+        const nextPoint = this.autoWalkPath[this.autoWalkIndex];
+
+        // Calculate direction
+        const dx = nextPoint.x - player.x;
+        const dy = nextPoint.y - player.y;
+
+        // Clear message stack at the start of each player action
+        this.clearMessageStack();
+
+        // Try to move
+        const result = player.moveBy(dx, dy);
+
+        if (result.moved) {
+            this.engine.playSoundVaried('feets', 0.4, 0.1, 1.0, 0.06);
+            this.autoWalkIndex++;
+
+            // Trigger player action (lets AI act)
+            this.onPlayerAction();
+
+            // Check for notable events after the step (and AI turns)
+            const postMoveEvent = this.checkNotableEvents();
+            if (postMoveEvent) {
+                this.showMessage(postMoveEvent);
+                this.stopAutoWalk();
+                return;
+            }
+
+            // Schedule next step if not at destination
+            if (this.autoWalkIndex < this.autoWalkPath.length) {
+                setTimeout(() => this.autoWalkStep(), this.autoWalkDelay);
+            } else {
+                this.stopAutoWalk();
+            }
+        } else {
+            // Movement blocked - stop auto-walk
+            if (!result.actionTaken) {
+                this.engine.playSound('tap1');
+            }
+            this.stopAutoWalk();
+        }
+    }
+
+    /**
+     * Check for notable events that should interrupt auto-walk
+     * @returns {string|null} Description of the notable event, or null if none
+     */
+    checkNotableEvents() {
+        // Flags to enable/disable each condition
+        const STOP_ON_HOSTILE_COMES_INTO_VIEW = false;
+        const STOP_ON_HOSTILE_APPROACHES = true;
+        const STOP_ON_ITEM_COMES_INTO_VIEW = false;
+
+        const player = this.engine.entityManager?.player;
+        if (!player) return null;
+
+        const entityManager = this.engine.entityManager;
+        const lightingManager = this.engine.lightingManager;
+
+        // Track previously visible entities if not already tracking
+        if (!this.previouslyVisibleActors) {
+            this.previouslyVisibleActors = new Set();
+        }
+        if (!this.previouslyVisibleItems) {
+            this.previouslyVisibleItems = new Set();
+        }
+
+        // Get currently visible hostile actors and items
+        const currentlyVisibleActors = new Set();
+        const currentlyVisibleItems = new Set();
+
+        for (const actor of entityManager.actors) {
+            if (actor === player || actor.isDead) continue;
+
+            // Check if actor is visible
+            const isVisible = lightingManager ? lightingManager.isVisible(actor.x, actor.y) : true;
+            if (isVisible) {
+                currentlyVisibleActors.add(actor);
+
+                // Check if this is a newly visible hostile actor
+                if (STOP_ON_HOSTILE_COMES_INTO_VIEW && !this.previouslyVisibleActors.has(actor)) {
+                    // Check if actor is hostile (has personality that targets player, or has collision_effect)
+                    const isHostile = actor.hasAttribute('collision_effect') ||
+                                     (actor.personality && !actor.hasAttribute('friendly'));
+                    if (isHostile) {
+                        this.previouslyVisibleActors = currentlyVisibleActors;
+                        this.previouslyVisibleItems = currentlyVisibleItems;
+                        return `${actor.name} comes into view`;
+                    }
+                }
+
+                // Check if a visible hostile actor moved towards the player
+                if (STOP_ON_HOSTILE_APPROACHES && actor._lastPosition) {
+                    const wasCloser = getChebyshevDistance(actor._lastPosition.x, actor._lastPosition.y, player.x, player.y);
+                    const isCloser = getChebyshevDistance(actor.x, actor.y, player.x, player.y);
+                    if (isCloser < wasCloser && isCloser <= 6) {
+                        const isHostile = actor.hasAttribute('collision_effect') ||
+                                         (actor.personality && !actor.hasAttribute('friendly'));
+                        if (isHostile) {
+                            this.previouslyVisibleActors = currentlyVisibleActors;
+                            this.previouslyVisibleItems = currentlyVisibleItems;
+                            return `${actor.name} approaches`;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Check for newly visible items (only if darkness is enabled)
+        if (STOP_ON_ITEM_COMES_INTO_VIEW && lightingManager) {
+            for (const item of entityManager.items) {
+                const isVisible = lightingManager.isVisible(item.x, item.y);
+                if (isVisible) {
+                    currentlyVisibleItems.add(item);
+
+                    if (!this.previouslyVisibleItems.has(item)) {
+                        this.previouslyVisibleActors = currentlyVisibleActors;
+                        this.previouslyVisibleItems = currentlyVisibleItems;
+                        return `${item.name} comes into view`;
+                    }
+                }
+            }
+        }
+
+        // Update tracking sets
+        this.previouslyVisibleActors = currentlyVisibleActors;
+        this.previouslyVisibleItems = currentlyVisibleItems;
+
+        return null;
+    }
+
+    /**
+     * Reset notable event tracking (call when starting a new auto-walk)
+     */
+    resetNotableEventTracking() {
+        this.previouslyVisibleActors = null;
+        this.previouslyVisibleItems = null;
+    }
+
+    /**
+     * Stop auto-walking
+     */
+    stopAutoWalk() {
+        this.autoWalking = false;
+        this.autoWalkPath = null;
+        this.autoWalkIndex = 0;
+
+        // Re-show walk path preview if mouse is still over a tile
+        if (this.hoveredTile.x >= 0 && this.hoveredTile.y >= 0) {
+            this.updateWalkPath(this.hoveredTile.x, this.hoveredTile.y);
+        }
+    }
+
+    /**
+     * Cancel auto-walk (called on keyboard input or other interruption)
+     */
+    cancelAutoWalk() {
+        if (this.autoWalking) {
+            this.stopAutoWalk();
+            return true;
+        }
+        return false;
     }
 
     updateDescription(tileX, tileY) {
@@ -420,6 +709,12 @@ class InputManager {
 
     handleKeyDown(event) {
         if (!this.enabled) return;
+
+        // Cancel auto-walk on any key press
+        if (this.cancelAutoWalk()) {
+            event.preventDefault();
+            return;
+        }
 
         // Check if throw aiming mode wants to handle this key first
         if (this.engine.interfaceManager?.handleThrowKey(event.key)) {

@@ -2054,10 +2054,11 @@ class Actor extends Entity {
     }
 
     /**
-     * Resolve attribute references in a value string or number
-     * Supports patterns like "{strength}" or "-{strength}" which get replaced with actor attribute values
+     * Resolve attribute or stat references in a value string or number
+     * Supports patterns like "{strength}" or "-{strength}" which get replaced with actor attribute/stat values
+     * Checks stats first (including current value for object stats), then attributes
      * @param {any} value - The value to resolve (string like "-{strength}" or a number)
-     * @param {Actor} sourceActor - The actor whose attributes to use for resolution
+     * @param {Actor} sourceActor - The actor whose attributes/stats to use for resolution
      * @returns {any} - The resolved value (number if pattern matched, original value otherwise)
      */
     resolveAttributeValue(value, sourceActor) {
@@ -2066,12 +2067,29 @@ class Actor extends Entity {
             const match = value.match(/^([+-]?)?\{(\w+)\}$/);
             if (match) {
                 const sign = match[1] || '+';
-                const attrName = match[2];
-                const attrValue = sourceActor.getAttribute(attrName);
+                const name = match[2];
+
+                // Check stats first
+                if (sourceActor.stats && sourceActor.stats[name] !== undefined) {
+                    const stat = sourceActor.stats[name];
+                    let statValue;
+                    if (typeof stat === 'object' && stat.current !== undefined) {
+                        statValue = stat.current;
+                    } else if (typeof stat === 'number') {
+                        statValue = stat;
+                    }
+                    if (typeof statValue === 'number') {
+                        return sign === '-' ? -statValue : statValue;
+                    }
+                }
+
+                // Fall back to attributes
+                const attrValue = sourceActor.getAttribute(name);
                 if (typeof attrValue === 'number') {
                     return sign === '-' ? -attrValue : attrValue;
                 }
-                console.warn(`Attribute '${attrName}' not found or not a number on ${sourceActor.name}`);
+
+                console.warn(`Stat/Attribute '${name}' not found or not a number on ${sourceActor.name}`);
                 return 0;
             }
         }
@@ -2411,6 +2429,9 @@ class Actor extends Entity {
      * @returns {{moved: boolean, actionTaken: boolean}} moved=position changed, actionTaken=turn should be consumed
      */
     tryMove(newX, newY) {
+        // Hide walk path highlight when player moves
+        this.engine.renderer?.hideWalkPath();
+
         // Check bounds
         if (newX < 0 || newX >= this.engine.mapManager.width ||
             newY < 0 || newY >= this.engine.mapManager.height) {
@@ -2498,7 +2519,8 @@ class Actor extends Entity {
             return { moved: true, actionTaken: true }; // Move happened, actor just died
         }
 
-        // Move successful
+        // Move successful - track last position for notable event detection
+        this._lastPosition = { x: this.x, y: this.y };
         this.x = newX;
         this.y = newY;
         this.updateSpritePosition();
@@ -4136,12 +4158,15 @@ class RenderSystem {
         this.backgroundSprites = [];
 
         // Tile highlight for hover/aiming
-        this.highlightFilter = null;
+        this.highlightFilter = true;
         this.highlightedSprites = [];
-        this.highlightEnabled = false;
+        this.highlightEnabled = true;
 
         // Line path highlight for throwing/aiming
         this.linePathSprites = [];
+
+        // Walk path highlight for click-to-walk
+        this.walkPathSprites = [];
     }
 
     /**
@@ -4217,8 +4242,7 @@ class RenderSystem {
     }
 
     /**
-     * Show a line path highlight for aiming (e.g., throwing)
-     * Uses red-tinted overlay for path tiles, stops at blocking actors
+     * Show a line path highlight 
      * @param {number} startX - Starting tile X
      * @param {number} startY - Starting tile Y
      * @param {number} endX - Target tile X
@@ -4266,10 +4290,12 @@ class RenderSystem {
 
             if (isTarget || isBlocked) {
                 // Target/blocked tile - brighter red, inverted
-                graphics.beginFill(0xFF0000, 0.3);
+                graphics.beginFill(0xFF0000, 1);
+                graphics.blendMode = PIXI.BLEND_MODES.MULTIPLY;
             } else {
                 // Path tile - faint red
-                graphics.beginFill(0xFF0000, 0.15);
+                graphics.beginFill(0xFF0000, 0.6);
+                graphics.blendMode = PIXI.BLEND_MODES.MULTIPLY; 
             }
 
             graphics.drawRect(0, 0, tileWidth, tileHeight);
@@ -4300,6 +4326,98 @@ class RenderSystem {
             }
         }
         this.linePathSprites = [];
+    }
+
+    /**
+     * Show a walk path highlight using A* pathfinding
+     * Uses yellow-tinted overlay for path tiles
+     * @param {number} startX - Starting tile X
+     * @param {number} startY - Starting tile Y
+     * @param {number} endX - Target tile X
+     * @param {number} endY - Target tile Y
+     * @returns {Array|null} The path array or null if no path exists
+     */
+    showWalkPath(startX, startY, endX, endY) {
+        // Clear any existing walk path highlight
+        this.hideWalkPath();
+
+        const tileWidth = this.engine.config.tileWidth;
+        const tileHeight = this.engine.config.tileHeight;
+
+        // Create passability callback
+        const isPassable = (x, y) => {
+            // Check map boundaries
+            if (x < 0 || y < 0 || x >= this.mapWidth || y >= this.mapHeight) {
+                return false;
+            }
+            // Allow start and end tiles even if occupied
+            if ((x === startX && y === startY) || (x === endX && y === endY)) {
+                // Still need to check if there's floor
+                const floorTile = this.engine.mapManager?.floorMap[y]?.[x];
+                return floorTile && floorTile.tileId > 0;
+            }
+            // Check for solid actors
+            const actor = this.engine.entityManager?.getActorAt(x, y);
+            if (actor && !actor.isDead && actor.hasAttribute('solid')) {
+                return false;
+            }
+            // Check if tile is walkable (has floor)
+            const floorTile = this.engine.mapManager?.floorMap[y]?.[x];
+            return floorTile && floorTile.tileId > 0;
+        };
+
+        // Find path using A*
+        const path = findPathAStar(startX, startY, endX, endY, isPassable, { topology: 8 });
+
+        if (path.length === 0) {
+            return null; // No path found
+        }
+
+        // Create path overlay sprites (skip first tile - that's the player's position)
+        this.walkPathSprites = [];
+
+        for (let i = 1; i < path.length; i++) {
+            const point = path[i];
+            const isTarget = i === path.length - 1;
+
+            // Create a colored overlay
+            const graphics = new PIXI.Graphics();
+
+            if (isTarget) {
+                // Target tile - brighter yellow
+                graphics.beginFill(0xFADF63, 1);
+                graphics.blendMode = PIXI.BLEND_MODES.MULTIPLY;
+            } else {
+                // Path tile - faint yellow
+                graphics.beginFill(0xFADF63, 0.6);
+                graphics.blendMode = PIXI.BLEND_MODES.MULTIPLY;
+            }
+
+            graphics.drawRect(0, 0, tileWidth, tileHeight);
+            graphics.endFill();
+
+            graphics.x = point.x * tileWidth;
+            graphics.y = point.y * tileHeight;
+            graphics.zIndex = 7; // Below line path (8) but above normal tiles
+
+            this.uiContainer.addChild(graphics);
+            this.walkPathSprites.push(graphics);
+        }
+
+        return path;
+    }
+
+    /**
+     * Hide the walk path highlight
+     */
+    hideWalkPath() {
+        if (this.walkPathSprites) {
+            for (const sprite of this.walkPathSprites) {
+                this.uiContainer.removeChild(sprite);
+                sprite.destroy();
+            }
+        }
+        this.walkPathSprites = [];
     }
 
     render() {
@@ -4577,6 +4695,7 @@ class RenderSystem {
         if (entity.fillColor !== null && entity.fillColor !== undefined) {
             const graphics = new PIXI.Graphics();
             graphics.beginFill(entity.fillColor);
+            graphics.blendMode = PIXI.BLEND_MODES.MULTIPLY;
             graphics.drawRect(0, 0, globalVars.TILE_WIDTH, globalVars.TILE_HEIGHT);
             graphics.endFill();
             graphics.x = x;
@@ -4731,6 +4850,7 @@ class RenderSystem {
         this.highlightedSprites = [];
         this.highlightEnabled = false;
         this.linePathSprites = [];
+        this.walkPathSprites = [];
     }
 
     initializeDarkness(width, height) {
