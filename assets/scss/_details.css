@@ -1,5 +1,5 @@
 details {
-    min-height: 100px;
+    
 
     .message-age-1 {
         color: #878787;
@@ -12,5 +12,10 @@ details {
     .message-hover {
         font-style: italic;
     }
-
+    margin-top: 30px;
+    margin-left: 15px;
+    @media (max-width: 1000px) {
+        margin-top: 10px;
+        min-height: 100px;
+    }
 }

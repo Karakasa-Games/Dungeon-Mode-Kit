@@ -55,6 +55,27 @@
     }
   },
 
+  "Potion": {
+    "name": "Potion",
+    "tileIndex": "FEMALE_SYMBOL",
+    "flipV": true,
+    "random_color": true,
+    "identified": false,
+    "unidentified_template": "[color] potion",
+    "identified_template": "Potion of [reagents.reagents]",
+    "use_description": "The [item_name] has [a-an] [adjectives.yucky] taste",
+    "attributes": {
+      "pickupable": true,
+      "visible": true,
+      "stackable": true,
+      "flammable": false,
+      "consumable": true,
+      "use_verb": "Drink",
+      "use_effect": { "health": 20 },
+      "use_sound": "heal"
+    }
+  },
+
   "health_potion": {
     "name": "Potion",
     "tileIndex": "FEMALE_SYMBOL",
@@ -63,7 +84,7 @@
     "identified": false,
     "unidentified_template": "[color] potion",
     "identified_template": "Potion of Healing",
-    "use_description": "The [item_name] has [a-an] [adjectives.yucky] taste.",
+    "use_description": "The [item_name] tastes [adjectives.wine_descriptions].",
     "attributes": {
       "pickupable": true,
       "visible": true,

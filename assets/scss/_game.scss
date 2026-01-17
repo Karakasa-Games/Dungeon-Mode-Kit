@@ -7,3 +7,11 @@ body {
 #game canvas {
   display: block;
 } 
+
+.game-container {
+ display: flex;
+ flex-direction: row;
+ @media (max-width: 1000px) {
+  flex-direction: column;
+ }
+}
