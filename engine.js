@@ -2734,7 +2734,7 @@ class Actor extends Entity {
                     actorAtTarget.y = pushY;
                     actorAtTarget.updateSpritePosition();
                     console.log(`${this.name} pushes ${actorAtTarget.name}`);
-
+                    this.engine.playSound('push1');
                     // Show push message if player is pushing
                     if (this.hasAttribute('controlled')) {
                         this.engine.inputManager?.showMessage(`You push the ${actorAtTarget.name}.`);
