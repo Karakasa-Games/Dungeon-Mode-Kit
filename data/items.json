@@ -86,7 +86,8 @@
     "identified": false,
     "unidentified_template": "[color] potion",
     "identified_template": "Potion of Healing",
-    "use_description": "The [item_name] tastes [adjectives.wine_descriptions]. \n [effect_description].",
+    "effect_description": "It restores Health",
+    "use_description": "The [item_name] tastes [adjectives.wine_descriptions].",
     "attributes": {
       "pickupable": true,
       "visible": true,
