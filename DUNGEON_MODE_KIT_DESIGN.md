@@ -24,6 +24,10 @@ Based on previous expiments— [grotto roguelike](https://github.com/wysiwyggins
 - **Embeddable**: Canvas games integrated into web pages
 - **Rapid Prototyping**: Quick iteration on different game mechanics, don't bother with persistence between levels
 
+## Design Questions
+
+- How do we deal with a changing number of arbitrary stats? This means how do we display them and give feedback when they change and describe them in text?
+
 ## Technical Architecture
 
 ### Rendering System
@@ -49,6 +53,7 @@ Items are single-tile entities defined in `data/items.json` or prototype-specifi
 Key item attributes include `pickupable`, `visible`, `stackable`, `consumable`, and `flammable`. Items can have a `wearable` slot (`top`, `middle`, or `lower`) to auto-equip when picked up. Wearable items render above the actor at their slot position.
 
 **Effects:** Items use attribute-based effects rather than hardcoded types:
+
 - `collision_effect` modifies attributes on actors the holder collides with (e.g., `{"health": -10}` for damage, `{"locked": false}` for keys)
 - `wear_effect` modifies the wearer's attributes while equipped (e.g., `{"strength": 5}`)
 - Effect values can be numbers (add/subtract), booleans (set), or `"toggle"`
@@ -59,7 +64,10 @@ Items with `use_verb` can be activated through UI (e.g., "Drink", "Dig"). The `u
 
 Actors are two-tile entities (base + top) defined in `data/actors.json`. They include creatures, the player, doors, walls, fire, and other interactive objects. Actors participate in the turn-based scheduler if they have a `personality` attribute.
 
-Common actor attributes: `solid`, `visible`, `hostile`, `controlled` (player), `sighted`, `flammable`, `openable`, `light_source`, `stairway`. Actors can have `stats` (like `health` and `strength`) and an `inventory` capacity.
+Actor qualities are organized into two categories:
+
+- **Attributes**: Boolean flags and configuration values stored in a Map. Examples: `solid`, `visible`, `hostile`, `controlled` (player), `sighted`, `flammable`, `openable`, `locked`, `open`, `light_source`, `stairway`, `inventory` (max size).
+- **Stats**: Numeric values with `{ max, current }` structure that change during gameplay. Examples: `health`, `strength`. Stats can be referenced in collision effects using `"{stat}"` or `"-{stat}"` syntax.
 
 Actors can have their own `collision_effect` for unarmed attacks or special interactions. The `default_items` array spawns items in the actor's inventory on creation. The `paint_tile` attribute lets you place actors in Tiled using a specific tile on the wildcards layer.
 
@@ -79,7 +87,7 @@ Actor behavior is controlled by the `personality` attribute (e.g., `"aggressive_
 
 ### Wildcard System
 
-**Procedural Zones**: Special tiles painted in Tiled that trigger generation
+**Procedural Zones**: Special tiles painted in Tiled that spawn actors on prototype load
 
 - **Floor Wildcards**: Generate maze hallways, room layouts
 - **Item Wildcards**: Randomize item drops (validates walkable floor)

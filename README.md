@@ -70,7 +70,8 @@ Item JSON schema:
 
 - Height: 2 tiles (base sprite + top sprite)
 - Has `stats`, `inventory`, and `personality`
-- Stats are data-driven `{ max, current }` objects that change during gameplay
+- **Attributes**: Boolean flags and configuration values (e.g., `solid`, `visible`, `hostile`, `open`, `locked`)
+- **Stats**: Numeric values with `{ max, current }` structure that change during gameplay (e.g., `health`, `strength`)
 - Methods: `die()`, `pickUpItem()`, `flash()`, `applyCollisionEffects()`
 
 Actor JSON schema (organized by property type):
@@ -118,16 +119,12 @@ Actor JSON schema (organized by property type):
       "breakable": false,
       "openable": false,       // doors, chests
       "lockable": false,
+      "open": false,           // current open state (doors, chests)
+      "locked": false,         // current locked state
       "sighted": false,        // AI avoids hazards
       "light_source": false,
       "inventory": 1,          // max inventory size
       "remains": "skull"       // entity spawned on death
-    },
-
-    // STATE - for interactive actors (doors, etc.)
-    "state": {
-      "open": false,
-      "locked": false
     }
   }
 }

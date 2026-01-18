@@ -934,13 +934,13 @@ class DungeonEngine {
      */
     unlockWinConditionStairways() {
         const stairways = this.entityManager?.actors.filter(actor =>
-            actor.hasAttribute('stairway') && actor.state?.locked
+            actor.hasAttribute('stairway') && actor.hasAttribute('locked')
         );
 
         if (!stairways || stairways.length === 0) return;
 
         for (const stairway of stairways) {
-            stairway.state.locked = false;
+            stairway.setAttribute('locked', false);
             stairway.setAttribute('collision_description', null);
             stairway.open();
             stairway.name = 'Stairs Down';
@@ -958,14 +958,14 @@ class DungeonEngine {
         const stairways = this.entityManager?.actors.filter(actor =>
             actor.hasAttribute('stairway') &&
             actor.hasAttribute('openable') &&
-            actor.state?.open
+            actor.hasAttribute('open')
         );
 
         if (!stairways || stairways.length === 0) return;
 
         for (const stairway of stairways) {
-            stairway.state.locked = true;
-            stairway.state.open = false;
+            stairway.setAttribute('locked', true);
+            stairway.setAttribute('open', false);
             stairway.setAttribute('solid', true);
             stairway.setAttribute('collision_description', 'The stairs are sealed. You must fulfill your quest first.');
             stairway.name = 'Sealed Stairs';
@@ -1666,8 +1666,13 @@ class Actor extends Entity {
         // Copy lifetime for actors that expire (clouds, fire, etc.)
         this.lifetime = data.lifetime || null;
 
-        // State for openable/interactive actors (doors, chests, etc.)
-        this.state = data.state ? { ...data.state } : null;
+        // Legacy support: load state properties as attributes (open, locked, etc.)
+        // New format: define these directly in attributes instead of state
+        if (data.state) {
+            Object.entries(data.state).forEach(([key, value]) => {
+                this.setAttribute(key, value);
+            });
+        }
 
         // Store alternate tile indices for state changes
         this.tileIndexBase_open = engine.spriteLibrary.resolveTile(data.tileIndexBase_open) || null;
@@ -1717,13 +1722,13 @@ class Actor extends Entity {
     }
 
     open() {
-        if (!this.hasAttribute('openable') || !this.state) return;
-        if (this.state.locked) {
+        if (!this.hasAttribute('openable')) return;
+        if (this.hasAttribute('locked')) {
             console.log(`${this.name} is locked`);
             return;
         }
 
-        this.state.open = true;
+        this.setAttribute('open', true);
         this.setAttribute('solid', false);
 
         if (this.tileIndexBase_open && this.spriteBase) {
@@ -1753,9 +1758,9 @@ class Actor extends Entity {
     }
 
     close() {
-        if (!this.hasAttribute('openable') || !this.state) return;
+        if (!this.hasAttribute('openable')) return;
 
-        this.state.open = false;
+        this.setAttribute('open', false);
         this.setAttribute('solid', true);
 
         if (this.tileIndexBase && this.spriteBase) {
@@ -2472,8 +2477,6 @@ class Actor extends Entity {
                         // Check if colors match
                         if (targetLockColor && sourceLockColor && targetLockColor === sourceLockColor) {
                             target.setAttribute(key, value);
-                            // Also update state.locked so open() will work
-                            if (target.state) target.state.locked = false;
                             console.log(`${source.name} (${sourceLockColor}) unlocks ${target.name} (${targetLockColor})!`);
                             sourceApplied = true;
                             target.open();
@@ -2506,7 +2509,6 @@ class Actor extends Entity {
 
                         // Check if setting locked to false should open something
                         if (key === 'locked' && value === false && target.hasAttribute('openable')) {
-                            if (target.state) target.state.locked = false;
                             target.open();
                             this.engine.updateLighting();
                             // Door is now open, can pass through
@@ -2765,9 +2767,9 @@ class Actor extends Entity {
             }
 
             // Check if actor can be opened (doors, chests, etc.)
-            if (actorAtTarget.hasAttribute('openable') && !actorAtTarget.state?.open) {
+            if (actorAtTarget.hasAttribute('openable') && !actorAtTarget.hasAttribute('open')) {
                 // Check if locked - play tap sound and block
-                if (actorAtTarget.state?.locked) {
+                if (actorAtTarget.hasAttribute('locked')) {
                     console.log(`${actorAtTarget.name} is locked`);
                     this.engine.playSound?.('tap1');
                     if (this.hasAttribute('controlled')) {
