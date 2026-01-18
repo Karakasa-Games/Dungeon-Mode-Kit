@@ -766,6 +766,9 @@ class DungeonEngine {
         this.mapManager.spawnPendingWalls();
         this.mapManager.spawnPendingDoors();
 
+        // Run cellular automata behaviors once to pre-calculate initial state
+        this.entityManager.runCellularAutomataStep();
+
         if (!prototypeConfig.mechanics?.darkness) {
             this.mapManager.addBaseAndShadows();
         }
@@ -773,6 +776,11 @@ class DungeonEngine {
         this.renderer.renderTestPattern(this.mapManager);
         this.renderer.renderItems(this.entityManager);
         this.renderer.renderActors(this.entityManager);
+
+        // Check initial submersion state for all actors (after sprites exist)
+        for (const actor of this.entityManager.actors) {
+            actor.updateSubmersionState();
+        }
 
         if (prototypeConfig.mechanics?.darkness) {
             this.lightingManager = new LightingManager(this);
@@ -2845,6 +2853,9 @@ class Actor extends Entity {
             this.engine.updateLighting();
         }
 
+        // Check for submersion in deep liquids
+        this.updateSubmersionState();
+
         // Notify interface of player move (for dismissOnMove text boxes)
         if (this.hasAttribute('controlled') && this.engine.interfaceManager) {
             this.engine.interfaceManager.onPlayerMove();
@@ -2915,6 +2926,122 @@ class Actor extends Entity {
                 }
             }
         }, duration);
+    }
+
+    /**
+     * Check if there's a deep actor at the given position
+     * @param {number} x - X coordinate
+     * @param {number} y - Y coordinate
+     * @returns {Actor|null} The deep actor at position, or null
+     */
+    getDeepActorAt(x, y) {
+        const actors = this.engine.entityManager.actors.filter(
+            a => a.x === x && a.y === y &&
+                 !a.isDead &&
+                 !a.hasAttribute('solid') &&
+                 a.hasAttribute('deep')
+        );
+        return actors.length > 0 ? actors[0] : null;
+    }
+
+    /**
+     * Submerge this actor (when entering a deep tile)
+     * Base sprite shows the top tile texture, top sprite becomes invisible
+     * @param {Actor} deepActor - The deep actor we're submerging in
+     */
+    submerge(deepActor) {
+        if (this.isSubmerged) return;
+
+        this.isSubmerged = true;
+        this.submergedIn = deepActor;
+
+        // Store original textures for restoration
+        if (this.spriteBase) {
+            this._originalBaseTexture = this.spriteBase.texture;
+        }
+        if (this.spriteTop) {
+            this._originalTopTexture = this.spriteTop.texture;
+            this._originalTopVisible = this.spriteTop.visible;
+        }
+
+        // Move top texture to base position (head now at floor level)
+        if (this.spriteTop && this.spriteBase) {
+            this.spriteBase.texture = this.spriteTop.texture;
+        }
+
+        // Hide top sprite
+        if (this.spriteTop) {
+            this.spriteTop.visible = false;
+        }
+
+        // Hide equipment sprites (they're underwater)
+        for (const slot of ['top', 'middle', 'lower']) {
+            if (this.spriteEquipment[slot]) {
+                this[`_originalEquipment${slot}Visible`] = this.spriteEquipment[slot].visible;
+                this.spriteEquipment[slot].visible = false;
+            }
+        }
+
+        // If this is the player, apply canvas tinting and show message
+        if (this.hasAttribute('controlled') && deepActor) {
+            this.engine.renderer?.applySubmersionTint(deepActor.tint);
+            this.engine.inputManager?.showMessage(`You are submerged in the ${deepActor.name}!`);
+        }
+
+        console.log(`${this.name} submerges in ${deepActor?.name || 'deep liquid'}`);
+    }
+
+    /**
+     * Emerge from submersion (when exiting a deep tile)
+     */
+    emerge() {
+        if (!this.isSubmerged) return;
+
+        // Restore original base texture
+        if (this.spriteBase && this._originalBaseTexture) {
+            this.spriteBase.texture = this._originalBaseTexture;
+        }
+
+        // Restore and show top sprite
+        if (this.spriteTop) {
+            if (this._originalTopTexture) {
+                this.spriteTop.texture = this._originalTopTexture;
+            }
+            this.spriteTop.visible = this._originalTopVisible !== false;
+        }
+
+        // Restore equipment sprite visibility
+        for (const slot of ['top', 'middle', 'lower']) {
+            if (this.spriteEquipment[slot] && this[`_originalEquipment${slot}Visible`] !== undefined) {
+                this.spriteEquipment[slot].visible = this[`_originalEquipment${slot}Visible`];
+            }
+        }
+
+        // If this is the player, remove canvas tinting
+        if (this.hasAttribute('controlled')) {
+            this.engine.renderer?.removeSubmersionTint();
+        }
+
+        console.log(`${this.name} emerges from ${this.submergedIn?.name || 'deep liquid'}`);
+
+        this.isSubmerged = false;
+        this.submergedIn = null;
+        this._originalBaseTexture = null;
+        this._originalTopTexture = null;
+        this._originalTopVisible = null;
+    }
+
+    /**
+     * Check and update submersion state based on current position
+     */
+    updateSubmersionState() {
+        const deepActor = this.getDeepActorAt(this.x, this.y);
+
+        if (deepActor && !this.isSubmerged) {
+            this.submerge(deepActor);
+        } else if (!deepActor && this.isSubmerged) {
+            this.emerge();
+        }
     }
 
     /**
@@ -3386,6 +3513,77 @@ const BehaviorLibrary = {
         }
 
         return false;
+    },
+
+    /**
+     * Cellular automata transformation behavior
+     * Checks if neighbors match a condition and transforms this actor into another type
+     *
+     * Data parameters:
+     * - neighbor_type: The actor type to check for in neighbors (e.g., "sewage")
+     * - neighbor_count: Minimum number of matching neighbors required (default: 4, meaning all cardinal directions)
+     * - transform_to: The actor type to transform into (e.g., "deep_sewage")
+     * - check_cardinal: If true, only check 4 cardinal directions; if false, check all 8 (default: true)
+     */
+    cellular_transform: (actor, data) => {
+        const neighborType = data.neighbor_type || actor.type;
+        const requiredCount = data.neighbor_count ?? 4;
+        const transformTo = data.transform_to;
+        const checkCardinal = data.check_cardinal !== false;
+
+        if (!transformTo) {
+            console.warn('cellular_transform: no transform_to specified');
+            return false;
+        }
+
+        // Don't transform if already the target type
+        if (actor.type === transformTo) return false;
+
+        const directions = checkCardinal
+            ? [{dx: 0, dy: -1}, {dx: 0, dy: 1}, {dx: -1, dy: 0}, {dx: 1, dy: 0}]
+            : [
+                {dx: -1, dy: -1}, {dx: 0, dy: -1}, {dx: 1, dy: -1},
+                {dx: -1, dy: 0},                   {dx: 1, dy: 0},
+                {dx: -1, dy: 1},  {dx: 0, dy: 1},  {dx: 1, dy: 1}
+            ];
+
+        const entityManager = actor.engine.entityManager;
+        let matchingNeighbors = 0;
+
+        for (const dir of directions) {
+            const checkX = actor.x + dir.dx;
+            const checkY = actor.y + dir.dy;
+
+            // Find actors at this position that match the neighbor type
+            const neighbor = entityManager.actors.find(
+                a => a.x === checkX && a.y === checkY &&
+                     !a.isDead &&
+                     (a.type === neighborType || a.type === transformTo)
+            );
+
+            if (neighbor) {
+                matchingNeighbors++;
+            }
+        }
+
+        // Check if we have enough matching neighbors to transform
+        if (matchingNeighbors >= requiredCount) {
+            const x = actor.x;
+            const y = actor.y;
+
+            // Remove the current actor
+            actor.die();
+
+            // Spawn the transformed actor
+            const newActor = entityManager.spawnActor(transformTo, x, y);
+            if (newActor) {
+                console.log(`${neighborType} at (${x}, ${y}) transformed into ${transformTo} (${matchingNeighbors} neighbors)`);
+            }
+
+            return true;
+        }
+
+        return false;
     }
 };
 
@@ -3422,6 +3620,86 @@ class EntityManager {
         this.spawnUnplacedEntities(placedActorTypes, placedItemTypes);
 
         console.log(`Entities spawned: ${this.actors.length} actors, ${this.items.length} items`);
+    }
+
+    /**
+     * Run cellular automata behaviors once to pre-calculate initial state
+     * This allows things like sewage pooling to be calculated at load time
+     * @param {number} [steps=1] - Number of simulation steps to run
+     */
+    runCellularAutomataStep(steps = 1) {
+        for (let step = 0; step < steps; step++) {
+            // Get all actors with cellular_transform behavior
+            // We need to collect transformations first, then apply them to avoid order-dependent issues
+            const transformations = [];
+
+            for (const actor of this.actors) {
+                if (actor.isDead) continue;
+                if (!actor.personality) continue;
+
+                // Check if this actor has cellular_transform behavior
+                const hasCellularBehavior = actor.personality.behaviors?.includes('cellular_transform');
+                if (!hasCellularBehavior) continue;
+
+                const data = actor.personality.data || {};
+                const neighborType = data.neighbor_type || actor.type;
+                const requiredCount = data.neighbor_count ?? 4;
+                const transformTo = data.transform_to;
+                const checkCardinal = data.check_cardinal !== false;
+
+                if (!transformTo || actor.type === transformTo) continue;
+
+                const directions = checkCardinal
+                    ? [{dx: 0, dy: -1}, {dx: 0, dy: 1}, {dx: -1, dy: 0}, {dx: 1, dy: 0}]
+                    : [
+                        {dx: -1, dy: -1}, {dx: 0, dy: -1}, {dx: 1, dy: -1},
+                        {dx: -1, dy: 0},                   {dx: 1, dy: 0},
+                        {dx: -1, dy: 1},  {dx: 0, dy: 1},  {dx: 1, dy: 1}
+                    ];
+
+                let matchingNeighbors = 0;
+
+                for (const dir of directions) {
+                    const checkX = actor.x + dir.dx;
+                    const checkY = actor.y + dir.dy;
+
+                    const neighbor = this.actors.find(
+                        a => a.x === checkX && a.y === checkY &&
+                             !a.isDead &&
+                             (a.type === neighborType || a.type === transformTo)
+                    );
+
+                    if (neighbor) {
+                        matchingNeighbors++;
+                    }
+                }
+
+                if (matchingNeighbors >= requiredCount) {
+                    transformations.push({
+                        actor,
+                        x: actor.x,
+                        y: actor.y,
+                        transformTo
+                    });
+                }
+            }
+
+            // Apply all transformations
+            for (const t of transformations) {
+                // Remove the old actor (without triggering death effects)
+                this.removeEntity(t.actor);
+
+                // Spawn the new actor
+                const newActor = this.spawnActor(t.transformTo, t.x, t.y);
+                if (newActor) {
+                    console.log(`Initial CA: ${t.actor.type} at (${t.x}, ${t.y}) -> ${t.transformTo}`);
+                }
+            }
+
+            if (transformations.length > 0) {
+                console.log(`Cellular automata step ${step + 1}: ${transformations.length} transformations`);
+            }
+        }
     }
 
     /**
@@ -4586,6 +4864,46 @@ class RenderSystem {
 
         // Walk path highlight for click-to-walk
         this.walkPathSprites = [];
+
+        // Submersion overlay sprite
+        this.submersionOverlay = null;
+    }
+
+    /**
+     * Apply a color overlay to simulate submersion using multiply blend mode
+     * @param {number} tint - The tint color (e.g., 0x9BC964 for green)
+     */
+    applySubmersionTint(tint) {
+        if (this.submersionOverlay) return;
+
+        // Create a filled rectangle that covers the entire game area
+        const graphics = new PIXI.Graphics();
+        graphics.beginFill(tint);
+        graphics.drawRect(0, 0, this.mapWidth * globalVars.TILE_WIDTH, this.mapHeight * globalVars.TILE_HEIGHT);
+        graphics.endFill();
+
+        // Use multiply blend mode for realistic color mixing
+        graphics.blendMode = PIXI.BLEND_MODES.MULTIPLY;
+
+        // Add to darkness container (above entities, below UI)
+        // Use a high zIndex to ensure it's on top of other elements in that container
+        graphics.zIndex = 100;
+        this.darknessContainer.addChild(graphics);
+
+        this.submersionOverlay = graphics;
+        console.log(`Applied submersion overlay: #${tint.toString(16)}`);
+    }
+
+    /**
+     * Remove the submersion overlay
+     */
+    removeSubmersionTint() {
+        if (!this.submersionOverlay) return;
+
+        this.darknessContainer.removeChild(this.submersionOverlay);
+        this.submersionOverlay.destroy();
+        this.submersionOverlay = null;
+        console.log('Removed submersion overlay');
     }
 
     /**

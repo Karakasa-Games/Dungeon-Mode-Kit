@@ -1,6 +1,7 @@
 {
   "player": {
     "name": "Player",
+    "description": "It's you!",
     "tileIndexBase": "LEG",
     "tileIndexTop": "OPAQUE_DARK_SMILING_FACE",
     "vision_range": 20,
@@ -24,6 +25,7 @@
     
   "skeleton": {
     "name": "Skeleton",
+    "description": "Brittle bones stripped of their flesh and animated by some dark magic.",
     "tileIndexBase": "SKELETON_LEGS",
     "tileIndexTop": "SKULL",
     "personality": "stationed_melee",
@@ -173,12 +175,13 @@
     }
   },
   "sewage": {
-    "name": "Sewage",
+    "name": "sewage",
     "tileIndexBase": "BLANK",
     "tileIndexTop": "BLANK",
     "animated": true,
     "animation_frames": "fluid",
     "tint": "#CAD49D",
+    "personality": "liquid_pooling",
     "attributes": {
       "solid": false,
       "visible": true,
@@ -187,6 +190,24 @@
       "ignites": true,
       "nauseates": true,
       "paint_tile": "OPAQUE_DOTTED_LIGHT_SHADE",
+      "mass_noun": true
+    }
+  },
+  "deep_sewage": {
+    "name": "sewage",
+    "tileIndexBase": "BLANK",
+    "tileIndexTop": "BLANK",
+    "animated": true,
+    "animation_frames": "fluid",
+    "tint": "#9BC964",
+    "attributes": {
+      "solid": false,
+      "deep": true,
+      "visible": true,
+      "spreads": false,
+      "liquid": true,
+      "ignites": true,
+      "nauseates": true,
       "mass_noun": true
     }
   },
@@ -289,7 +310,7 @@
     }
   },
   "cloud": {
-    "name": "Cloud",
+    "name": "clouds",
     "tileIndexBase": "BLANK",
     "tileIndexTop": "BLANK",
     "animated": true,
@@ -302,6 +323,21 @@
     },
     "collision_effect": {},
     "lifetime": 10
+  },
+  "mist": {
+    "name": "mist",
+    "tileIndexBase": "BLANK",
+    "tileIndexTop": "BLANK",
+    "animated": true,
+    "animation_frames": "light-smoke",
+    "personality": "cloud_behavior",
+    "attributes": {
+      "solid": false,
+      "visible": true,
+      "mass_noun": true
+    },
+    "collision_effect": {},
+    "lifetime": 4
   }
  
 }
