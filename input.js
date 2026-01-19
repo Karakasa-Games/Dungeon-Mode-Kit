@@ -382,7 +382,8 @@ class InputManager {
         const result = player.moveBy(dx, dy);
 
         if (result.moved) {
-            this.engine.playSoundVaried('feets', 0.4, 0.1, 1.0, 0.06);
+            const sound = result.entrySound || 'feets';
+            this.engine.playSoundVaried(sound, 0.4, 0.1, 1.0, 0.06);
             this.autoWalkIndex++;
 
             // Trigger player action (lets AI act)
@@ -835,7 +836,8 @@ class InputManager {
                         // On confirm - execute the move
                         const result = player.moveBy(dir.dx, dir.dy);
                         if (result.moved) {
-                            this.engine.playSoundVaried('feets', 0.4, 0.1, 1.0, 0.06);
+                            const sound = result.entrySound || 'feets';
+                            this.engine.playSoundVaried(sound, 0.4, 0.1, 1.0, 0.06);
                         }
                         if (result.actionTaken) {
                             this.onPlayerAction();
@@ -850,7 +852,8 @@ class InputManager {
 
             const result = player.moveBy(dir.dx, dir.dy);
             if (result.moved) {
-                this.engine.playSoundVaried('feets', 0.4, 0.1, 1.0, 0.06);
+                const sound = result.entrySound || 'feets';
+                this.engine.playSoundVaried(sound, 0.4, 0.1, 1.0, 0.06);
             } else if (!result.actionTaken) {
                 // Bumped into a wall or obstacle with no effect
                 this.engine.playSound('tap1');

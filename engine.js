@@ -2861,7 +2861,16 @@ class Actor extends Entity {
             this.engine.interfaceManager.onPlayerMove();
         }
 
-        return { moved: true, actionTaken: true };
+        // Check for entry sound from non-solid actors at destination (for controlled actors)
+        let entrySound = null;
+        if (this.hasAttribute('controlled')) {
+            const actorAtTarget = this.engine.entityManager.getOtherActorAt(newX, newY, this);
+            if (actorAtTarget && !actorAtTarget.hasAttribute('solid') && actorAtTarget.hasAttribute('entry_sound')) {
+                entrySound = actorAtTarget.getAttribute('entry_sound');
+            }
+        }
+
+        return { moved: true, actionTaken: true, entrySound };
     }
 
     moveBy(dx, dy) {

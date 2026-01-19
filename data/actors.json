@@ -190,7 +190,8 @@
       "ignites": true,
       "nauseates": true,
       "paint_tile": "OPAQUE_DOTTED_LIGHT_SHADE",
-      "mass_noun": true
+      "mass_noun": true,
+      "entry_sound": "step_mud"
     }
   },
   "deep_sewage": {
