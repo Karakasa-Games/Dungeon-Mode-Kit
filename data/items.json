@@ -24,6 +24,7 @@
       "visible": true,
       "stackable": false,
       "flammable": false,
+      "weapon": true,
       "collision_effect": { "health": -10 },
       "collision_sound": "tap2"
     }

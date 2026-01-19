@@ -15,13 +15,14 @@
       "flammable": true,
       "sighted": true,
       "inventory": 1,
-      "remains": "skull"
+      "remains": "skull",
+      "accuracy": 75
     },
     "stats": {
       "health": 1
     }
   },
-    
+
   "skeleton": {
     "name": "Skeleton",
     "description": "Brittle bones stripped of their flesh and animated by some dark magic.",
@@ -37,14 +38,16 @@
       "visible": true,
       "flammable": true,
       "inventory": 1,
-      "remains": "skull"
+      "remains": "skull",
+      "accuracy": 60,
+      "defense": 5
     },
     "stats": {
       "health": 30,
       "strength": 5
     }
   },
-  
+
   "basilisk": {
     "name": "Basilisk",
     "tileIndexBase": {"x": 10, "y": 7},

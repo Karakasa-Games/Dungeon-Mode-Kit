@@ -606,6 +606,11 @@ class DungeonEngine {
      * Uses Simple scheduler - all actors get one turn per round
      */
     initializeTurnEngine() {
+        // Initialize ROT.RNG for combat rolls (seedable for reproducibility)
+        if (!ROT.RNG.getSeed()) {
+            ROT.RNG.setSeed(Date.now());
+        }
+
         this.scheduler = new ROT.Scheduler.Simple();
         this.turnEngine = new ROT.Engine(this.scheduler);
 
@@ -1614,11 +1619,13 @@ class Actor extends Entity {
         this.spriteTop = null;
 
         this.equipment = {
+            weapon: null,
             top: null,
             middle: null,
             lower: null
         };
         this.spriteEquipment = {
+            weapon: null,
             top: null,
             middle: null,
             lower: null
@@ -1991,12 +1998,14 @@ class Actor extends Entity {
         // Apply wear effects to actor
         this.applyWearEffect(item);
 
-        // Create sprite for the equipped item
-        this.spriteEquipment[slot] = this.engine.renderer.createEquipmentSprite(
-            this,
-            item,
-            slot
-        );
+        // Create sprite for the equipped item (skip for weapons - they don't render on actor)
+        if (slot !== 'weapon') {
+            this.spriteEquipment[slot] = this.engine.renderer.createEquipmentSprite(
+                this,
+                item,
+                slot
+            );
+        }
 
         console.log(`${this.name} equipped ${item.name} (${slot})`);
 
@@ -2127,25 +2136,82 @@ class Actor extends Entity {
      * @returns {boolean} True if the item is equipped in any slot
      */
     isItemEquipped(item) {
-        return this.equipment.top === item ||
+        return this.equipment.weapon === item ||
+               this.equipment.top === item ||
                this.equipment.middle === item ||
                this.equipment.lower === item;
     }
 
     /**
-     * Equip a wearable item (convenience method)
+     * Get the equipped weapon, if any
+     * @returns {Item|null} The equipped weapon or null
+     */
+    getEquippedWeapon() {
+        return this.equipment.weapon || null;
+    }
+
+    /**
+     * Get the actor's effective accuracy (base + equipment bonuses)
+     * @returns {number|null} Accuracy value, or null if actor has no accuracy attribute
+     */
+    getEffectiveAccuracy() {
+        let base = this.getAttribute('accuracy');
+        if (base === undefined) return null;
+
+        // Add bonuses from equipped items' wear_effects
+        for (const slot of ['weapon', 'top', 'middle', 'lower']) {
+            const item = this.equipment[slot];
+            if (item) {
+                const wearEffect = item.getAttribute('wear_effect');
+                if (wearEffect && typeof wearEffect.accuracy === 'number') {
+                    base += wearEffect.accuracy;
+                }
+            }
+        }
+        return base;
+    }
+
+    /**
+     * Get the actor's effective defense (base + equipment bonuses)
+     * @returns {number} Defense value (0 if no defense attribute)
+     */
+    getEffectiveDefense() {
+        let base = this.getAttribute('defense') || 0;
+
+        // Add bonuses from equipped items' wear_effects
+        for (const slot of ['weapon', 'top', 'middle', 'lower']) {
+            const item = this.equipment[slot];
+            if (item) {
+                const wearEffect = item.getAttribute('wear_effect');
+                if (wearEffect && typeof wearEffect.defense === 'number') {
+                    base += wearEffect.defense;
+                }
+            }
+        }
+        return base;
+    }
+
+    /**
+     * Equip a wearable item or weapon (convenience method)
      * @param {Item} item - The item to equip
      * @returns {boolean} True if successfully equipped
      */
     equipItem(item) {
-        const slot = item.getAttribute('wearable');
-        if (!slot || !['top', 'middle', 'lower'].includes(slot)) {
-            console.log(`${item.name} is not wearable`);
+        if (!this.inventory.includes(item)) {
+            console.log(`${this.name} doesn't have ${item.name}`);
             return false;
         }
 
-        if (!this.inventory.includes(item)) {
-            console.log(`${this.name} doesn't have ${item.name}`);
+        // Check if it's a weapon
+        if (item.hasAttribute('weapon')) {
+            this.equipToSlot(item, 'weapon');
+            return true;
+        }
+
+        // Check if it's wearable armor
+        const slot = item.getAttribute('wearable');
+        if (!slot || !['top', 'middle', 'lower'].includes(slot)) {
+            console.log(`${item.name} is not equippable`);
             return false;
         }
 
@@ -2154,11 +2220,22 @@ class Actor extends Entity {
     }
 
     /**
-     * Unequip a worn item (convenience method)
+     * Unequip a worn item or weapon (convenience method)
      * @param {Item} item - The item to unequip
      * @returns {boolean} True if successfully unequipped
      */
     unequipItem(item) {
+        // Check if it's an equipped weapon
+        if (item.hasAttribute('weapon')) {
+            if (this.equipment.weapon !== item) {
+                console.log(`${item.name} is not equipped`);
+                return false;
+            }
+            this.unequipFromSlot('weapon');
+            return true;
+        }
+
+        // Handle wearable items
         const slot = item.getAttribute('wearable');
         if (!slot) return false;
 
@@ -2336,6 +2413,10 @@ class Actor extends Entity {
             if (key === 'attacked_actor_name') {
                 return target.name;
             }
+            if (key === 'weapon_name') {
+                const weapon = this.getEquippedWeapon();
+                return weapon ? weapon.name : match; // Keep placeholder if no weapon
+            }
             return match;
         });
 
@@ -2388,6 +2469,8 @@ class Actor extends Entity {
 
     /**
      * Apply collision effects from actor or held items to a target actor
+     * Damage comes from equipped weapon OR actor's collision_effect (not both)
+     * Utility effects (like keys unlocking doors) always apply
      * @param {Actor} target - The actor being collided with
      * @returns {{effectApplied: boolean, targetPassable: boolean}}
      */
@@ -2396,142 +2479,104 @@ class Actor extends Entity {
         let targetPassable = false;
         let targetShouldDie = false;
 
-        // Gather all effect sources: items first, then actor's own effect (unarmed)
-        const sources = [];
+        // Determine the damage source: equipped weapon takes priority, then actor's own effect
+        const equippedWeapon = this.getEquippedWeapon();
+        let damageSource = null;
+
+        if (equippedWeapon) {
+            const weaponEffect = equippedWeapon.getAttribute('collision_effect');
+            if (weaponEffect) {
+                damageSource = {
+                    name: equippedWeapon.name,
+                    effect: weaponEffect,
+                    sound: equippedWeapon.getAttribute('collision_sound'),
+                    item: equippedWeapon,
+                    lockColor: equippedWeapon.getAttribute('lock_color'),
+                    sourceActor: this
+                };
+            }
+        }
+
+        // Fall back to actor's own collision_effect if no weapon equipped
+        if (!damageSource) {
+            const actorEffect = this.getAttribute('collision_effect');
+            if (actorEffect) {
+                damageSource = {
+                    name: this.name,
+                    effect: actorEffect,
+                    sound: this.getAttribute('collision_sound'),
+                    item: null,
+                    lockColor: null,
+                    sourceActor: this
+                };
+            }
+        }
+
+        // Gather utility effect sources (non-weapon items like keys)
+        const utilitySources = [];
         for (const item of this.inventory) {
+            // Skip the equipped weapon (already handled above)
+            if (item === equippedWeapon) continue;
+
             const itemEffect = item.getAttribute('collision_effect');
             if (itemEffect) {
-                sources.push({
-                    name: item.name,
-                    effect: itemEffect,
-                    sound: item.getAttribute('collision_sound'),
-                    item: item,  // Include item reference for key color checking
-                    lockColor: item.getAttribute('lock_color'),
-                    sourceActor: this  // The actor wielding the item
+                // Check if this item has any utility effects (non-stat modifying effects like "locked": false)
+                const hasUtilityEffect = Object.values(itemEffect).some(val => {
+                    // Utility effects are boolean values or toggle
+                    return typeof val === 'boolean' || val === 'toggle';
                 });
+
+                if (hasUtilityEffect) {
+                    utilitySources.push({
+                        name: item.name,
+                        effect: itemEffect,
+                        sound: item.getAttribute('collision_sound'),
+                        item: item,
+                        lockColor: item.getAttribute('lock_color'),
+                        sourceActor: this
+                    });
+                }
             }
         }
-        const actorEffect = this.getAttribute('collision_effect');
-        if (actorEffect) {
-            sources.push({ name: this.name, effect: actorEffect, sound: this.getAttribute('collision_sound'), item: null, lockColor: null, sourceActor: this });
+
+        // Perform hit roll for damage source
+        let damageHits = true;
+        if (damageSource) {
+            const attackerAccuracy = this.getEffectiveAccuracy();
+
+            // Only roll if attacker has accuracy attribute AND target is not incapacitated
+            const targetIncapacitated = target.hasAttribute('sleeping') || target.hasAttribute('paralyzed');
+
+            if (attackerAccuracy !== null && !targetIncapacitated) {
+                const targetDefense = target.getEffectiveDefense ? target.getEffectiveDefense() : 0;
+                const hitChance = Math.max(5, Math.min(95, attackerAccuracy - targetDefense));
+
+                // Use ROT.RNG for deterministic/seedable combat
+                const roll = ROT.RNG.getPercentage(); // Returns 1-100
+                damageHits = roll <= hitChance;
+
+                console.log(`Hit roll: ${roll} vs ${hitChance}% (accuracy ${attackerAccuracy} - defense ${targetDefense}) = ${damageHits ? 'HIT' : 'MISS'}`);
+            }
+            // If no accuracy attribute or target incapacitated, damageHits remains true (deterministic combat)
         }
 
-        // Apply effects from ALL sources (stacking)
-        for (const source of sources) {
-            let sourceApplied = false;
+        // Apply damage effects if hit succeeded
+        if (damageSource && damageHits) {
+            const result = this._applyEffectSource(damageSource, target, true);
+            if (result.applied) effectApplied = true;
+            if (result.targetPassable) targetPassable = true;
+            if (result.targetShouldDie) targetShouldDie = true;
+        } else if (damageSource && !damageHits) {
+            // Miss - show miss feedback
+            this._showMissMessage(target);
+        }
 
-            // Apply each effect in the collision_effect object
-            for (const [key, rawValue] of Object.entries(source.effect)) {
-                // Resolve attribute references like "{strength}" or "-{strength}"
-                const value = this.resolveAttributeValue(rawValue, source.sourceActor);
-
-                // Auto-detect: check stats first, then attributes
-                // Stats priority - check if target has this as a stat
-                if (target.stats && target.stats[key] !== undefined) {
-                    const stat = target.stats[key];
-                    if (typeof stat === 'object' && stat.current !== undefined) {
-                        // Stats stored as { max, current }
-                        const oldValue = stat.current;
-                        stat.current = Math.max(0, stat.current + value);
-                        console.log(`${source.name}: ${target.name}'s ${key} ${value >= 0 ? '+' : ''}${value} (${oldValue} -> ${stat.current})`);
-                        sourceApplied = true;
-
-                        // Mark for death after effects are shown (don't call die() yet)
-                        if (key === 'health' && stat.current <= 0) {
-                            targetShouldDie = true;
-                            targetPassable = true;
-                        }
-                    } else if (typeof stat === 'number') {
-                        // Simple number stat
-                        target.stats[key] += value;
-                        console.log(`${source.name}: ${target.name}'s ${key} ${value >= 0 ? '+' : ''}${value}`);
-                        sourceApplied = true;
-                    }
-                    continue;
-                }
-
-                // Fall back to attributes
-                const currentValue = target.getAttribute(key);
-
-                // Handle special "toggle" value
-                if (value === 'toggle') {
-                    if (currentValue !== undefined) {
-                        target.setAttribute(key, !currentValue);
-                        console.log(`${source.name}: toggled ${target.name}'s ${key} to ${!currentValue}`);
-                        sourceApplied = true;
-                    }
-                }
-                // Handle numeric values (add/subtract)
-                else if (typeof value === 'number' && typeof currentValue === 'number') {
-                    const newValue = currentValue + value;
-                    target.setAttribute(key, newValue);
-                    console.log(`${source.name}: ${target.name}'s ${key} ${value >= 0 ? '+' : ''}${value} (now ${newValue})`);
-                    sourceApplied = true;
-
-                    // Mark for death after effects are shown (don't call die() yet)
-                    if (key === 'health' && newValue <= 0) {
-                        targetShouldDie = true;
-                        targetPassable = true;
-                    }
-                }
-                // Handle boolean values (set directly)
-                else if (typeof value === 'boolean') {
-                    // Special handling for locked attribute with color-locked doors
-                    if (key === 'locked' && value === false && target.hasAttribute('color_locked')) {
-                        const targetLockColor = target.getAttribute('lock_color');
-                        const sourceLockColor = source.lockColor;
-
-                        // Check if colors match
-                        if (targetLockColor && sourceLockColor && targetLockColor === sourceLockColor) {
-                            target.setAttribute(key, value);
-                            console.log(`${source.name} (${sourceLockColor}) unlocks ${target.name} (${targetLockColor})!`);
-                            sourceApplied = true;
-                            target.open();
-                            this.engine.updateLighting();
-                            targetPassable = !target.hasAttribute('solid');
-
-                            // Show unlock message
-                            if (this.hasAttribute('controlled')) {
-                                this.engine.inputManager?.showMessage(`The ${source.name} unlocks the ${targetLockColor} door!`);
-                            }
-
-                            // Consume the key if it has consumable attribute
-                            if (source.item && source.item.hasAttribute('consumable')) {
-                                this.inventory = this.inventory.filter(i => i !== source.item);
-                                console.log(`${source.name} was consumed`);
-                            }
-                        } else {
-                            // Wrong color - show message but don't apply effect
-                            console.log(`${source.name} (${sourceLockColor || 'no color'}) doesn't match ${target.name} (${targetLockColor})`);
-                            if (this.hasAttribute('controlled') && targetLockColor) {
-                                this.engine.inputManager?.showMessage(`The ${targetLockColor} door requires a ${targetLockColor} key.`);
-                            }
-                        }
-                    }
-                    // Standard boolean handling for non-color-locked targets
-                    else if (currentValue !== undefined) {
-                        target.setAttribute(key, value);
-                        console.log(`${source.name}: set ${target.name}'s ${key} to ${value}`);
-                        sourceApplied = true;
-
-                        // Check if setting locked to false should open something
-                        if (key === 'locked' && value === false && target.hasAttribute('openable')) {
-                            target.open();
-                            this.engine.updateLighting();
-                            // Door is now open, can pass through
-                            targetPassable = !target.hasAttribute('solid');
-                        }
-                    }
-                }
-            }
-
-            // Play collision sound if this source applied any effect
-            if (sourceApplied) {
-                effectApplied = true;
-                if (source.sound) {
-                    this.engine.playSound(source.sound);
-                }
-            }
+        // Apply utility effects (always, regardless of hit roll)
+        for (const source of utilitySources) {
+            const result = this._applyEffectSource(source, target, false);
+            if (result.applied) effectApplied = true;
+            if (result.targetPassable) targetPassable = true;
+            if (result.targetShouldDie) targetShouldDie = true;
         }
 
         // Flash the target for visual feedback if any effect was applied
@@ -2539,8 +2584,8 @@ class Actor extends Entity {
             target.flash();
         }
 
-        // Show collision description if any effect was applied
-        if (effectApplied) {
+        // Show collision description if damage hit
+        if (damageHits && damageSource && effectApplied) {
             const description = this.getCollisionDescription(target);
             if (description) {
                 this.engine.inputManager?.showMessage(description);
@@ -2553,6 +2598,168 @@ class Actor extends Entity {
         }
 
         return { effectApplied, targetPassable };
+    }
+
+    /**
+     * Apply effects from a single source to a target
+     * @param {Object} source - The effect source
+     * @param {Actor} target - The target actor
+     * @param {boolean} isDamageSource - Whether this is the damage source (applies stat changes)
+     * @returns {Object} { applied, targetPassable, targetShouldDie }
+     */
+    _applyEffectSource(source, target, isDamageSource) {
+        let sourceApplied = false;
+        let targetPassable = false;
+        let targetShouldDie = false;
+
+        for (const [key, rawValue] of Object.entries(source.effect)) {
+            const value = this.resolveAttributeValue(rawValue, source.sourceActor);
+
+            // For damage sources, apply stat changes
+            // For utility sources, skip stat changes (only apply utility effects)
+            if (target.stats && target.stats[key] !== undefined) {
+                if (!isDamageSource) continue; // Skip stat effects for utility sources
+
+                const stat = target.stats[key];
+                if (typeof stat === 'object' && stat.current !== undefined) {
+                    const oldValue = stat.current;
+                    stat.current = Math.max(0, stat.current + value);
+                    console.log(`${source.name}: ${target.name}'s ${key} ${value >= 0 ? '+' : ''}${value} (${oldValue} -> ${stat.current})`);
+                    sourceApplied = true;
+
+                    if (key === 'health' && stat.current <= 0) {
+                        targetShouldDie = true;
+                        targetPassable = true;
+                    }
+                } else if (typeof stat === 'number') {
+                    target.stats[key] += value;
+                    console.log(`${source.name}: ${target.name}'s ${key} ${value >= 0 ? '+' : ''}${value}`);
+                    sourceApplied = true;
+                }
+                continue;
+            }
+
+            // Fall back to attributes
+            const currentValue = target.getAttribute(key);
+
+            if (value === 'toggle') {
+                if (currentValue !== undefined) {
+                    target.setAttribute(key, !currentValue);
+                    console.log(`${source.name}: toggled ${target.name}'s ${key} to ${!currentValue}`);
+                    sourceApplied = true;
+                }
+            }
+            else if (typeof value === 'number' && typeof currentValue === 'number') {
+                if (!isDamageSource) continue; // Skip numeric attribute changes for utility
+                const newValue = currentValue + value;
+                target.setAttribute(key, newValue);
+                console.log(`${source.name}: ${target.name}'s ${key} ${value >= 0 ? '+' : ''}${value} (now ${newValue})`);
+                sourceApplied = true;
+
+                if (key === 'health' && newValue <= 0) {
+                    targetShouldDie = true;
+                    targetPassable = true;
+                }
+            }
+            else if (typeof value === 'boolean') {
+                // Special handling for locked attribute with color-locked doors
+                if (key === 'locked' && value === false && target.hasAttribute('color_locked')) {
+                    const targetLockColor = target.getAttribute('lock_color');
+                    const sourceLockColor = source.lockColor;
+
+                    if (targetLockColor && sourceLockColor && targetLockColor === sourceLockColor) {
+                        target.setAttribute(key, value);
+                        console.log(`${source.name} (${sourceLockColor}) unlocks ${target.name} (${targetLockColor})!`);
+                        sourceApplied = true;
+                        target.open();
+                        this.engine.updateLighting();
+                        targetPassable = !target.hasAttribute('solid');
+
+                        if (this.hasAttribute('controlled')) {
+                            this.engine.inputManager?.showMessage(`The ${source.name} unlocks the ${targetLockColor} door!`);
+                        }
+
+                        if (source.item && source.item.hasAttribute('consumable')) {
+                            this.inventory = this.inventory.filter(i => i !== source.item);
+                            console.log(`${source.name} was consumed`);
+                        }
+                    } else {
+                        console.log(`${source.name} (${sourceLockColor || 'no color'}) doesn't match ${target.name} (${targetLockColor})`);
+                        if (this.hasAttribute('controlled') && targetLockColor) {
+                            this.engine.inputManager?.showMessage(`The ${targetLockColor} door requires a ${targetLockColor} key.`);
+                        }
+                    }
+                }
+                else if (currentValue !== undefined) {
+                    target.setAttribute(key, value);
+                    console.log(`${source.name}: set ${target.name}'s ${key} to ${value}`);
+                    sourceApplied = true;
+
+                    if (key === 'locked' && value === false && target.hasAttribute('openable')) {
+                        target.open();
+                        this.engine.updateLighting();
+                        targetPassable = !target.hasAttribute('solid');
+                    }
+                }
+            }
+        }
+
+        if (sourceApplied && source.sound) {
+            this.engine.playSound(source.sound);
+        }
+
+        return { applied: sourceApplied, targetPassable, targetShouldDie };
+    }
+
+    /**
+     * Show a miss message for failed attacks using template system
+     * @param {Actor} target - The target that was missed
+     */
+    _showMissMessage(target) {
+        if (this.hasAttribute('controlled')) {
+            this.engine.inputManager?.showMessage(`You miss the ${target.name}!`);
+        } else {
+            // Use template: "The [actor_name] [attacks.miss_verbs] the [attacked_actor_name]!"
+            const template = "The [actor_name] [attacks.miss_verbs] the [attacked_actor_name]!";
+            const message = this._processMessageTemplate(template, target);
+            this.engine.inputManager?.showMessage(message);
+        }
+
+        console.log(`Miss: ${this.name} -> ${target.name}`);
+    }
+
+    /**
+     * Process a message template with substitution (shared by hit/miss messages)
+     * @param {string} template - Template string with [key] placeholders
+     * @param {Actor} target - The target actor
+     * @returns {string} Processed message
+     */
+    _processMessageTemplate(template, target) {
+        let result = template.replace(/\[([^\]]+)\]/g, (match, key) => {
+            // Handle attacks.category for random attack verbs
+            if (key.startsWith('attacks.')) {
+                const category = key.substring('attacks.'.length);
+                const attacks = this.engine.globalAttacks?.[category];
+                if (attacks && attacks.length > 0) {
+                    return attacks[Math.floor(Math.random() * attacks.length)];
+                }
+                return match;
+            }
+            // Handle special keys
+            if (key === 'actor_name') {
+                return this.name;
+            }
+            if (key === 'attacked_actor_name') {
+                return target.name;
+            }
+            if (key === 'weapon_name') {
+                const weapon = this.getEquippedWeapon();
+                return weapon ? weapon.name : match;
+            }
+            return match;
+        });
+
+        return result;
     }
 
     /**

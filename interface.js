@@ -648,7 +648,7 @@ class InterfaceManager {
                 let itemText = `${letter})  ${displayName}`; // Extra space for tile
                 // Mark equipped items
                 if (player.isItemEquipped(item)) {
-                    itemText += ' (worn)';
+                    itemText += item.hasAttribute('weapon') ? ' (equipped)' : ' (worn)';
                 }
                 inventoryItems.push({ text: itemText, item });
             }
@@ -837,13 +837,19 @@ class InterfaceManager {
         lines.push(`  ${actionNum}) Drop`);
         actionNum++;
 
-        // Wear option if item is wearable and not currently worn
+        // Wear option if item is wearable armor and not currently worn
         if (item.hasAttribute('wearable') && !isEquipped) {
             lines.push(`  ${actionNum}) Wear`);
             actionNum++;
         }
 
-        // Remove option if item is currently worn
+        // Equip option if item is a weapon and not currently equipped
+        if (item.hasAttribute('weapon') && !isEquipped) {
+            lines.push(`  ${actionNum}) Equip`);
+            actionNum++;
+        }
+
+        // Remove option if item is currently worn/equipped
         if (isEquipped) {
             lines.push(`  ${actionNum}) Remove`);
             actionNum++;
@@ -997,23 +1003,32 @@ class InterfaceManager {
         }
         currentAction++;
 
-        // Wear (if wearable and not worn)
+        // Wear (if wearable armor and not worn)
         if (item.hasAttribute('wearable') && !isEquipped) {
             if (actionNum === currentAction) {
                 this.executeWearItem(item);
                 return true;
             }
-            currentAction++;
         }
+        if (item.hasAttribute('wearable') && !isEquipped) currentAction++;
 
-        // Remove (if worn)
+        // Equip (if weapon and not equipped)
+        if (item.hasAttribute('weapon') && !isEquipped) {
+            if (actionNum === currentAction) {
+                this.executeWearItem(item); // equipItem handles both weapons and armor
+                return true;
+            }
+        }
+        if (item.hasAttribute('weapon') && !isEquipped) currentAction++;
+
+        // Remove (if worn/equipped)
         if (isEquipped) {
             if (actionNum === currentAction) {
                 this.executeRemoveItem(item);
                 return true;
             }
-            currentAction++;
         }
+        if (isEquipped) currentAction++;
 
         // Use verb action
         const useVerb = item.getAttribute('use_verb');
@@ -1022,8 +1037,8 @@ class InterfaceManager {
                 this.executeUseItem(item);
                 return true;
             }
-            currentAction++;
         }
+        if (useVerb) currentAction++;
 
         // Throw action (always available)
         if (actionNum === currentAction) {
@@ -1656,7 +1671,7 @@ class InterfaceManager {
             let itemText = `${letter})  ${displayName}`;
             // Mark equipped items
             if (player.isItemEquipped(item)) {
-                itemText += ' (worn)';
+                itemText += item.hasAttribute('weapon') ? ' (equipped)' : ' (worn)';
             }
             lines.push('  ' + itemText);
         }

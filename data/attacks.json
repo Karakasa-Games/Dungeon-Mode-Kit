@@ -47,5 +47,14 @@
     "trounces",
     "violates",
     "volleys at"
+  ],
+  "miss_verbs": [
+    "misses",
+    "swings wide at",
+    "whiffs at",
+    "fumbles an attack on",
+    "fails to connect with",
+    "swipes at thin air near",
+    "stumbles past"
   ]
 }
