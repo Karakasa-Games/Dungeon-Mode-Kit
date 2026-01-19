@@ -159,12 +159,9 @@
       "pickupable": true,
       "visible": true,
       "stackable": false,
-      "flammable": true,
-      "tool": true,
+      "flammable": false,
       "use_verb": "Dig",
-      "use_effect": "mine_wall",
-      "durability": 20,
-      "break_chance": 0.05
+      "use_effect": "mine_wall"
     }
   },
 

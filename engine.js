@@ -282,13 +282,12 @@ function findPathAStar(fromX, fromY, toX, toY, isPassable, options = {}) {
 
 /**
  * Compute a path using Dijkstra's algorithm via ROT.js
- * Better than A* when you need to find paths to multiple targets or explore all reachable tiles
- * @param {number} fromX - Starting X coordinate
- * @param {number} fromY - Starting Y coordinate
- * @param {number} toX - Target X coordinate
- * @param {number} toY - Target Y coordinate
- * @param {function(number, number): boolean} isPassable - Callback that returns true if a tile is passable
- * @param {object} options - Optional settings
+ * @param {number} fromX
+ * @param {number} fromY
+ * @param {number} toX
+ * @param {number} toY
+ * @param {function(number, number): boolean} isPassable
+ * @param {object} options
  * @param {number} options.topology - Movement topology: 4 (cardinal), 6 (hex), or 8 (including diagonals). Default: 8
  * @returns {Array<{x: number, y: number}>} Array of points from start to end (includes both), or empty array if no path
  */
@@ -308,12 +307,12 @@ function findPathDijkstra(fromX, fromY, toX, toY, isPassable, options = {}) {
 /**
  * Check if a path exists between two points (without computing the full path)
  * Uses A* for efficiency
- * @param {number} fromX - Starting X coordinate
- * @param {number} fromY - Starting Y coordinate
- * @param {number} toX - Target X coordinate
- * @param {number} toY - Target Y coordinate
- * @param {function(number, number): boolean} isPassable - Callback that returns true if a tile is passable
- * @param {object} options - Optional settings
+ * @param {number} fromX
+ * @param {number} fromY
+ * @param {number} toX
+ * @param {number} toY
+ * @param {function(number, number): boolean} isPassable
+ * @param {object} options
  * @param {number} options.topology - Movement topology: 4, 6, or 8. Default: 8
  * @returns {boolean} True if a path exists
  */
@@ -325,12 +324,12 @@ function pathExists(fromX, fromY, toX, toY, isPassable, options = {}) {
 /**
  * Get the next step along a path from one point to another
  * Useful for AI movement - returns just the next tile to move to
- * @param {number} fromX - Starting X coordinate
- * @param {number} fromY - Starting Y coordinate
- * @param {number} toX - Target X coordinate
- * @param {number} toY - Target Y coordinate
- * @param {function(number, number): boolean} isPassable - Callback that returns true if a tile is passable
- * @param {object} options - Optional settings
+ * @param {number} fromX
+ * @param {number} fromY
+ * @param {number} toX
+ * @param {number} toY
+ * @param {function(number, number): boolean} isPassable
+ * @param {object} options
  * @param {number} options.topology - Movement topology: 4, 6, or 8. Default: 8
  * @returns {{x: number, y: number}|null} Next point to move to, or null if no path or already at target
  */
@@ -348,10 +347,10 @@ function getNextPathStep(fromX, fromY, toX, toY, isPassable, options = {}) {
 
 /**
  * Calculate Manhattan distance between two points
- * @param {number} x0 - First X coordinate
- * @param {number} y0 - First Y coordinate
- * @param {number} x1 - Second X coordinate
- * @param {number} y1 - Second Y coordinate
+ * @param {number} x0
+ * @param {number} y0
+ * @param {number} x1
+ * @param {number} y1
  * @returns {number} Manhattan distance
  */
 function getManhattanDistance(x0, y0, x1, y1) {
@@ -361,10 +360,10 @@ function getManhattanDistance(x0, y0, x1, y1) {
 /**
  * Calculate Chebyshev distance between two points (diagonal distance)
  * This is the number of king moves on a chessboard
- * @param {number} x0 - First X coordinate
- * @param {number} y0 - First Y coordinate
- * @param {number} x1 - Second X coordinate
- * @param {number} y1 - Second Y coordinate
+ * @param {number} x0
+ * @param {number} y0
+ * @param {number} x1
+ * @param {number} y1
  * @returns {number} Chebyshev distance
  */
 function getChebyshevDistance(x0, y0, x1, y1) {
