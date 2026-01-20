@@ -3,6 +3,7 @@
     "name": "Wall",
     "tileIndexBase": "SKULL",
     "tileIndexTop": "OPAQUE_MEDIUM_LIGHT_SHADE",
+    "tint": "#ccccbb",
     "attributes": {
       "solid": true,
       "visible": true,

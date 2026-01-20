@@ -114,6 +114,7 @@
     "name": "Wall",
     "tileIndexBase": "OPAQUE_DARK_SHADE",
     "tileIndexTop": "OPAQUE_MEDIUM_LIGHT_SHADE",
+    "tint": "#ccccbb",
     "attributes": {
       "solid": true,
       "visible": true,
@@ -130,7 +131,6 @@
     "tileIndexTop": "OPAQUE_MEDIUM_LIGHT_SHADE",
     "tint": "#EC7505",
     "flickerTint": true,
-    "animationBase": "fire",
     "attributes": {
       "solid": true,
       "visible": true,
@@ -145,6 +145,7 @@
     "name": "Wall",
     "tileIndexBase": "MEDIUM_SHADE",
     "tileIndexTop": "OPAQUE_LIGHT_SHADE",
+    "tint": "#ccccb5",
     "attributes": {
       "solid": true,
       "visible": true,
@@ -156,6 +157,7 @@
     "name": "Wall",
     "tileIndexBase": "MEDIUM_SHADE",
     "tileIndexTop": "LIGHT_SHADE",
+    "tint": "#ccccbb",
     "attributes": {
       "solid": true,
       "visible": true,

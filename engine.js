@@ -5127,7 +5127,10 @@ class MapManager {
                 if (worldX < this.width && worldY < this.height && worldY > 0) {
                     const wildcard = this.wildcardMap[worldY][worldX];
                     if (wildcard && wildcard.type === 'dungeon') {
-                        doorPositions.push({x: worldX, y: worldY});
+                        // 50% chance to place a door at each room connection
+                        if (ROT.RNG.getPercentage() <= 50) {
+                            doorPositions.push({x: worldX, y: worldY});
+                        }
                     }
                 }
             });
@@ -5278,18 +5281,18 @@ class MapManager {
     spawnPendingTorches() {
         if (!this.pendingTorchSpawns || this.pendingTorchSpawns.length === 0) return;
 
-        const actorData = this.engine.currentPrototype.getActorData('torch');
+        const actorData = this.engine.currentPrototype.getActorData('brazier');
         if (!actorData) {
-            console.warn('No torch actor data found');
+            console.warn('No brazier actor data found');
             return;
         }
 
         for (const pos of this.pendingTorchSpawns) {
-            const torch = new Actor(pos.x, pos.y, 'torch', actorData, this.engine);
+            const torch = new Actor(pos.x, pos.y, 'brazier', actorData, this.engine);
             this.engine.entityManager.addEntity(torch);
         }
 
-        console.log(`Spawned ${this.pendingTorchSpawns.length} torch actors`);
+        console.log(`Spawned ${this.pendingTorchSpawns.length} brazier actors`);
         this.pendingTorchSpawns = [];
     }
 
