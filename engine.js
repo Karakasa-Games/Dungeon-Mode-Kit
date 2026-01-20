@@ -765,6 +765,7 @@ class DungeonEngine {
         await this.entityManager.spawnEntities(this.currentPrototype.config, entryDirection);
         await this.mapManager.processWildcards();
 
+        this.ensureUpStairway();
         this.spawnPlayerAtStairway(entryDirection);
 
         this.mapManager.spawnPendingWalls();
@@ -1063,6 +1064,57 @@ class DungeonEngine {
         } else {
             console.warn(`No ${targetStairwayType} stairway found to spawn player at`);
         }
+    }
+
+    /**
+     * Ensure an up_stairway exists, spawning one randomly if needed
+     * This is called after wildcard processing to place stairways in generated areas
+     * If the prototype has no previous_level, spawns a locked_up_stairway instead
+     */
+    ensureUpStairway() {
+        // Check if an up_stairway already exists
+        const existingStairway = this.entityManager.findActorByAttribute('stairway', 'up');
+        if (existingStairway) {
+            console.log('Up stairway already exists at', existingStairway.x, existingStairway.y);
+            return;
+        }
+
+        // No up_stairway found - spawn one on a random walkable tile
+        const walkableTiles = this.mapManager.walkableTiles;
+        if (!walkableTiles || walkableTiles.length === 0) {
+            console.warn('No walkable tiles available to place up_stairway');
+            return;
+        }
+
+        // Filter out tiles that already have actors on them
+        const availableTiles = walkableTiles.filter(tile => {
+            return !this.entityManager.getActorAt(tile.x, tile.y);
+        });
+
+        if (availableTiles.length === 0) {
+            console.warn('No available tiles to place up_stairway');
+            return;
+        }
+
+        // Pick a random tile using ROT.RNG for consistency
+        const randomIndex = Math.floor(ROT.RNG.getUniform() * availableTiles.length);
+        const tile = availableTiles[randomIndex];
+
+        // Determine which stairway type to spawn based on whether there's a previous level
+        const hasPreviousLevel = !!this.currentPrototype.config.previous_level;
+        const stairwayType = hasPreviousLevel ? 'up_stairway' : 'locked_up_stairway';
+
+        // Get the stairway actor data
+        const stairwayData = this.currentPrototype.getActorData(stairwayType);
+        if (!stairwayData) {
+            console.warn(`No ${stairwayType} actor data found`);
+            return;
+        }
+
+        // Spawn the stairway
+        const stairway = new Actor(tile.x, tile.y, stairwayType, stairwayData, this);
+        this.entityManager.addEntity(stairway);
+        console.log(`Spawned ${stairwayType} at (${tile.x}, ${tile.y})`);
     }
 
     saveGameState() {
@@ -4175,6 +4227,75 @@ class EntityManager {
                 console.log(`Randomly spawned ${itemType} at (${tile.x}, ${tile.y})`);
             }
         }
+
+        // Spawn random actors from prototype config
+        this.spawnRandomActors(getAvailableTiles);
+    }
+
+    /**
+     * Spawn random actors based on prototype's random_actors config
+     * Format: { "actor_type": { "chance": 0-100, "min": 1, "max": 3 }, ... }
+     * If chance is 100, exactly one instance will spawn (guaranteed)
+     * @param {Function} getAvailableTiles - Function that returns available spawn tiles
+     */
+    spawnRandomActors(getAvailableTiles) {
+        const prototype = this.engine.currentPrototype;
+        const randomActors = prototype?.config?.random_actors;
+        if (!randomActors) return;
+
+        for (const [actorType, spawnConfig] of Object.entries(randomActors)) {
+            const chance = spawnConfig.chance ?? 100;
+            const min = spawnConfig.min ?? 1;
+            const max = spawnConfig.max ?? 1;
+
+            const actorData = prototype.getActorData(actorType);
+            if (!actorData) {
+                console.warn(`random_actors: No actor data found for "${actorType}"`);
+                continue;
+            }
+
+            // If chance is 100%, spawn exactly one (guaranteed spawn)
+            if (chance >= 100) {
+                const availableTiles = getAvailableTiles();
+                if (availableTiles.length === 0) {
+                    console.warn(`random_actors: No tiles available for guaranteed spawn of "${actorType}"`);
+                    continue;
+                }
+
+                const tileIndex = Math.floor(ROT.RNG.getUniform() * availableTiles.length);
+                const tile = availableTiles[tileIndex];
+
+                const actor = new Actor(tile.x, tile.y, actorType, actorData, this.engine);
+                this.addEntity(actor);
+                actor.loadDefaultItems();
+                console.log(`random_actors: Spawned guaranteed "${actorType}" at (${tile.x}, ${tile.y})`);
+                continue;
+            }
+
+            // For non-guaranteed spawns, roll for count between min and max
+            const count = min + Math.floor(ROT.RNG.getUniform() * (max - min + 1));
+
+            for (let i = 0; i < count; i++) {
+                // Roll chance for each individual spawn
+                if (ROT.RNG.getPercentage() > chance) {
+                    continue;
+                }
+
+                const availableTiles = getAvailableTiles();
+                if (availableTiles.length === 0) {
+                    console.warn(`random_actors: No tiles available for "${actorType}"`);
+                    break;
+                }
+
+                const tileIndex = Math.floor(ROT.RNG.getUniform() * availableTiles.length);
+                const tile = availableTiles[tileIndex];
+
+                const actor = new Actor(tile.x, tile.y, actorType, actorData, this.engine);
+                this.addEntity(actor);
+                actor.loadDefaultItems();
+                console.log(`random_actors: Spawned "${actorType}" at (${tile.x}, ${tile.y}) (${i + 1}/${count})`);
+            }
+        }
     }
     
     spawnActorsFromLayer(layer, entryDirection = null, placedActorTypes = null) {
@@ -4618,6 +4739,7 @@ class MapManager {
                         this.processBackgroundLayer(layer);
                     } else if (layer.name === 'wildcards' && !options.skipFloorLayer) {
                         // Skip wildcards too when skipping floor (labyrinth mode)
+                        console.log('Found wildcards layer, processing...');
                         this.processWildcardLayer(layer);
                     }
                 } else if (layer.type === 'objectgroup') {
@@ -4668,16 +4790,24 @@ class MapManager {
     }
     
     processWildcardLayer(layer) {
+        let wildcardCount = 0;
+        const typeCounts = {};
+
         for (let y = 0; y < layer.height; y++) {
             for (let x = 0; x < layer.width; x++) {
                 const index = y * layer.width + x;
                 const tileId = layer.data[index];
-                
+
                 if (tileId > 0) {
-                    this.wildcardMap[y][x] = { type: this.getWildcardType(tileId), tileId };
+                    const type = this.getWildcardType(tileId);
+                    this.wildcardMap[y][x] = { type, tileId };
+                    wildcardCount++;
+                    typeCounts[type] = (typeCounts[type] || 0) + 1;
                 }
             }
         }
+
+        console.log(`Processed ${wildcardCount} wildcard tiles:`, typeCounts);
     }
     
     getWildcardType(tileId) {
@@ -4685,6 +4815,8 @@ class MapManager {
         const builtinWildcards = {
             210: 'maze',
             10: 'dungeon',   // OPAQUE_INVERSE_DIAMOND_SUITE - ROT.js Digger dungeon with walls and doors
+            16: 'dungeon',   // PRISON_WINDOW - ROT.js Digger rooms + corridors
+            152: 'dungeon',  // OPAQUE_PRISON_WINDOW - ROT.js Digger rooms + corridors
             143: 'room',
             144: 'room',
             12: 'item_spawn',
@@ -4737,18 +4869,18 @@ class MapManager {
     
     generateProceduralMap() {
         console.log('Generating procedural map');
-        
-        // Use ROT.js for dungeon generation
-        const dungeon = new ROT.Map.Uniform(this.width, this.height);
-        
+
+        // Use ROT.js Digger for rooms + corridors style generation
+        const dungeon = new ROT.Map.Digger(this.width, this.height);
+
         dungeon.create((x, y, value) => {
             if (value === 0) {
-                this.floorMap[y][x] = { value: 157 };
+                this.floorMap[y][x] = { tileId: 158, layer: 'floor' };
                 this.walkableTiles.push({x, y});
             }
         });
-        
-        console.log('Procedural map generated');
+
+        console.log('Procedural map generated with', this.walkableTiles.length, 'walkable tiles');
     }
     
     async processWildcards() {

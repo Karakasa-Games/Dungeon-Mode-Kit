@@ -307,11 +307,31 @@
     "tileIndexBase": "UPWARDS_ARROW_ON_LIGHT_SHADE",
     "tileIndexTop": "OPAQUE_QUADRANT_UPPER_LEFT_AND_LOWER_LEFT_AND_LOWER_RIGHT",
     "flipTopV": true,
+    "flipTopH": true,
     "tint": "#EC7505",
     "attributes": {
       "solid": false,
       "visible": true,
       "stairway": "up"
+    }
+  },
+  "locked_up_stairway": {
+    "name": "Sealed Stairs",
+    "tileIndexBase": "EMPHASIZED_LATIN_CAPITAL_LETTER_X",
+    "tileIndexTop": "OPAQUE_QUADRANT_UPPER_LEFT_AND_LOWER_LEFT_AND_LOWER_RIGHT",
+    "tileIndexBase_open": "UPWARDS_ARROW_ON_LIGHT_SHADE",
+    "tileIndexTop_open": "OPAQUE_QUADRANT_UPPER_LEFT_AND_LOWER_LEFT_AND_LOWER_RIGHT",
+    "flipTopV": true,
+    "flipTopH": true,
+    "tint": "#EC7505",
+    "attributes": {
+      "solid": true,
+      "visible": true,
+      "stairway": "up",
+      "openable": true,
+      "collision_description": "The stairs are sealed. You must fulfill your quest first.",
+      "open": false,
+      "locked": true
     }
   },
   "cloud": {

@@ -26,8 +26,7 @@ Based on previous expiments— [grotto roguelike](https://github.com/wysiwyggins
 
 ## Design Questions
 
-- How do we deal with a changing number of arbitrary stats? This means how do we display them and give feedback when they change and describe them in text? We may need to add another html element over description for visible actor stats to avoid taking up canvas space.
-- Need a clearer design for combat. The initial design was meant to be simple and flexible: actors and items can have collision effects, which can modify any attribute or stat. This lets us do things beyond just combat, allowing for more experimentation on a per-prototype basis. Where this design needs clarity is how actor collision effects and item collision effects stack or supercede one another. Also- what about rng? A weapon attribute could add rng's to collision effects and additional attributes could modify those. A weapon attribute could also serve as an equip slot the way wearable items are equipped, saving confusion about stacking collision effecting items, but we wouldn't want to prevent the function of other items like keys. We could have an equipped weapon's collision effect replace any same quality collision effect on the actor or other items. This means that an actor with a collision effect to open any door would still open doors while equipping a sword that reduces health stats on collision. We could use weapon_type instead of just a weapon bool if we want to both flag an item as a weapon and have attack styles like in Brogue, which has spears, flails etc. Because Actors don't have any inherent attributes like accuracy and denfense in Brogue, maybe we can assume no modification of rolls when these attributes are absent, but bring them into the rng when they are. Brogue's hit formula is: hit probability = (accuracy) * 0.987 ^ (defense). Negative numbers and numbers over 100 are permitted. What is the formula in DCSS or Moria? Our code should also have allowances for 100% hits of actors with attributes to be determined later, like sleeping or paralyzed. We currently have three slots for wearable items which can modify any attribute, so these can be used to add a defense attribute to an actor. rot.js rng documentation is [here](https://ondras.github.io/rot.js/manual/#rng)
+- How do we deal with a changing number of arbitrary stats? This means how do we display them and give feedback when they change and describe them in text? We may need to add another html element over description for visible actor stats to avoid taking up canvas space. We want to always avoid hard coding and specificity as much as possible to allow for things to be defined by the data files- prototypes, actors, items, personalities, behaviors, etc. Strive towards readability and flexibility in those files.
 
 ## Technical Architecture
 
@@ -75,6 +74,115 @@ Actors can have their own `collision_effect` for unarmed attacks or special inte
 ### Personalities and AI
 
 Actor behavior is controlled by the `personality` attribute (e.g., `"aggressive_melee"`, `"random_walk"`). Personalities map to behavior functions that execute each turn. Hostile actors with `sighted` avoid walking into pits; those without may fall.
+
+## Combat System
+
+Combat occurs when actors collide. The system uses RNG-based hit rolls and supports both melee and equipped weapon attacks.
+
+### Hit Calculation
+
+When an actor with an `accuracy` attribute attacks a target:
+
+```
+hit_chance = clamp(attacker_accuracy - target_defense, 5, 95)
+```
+
+- Roll uses `ROT.RNG.getPercentage()` (1-100)
+- If roll ≤ hit_chance, the attack hits
+- Minimum 5% hit chance, maximum 95%
+- Actors without `accuracy` always hit (deterministic combat)
+- Incapacitated targets (sleeping, paralyzed) are always hit
+
+### Damage Sources
+
+The combat system determines damage from multiple sources in priority order:
+
+1. **Equipped Weapon**: If the attacker has a weapon in their `equipment.weapon` slot, its `collision_effect` is used, replacing a same-atrribute-effecting actor collision effect
+2. **Actor's Collision Effect**: Falls back to the attacker's own `collision_effect` attribute
+
+Damage values can reference stats using `"{stat}"` syntax (e.g., `"-{strength}"` deals damage equal to the attacker's strength).
+
+### Equipment Slots
+
+Actors have equipment slots for wearable items and weapons:
+
+- **weapon**: Equipped weapon (replaces unarmed `collision_effect`)
+- **top**: Head/hat slot
+- **middle**: Body/torso slot
+- **lower**: Legs/feet slot
+
+Items with `"weapon": true` equip to the weapon slot. Items with `"wearable": "top|middle|lower"` equip to armor slots and render visually on the actor.
+
+### Combat Attributes
+
+**Actor attributes:**
+- `accuracy`: Base hit chance percentage (e.g., 75)
+- `defense`: Reduces attacker's hit chance (e.g., 5)
+- `collision_effect`: Damage/effects applied on unarmed collision
+- `collision_sound`: Sound played when hitting
+- `collision_description`: Template for attack messages
+
+**Item attributes (weapons):**
+- `weapon`: Boolean flag marking item as a weapon
+- `collision_effect`: Damage dealt when equipped weapon hits
+- `collision_sound`: Sound played on weapon hit
+- `collision_description`: Template for weapon attack messages
+
+### Attack Messages
+
+Attack descriptions use template substitution:
+
+```json
+"collision_description": "[actor_name] [attacks.melee_verbs] the [attacked_actor_name] with [a-an] [weapon_name]!"
+```
+
+**Template variables:**
+- `[actor_name]`: The attacker's name
+- `[attacked_actor_name]`: The target's name
+- `[weapon_name]`: Equipped weapon's name (if any)
+- `[attacks.melee_verbs]`: Random verb from `attacks.json` melee_verbs array
+- `[attacks.miss_verbs]`: Random verb from miss_verbs array
+- `[a-an]`: Automatically selects "a" or "an" based on following word
+
+Miss messages are shown when attacks fail the hit roll.
+
+### Example Configuration
+
+**Actor with accuracy (actors.json):**
+```json
+"player": {
+  "collision_effect": { "health": -2 },
+  "collision_description": "You [attacks.melee_verbs] the [attacked_actor_name]!",
+  "attributes": {
+    "accuracy": 75
+  }
+}
+```
+
+**Weapon item (items.json):**
+```json
+"sword": {
+  "name": "Sword",
+  "attributes": {
+    "weapon": true,
+    "collision_effect": { "health": -10 },
+    "collision_description": "[actor_name] [attacks.melee_verbs] the [attacked_actor_name] with [a-an] [weapon_name]!"
+  }
+}
+```
+
+**Enemy with defense (actors.json):**
+```json
+"skeleton": {
+  "collision_effect": { "health": -5 },
+  "collision_description": "The [actor_name] [attacks.melee_verbs] the [attacked_actor_name]!",
+  "attributes": {
+    "hostile": true,
+    "accuracy": 60,
+    "defense": 5
+  }
+}
+```
 
 ## Map System
 

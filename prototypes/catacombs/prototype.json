@@ -9,5 +9,8 @@
     "fog_of_war": true,
     "darkness": true
   },
+  "random_actors": {
+    "skeleton": { "chance": 50, "min": 3, "max": 6 }
+  },
   "win_conditions": []
 }

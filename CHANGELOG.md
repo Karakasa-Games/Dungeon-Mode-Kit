@@ -15,15 +15,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Planned
 
-- Test and build out fully generated levels
-- Brogue style deep sewage that floats items
-- Fire and smoke actors should dissipate
-
 ### In Progress
 
-- Multi-level state stack
-- Wildcard item/actor spawning (stubs exist)
-- Item drops on death (what should multiple items do, should enemies ever have more than one inventory slot?)
+- Fire and smoke actors should dissipate better
+
+## [0.7a] 2025-01-20
+
+### Added
+
+- Combat system improvements:
+  - RNG-based hit rolls using accuracy vs defense (clamped 5-95%)
+  - Weapon equipment slot - equipped weapons replace unarmed collision_effect
+  - Equipment menu (E key) for managing wearables and weapons
+  - Templated attack messages with `[actor_name]`, `[attacked_actor_name]`, `[weapon_name]`, `[attacks.melee_verbs]`
+  - Miss messages when attacks fail hit roll
+- Procedural dungeon generation:
+  - PRISON_WINDOW (tile 16) and OPAQUE_PRISON_WINDOW (tile 152) wildcards for rooms + corridors (ROT.Map.Digger)
+  - Existing maze wildcard (tile 210) uses ROT.Map.EllerMaze
+  - Automatic up_stairway placement if none manually placed in generated levels
+  - Locked up_stairway spawns if prototype has no previous_level
+  - Fixed fully procedural maps (no map.tmj) to use correct tile format
+- Random actor spawning via prototype config:
+  - `random_actors` object in prototype.json
+  - Per-actor `chance` (0-100%), `min`, and `max` spawn counts
+  - 100% chance = exactly one guaranteed spawn
+- Deep water current system:
+  - Actors and items float and drift with configurable current direction
+  - Items update sprite position when floating
 
 ## [0.6b] 2025-01-15
 
