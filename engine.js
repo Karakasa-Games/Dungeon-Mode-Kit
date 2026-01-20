@@ -772,6 +772,9 @@ class DungeonEngine {
         this.mapManager.spawnPendingDoors();
         this.mapManager.spawnPendingTorches();
 
+        // Spawn random actors after wildcard processing (walkable tiles now exist)
+        this.entityManager.spawnRandomActorsFromConfig();
+
         // Run cellular automata behaviors once to pre-calculate initial state
         this.entityManager.runCellularAutomataStep();
 
@@ -4229,14 +4232,35 @@ class EntityManager {
             }
         }
 
-        // Spawn random actors from prototype config
+    }
+
+    /**
+     * Spawn random actors based on prototype's random_actors config
+     * Called after wildcard processing so walkable tiles exist
+     * Format: { "actor_type": { "chance": 0-100, "min": 1, "max": 3 }, ... }
+     * If chance is 100, exactly one instance will spawn (guaranteed)
+     */
+    spawnRandomActorsFromConfig() {
+        const walkableTiles = this.engine.mapManager.walkableTiles;
+        if (!walkableTiles || walkableTiles.length === 0) {
+            console.warn('random_actors: No walkable tiles available');
+            return;
+        }
+
+        // Helper to get tiles not occupied by actors
+        const getAvailableTiles = () => {
+            const occupied = new Set();
+            for (const actor of this.actors) {
+                occupied.add(`${actor.x},${actor.y}`);
+            }
+            return walkableTiles.filter(t => !occupied.has(`${t.x},${t.y}`));
+        };
+
         this.spawnRandomActors(getAvailableTiles);
     }
 
     /**
      * Spawn random actors based on prototype's random_actors config
-     * Format: { "actor_type": { "chance": 0-100, "min": 1, "max": 3 }, ... }
-     * If chance is 100, exactly one instance will spawn (guaranteed)
      * @param {Function} getAvailableTiles - Function that returns available spawn tiles
      */
     spawnRandomActors(getAvailableTiles) {

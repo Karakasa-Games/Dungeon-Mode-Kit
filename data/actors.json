@@ -29,6 +29,7 @@
     "description": "Brittle bones stripped of their flesh and animated by some dark magic.",
     "tileIndexBase": "SKELETON_LEGS",
     "tileIndexTop": "SKULL",
+    "tint": "#fffece",
     "personality": "stationed_melee",
     "collision_effect": { "health": -5 },
     "collision_sound": "hit",
