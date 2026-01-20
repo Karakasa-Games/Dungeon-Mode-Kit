@@ -123,6 +123,23 @@
       "remains": "rubble"
     }
   },
+
+  "torch": {
+    "name": "Torch",
+    "tileIndexBase": "OPAQUE_INVERSE_DIAMOND_SUITE",
+    "tileIndexTop": "OPAQUE_MEDIUM_LIGHT_SHADE",
+    "tint": "#EC7505",
+    "flickerTint": true,
+    "animationBase": "fire",
+    "attributes": {
+      "solid": true,
+      "visible": true,
+      "pushable": false,
+      "breakable": true,
+      "light_source": true,
+      "remains": "rubble"
+    }
+  },
   
   "pushable_wall": {
     "name": "Wall",

@@ -770,6 +770,7 @@ class DungeonEngine {
 
         this.mapManager.spawnPendingWalls();
         this.mapManager.spawnPendingDoors();
+        this.mapManager.spawnPendingTorches();
 
         // Run cellular automata behaviors once to pre-calculate initial state
         this.entityManager.runCellularAutomataStep();
@@ -5018,13 +5019,29 @@ class MapManager {
     }
 
     generateDungeonAt(startX, startY, width, height) {
+        // Scale room sizes based on map dimensions
+        // Minimum room size is always 3x3, max scales with map size
+        const minDimension = Math.min(width, height);
+
+        // For small maps (<20), keep rooms small (3-7)
+        // For medium maps (20-40), allow medium rooms (3-9)
+        // For large maps (>40), allow larger rooms (3-12)
+        const maxRoomWidth = Math.min(12, Math.max(7, Math.floor(width / 4)));
+        const maxRoomHeight = Math.min(10, Math.max(5, Math.floor(height / 5)));
+        const maxCorridorLength = Math.min(8, Math.max(5, Math.floor(minDimension / 8)));
+
+        // Larger maps can have a higher dug percentage for more open areas
+        const dugPercentage = Math.min(0.5, 0.25 + (minDimension / 200));
+
         // Use ROT.js Digger for a more complex dungeon with rooms and corridors
         const dungeon = new ROT.Map.Digger(width, height, {
-            roomWidth: [3, 7],
-            roomHeight: [3, 5],
-            corridorLength: [2, 5],
-            dugPercentage: 0.3
+            roomWidth: [3, maxRoomWidth],
+            roomHeight: [3, maxRoomHeight],
+            corridorLength: [2, maxCorridorLength],
+            dugPercentage: dugPercentage
         });
+
+        console.log(`Dungeon generation: ${width}x${height}, rooms ${3}-${maxRoomWidth} x ${3}-${maxRoomHeight}, corridors 2-${maxCorridorLength}, dug ${(dugPercentage * 100).toFixed(0)}%`);
 
         // Track which cells are floors for wall placement
         const floorCells = new Set();
@@ -5096,8 +5113,13 @@ class MapManager {
         }
 
         // Get doors from rooms - these are where corridors connect to rooms
+        // Also track wall positions per room for potential torch placement
         const rooms = dungeon.getRooms();
+        const torchPositions = [];
+
         for (const room of rooms) {
+            const roomWalls = [];
+
             room.getDoors((x, y) => {
                 const worldX = startX + x;
                 const worldY = startY + y;
@@ -5109,16 +5131,53 @@ class MapManager {
                     }
                 }
             });
+
+            // Find walls that belong to this room's perimeter
+            const roomLeft = room.getLeft();
+            const roomRight = room.getRight();
+            const roomTop = room.getTop();
+            const roomBottom = room.getBottom();
+
+            for (const wallPos of wallPositions) {
+                const localX = wallPos.x - startX;
+                const localY = wallPos.y - startY;
+
+                // Check if this wall is adjacent to this room (on its perimeter)
+                const isOnRoomPerimeter = (
+                    (localX >= roomLeft - 1 && localX <= roomRight + 1 &&
+                     localY >= roomTop - 1 && localY <= roomBottom + 1) &&
+                    (localX === roomLeft - 1 || localX === roomRight + 1 ||
+                     localY === roomTop - 1 || localY === roomBottom + 1)
+                );
+
+                if (isOnRoomPerimeter) {
+                    roomWalls.push(wallPos);
+                }
+            }
+
+            // 30% chance to place a torch in this room
+            if (roomWalls.length > 0 && ROT.RNG.getPercentage() <= 30) {
+                const torchIndex = Math.floor(ROT.RNG.getUniform() * roomWalls.length);
+                const torchPos = roomWalls[torchIndex];
+                torchPositions.push(torchPos);
+            }
         }
 
-        // Store wall and door positions for later spawning (after EntityManager exists)
+        // Remove torch positions from wall positions
+        const torchSet = new Set(torchPositions.map(p => `${p.x},${p.y}`));
+        const filteredWallPositions = wallPositions.filter(p => !torchSet.has(`${p.x},${p.y}`));
+
+        // Store wall, door, and torch positions for later spawning (after EntityManager exists)
         this.pendingWallSpawns = this.pendingWallSpawns || [];
-        this.pendingWallSpawns.push(...wallPositions);
+        this.pendingWallSpawns.push(...filteredWallPositions);
 
         this.pendingDoorSpawns = this.pendingDoorSpawns || [];
         this.pendingDoorSpawns.push(...doorPositions);
 
-        console.log(`Dungeon generated: ${floorCells.size} floor tiles, ${wallPositions.length} walls, ${doorPositions.length} doors`);
+        this.pendingTorchSpawns = this.pendingTorchSpawns || [];
+        this.pendingTorchSpawns.push(...torchPositions);
+
+        console.log(`Dungeon generated: ${floorCells.size} floor tiles, ${filteredWallPositions.length} walls, ${doorPositions.length} doors, ${torchPositions.length} torches`);
     }
 
     generateRoomAt(startX, startY, width, height) {
@@ -5214,6 +5273,24 @@ class MapManager {
 
         console.log(`Spawned ${this.pendingDoorSpawns.length} door actors`);
         this.pendingDoorSpawns = [];
+    }
+
+    spawnPendingTorches() {
+        if (!this.pendingTorchSpawns || this.pendingTorchSpawns.length === 0) return;
+
+        const actorData = this.engine.currentPrototype.getActorData('torch');
+        if (!actorData) {
+            console.warn('No torch actor data found');
+            return;
+        }
+
+        for (const pos of this.pendingTorchSpawns) {
+            const torch = new Actor(pos.x, pos.y, 'torch', actorData, this.engine);
+            this.engine.entityManager.addEntity(torch);
+        }
+
+        console.log(`Spawned ${this.pendingTorchSpawns.length} torch actors`);
+        this.pendingTorchSpawns = [];
     }
 
     getRandomWalkableTile() {
