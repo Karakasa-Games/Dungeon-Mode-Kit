@@ -26,6 +26,11 @@ class InterfaceManager {
 
         // Throw menu mode state (T key menu)
         this.throwMenuMode = false;
+
+        // Equipment menu state (E key menu)
+        this.equipmentMenuMode = false;
+        this.equipmentMenuPlayer = null;
+        this.equipmentMenuItems = []; // List of equippable/wearable items with their indices
     }
 
     get container() {
@@ -1757,6 +1762,198 @@ class InterfaceManager {
                 const item = this.currentPlayer.inventory[itemIndex];
                 this.closeThrowItemMenu();
                 this.enterThrowAimingMode(item);
+                return true;
+            }
+        }
+
+        return true; // Consume all keys while menu is open
+    }
+
+    // ========================================================================
+    // EQUIPMENT MENU (E key)
+    // ========================================================================
+
+    /**
+     * Toggle the equipment menu
+     * @param {Actor} player - The player actor
+     */
+    toggleEquipmentMenu(player) {
+        if (this.equipmentMenuMode) {
+            this.closeEquipmentMenu();
+        } else {
+            this.showEquipmentMenu(player);
+        }
+    }
+
+    /**
+     * Show the equipment menu listing all wearable and equippable items
+     * @param {Actor} player - The player actor
+     */
+    showEquipmentMenu(player) {
+        if (!player || !player.inventory) return;
+
+        // Close other menus
+        this.hidePlayerInfo();
+        this.closeThrowItemMenu();
+
+        this.equipmentMenuPlayer = player;
+        this.equipmentMenuMode = true;
+
+        const menuId = 'equipment_menu';
+
+        // Remove existing if present
+        if (this.boxes.has(menuId)) {
+            this.removeBox(menuId);
+        }
+
+        // Build list of equippable/wearable items
+        this.equipmentMenuItems = [];
+        for (let i = 0; i < player.inventory.length; i++) {
+            const item = player.inventory[i];
+            if (item.hasAttribute('wearable') || item.hasAttribute('weapon')) {
+                this.equipmentMenuItems.push({
+                    item: item,
+                    inventoryIndex: i
+                });
+            }
+        }
+
+        // Build menu lines
+        const lines = [];
+        lines.push('Equipment');
+        lines.push('');
+
+        // Show current equipment slots
+        lines.push('Equipped:');
+        const weapon = player.getEquippedWeapon?.();
+        const topItem = player.equipment?.top;
+        const middleItem = player.equipment?.middle;
+        const lowerItem = player.equipment?.lower;
+
+        lines.push(`  Weapon: ${weapon ? weapon.name : '(none)'}`);
+        lines.push(`  Head:   ${topItem ? topItem.name : '(none)'}`);
+        lines.push(`  Body:   ${middleItem ? middleItem.name : '(none)'}`);
+        lines.push(`  Legs:   ${lowerItem ? lowerItem.name : '(none)'}`);
+        lines.push('');
+
+        if (this.equipmentMenuItems.length === 0) {
+            lines.push('No equippable items');
+        } else {
+            lines.push('Items:');
+            for (let i = 0; i < this.equipmentMenuItems.length; i++) {
+                const entry = this.equipmentMenuItems[i];
+                const item = entry.item;
+                const letter = String.fromCharCode(97 + i); // 'a', 'b', 'c', etc.
+                let displayName = item.getDisplayName ? item.getDisplayName() : item.name;
+                displayName = this.truncateText(displayName, 14);
+
+                const isEquipped = player.isItemEquipped(item);
+                let status = '';
+                if (isEquipped) {
+                    status = item.hasAttribute('weapon') ? ' [E]' : ' [W]';
+                }
+
+                lines.push(`  ${letter})  ${displayName}${status}`);
+            }
+        }
+
+        lines.push('');
+        lines.push('Esc to close');
+
+        // Calculate dimensions
+        const padding = 1;
+        const maxLineLength = Math.max(...lines.map(l => l.length), 20);
+        const contentWidth = maxLineLength;
+        const contentHeight = lines.length;
+        const boxWidth = contentWidth + (padding * 2) + 2;
+        const boxHeight = contentHeight + (padding * 2) + 2;
+
+        // Center the dialog
+        const mapWidth = this.engine.mapManager?.width || 30;
+        const mapHeight = this.engine.mapManager?.height || 20;
+        const x = Math.floor((mapWidth - boxWidth) / 2);
+        const y = Math.floor((mapHeight - boxHeight) / 2);
+
+        // Create the box
+        const boxContainer = this.createBox(menuId, x, y, boxWidth, boxHeight, {
+            fillColor: 0xFFFFFF,
+            borderTint: 0x000000
+        });
+
+        if (!boxContainer) return;
+
+        // Add text sprites
+        const textStartX = (padding + 1) * globalVars.TILE_WIDTH;
+        const textStartY = (padding + 1) * globalVars.TILE_HEIGHT;
+
+        for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+            const line = lines[lineIndex];
+            for (let charIndex = 0; charIndex < line.length; charIndex++) {
+                const char = line[charIndex];
+                const charX = textStartX + (charIndex * globalVars.TILE_WIDTH);
+                const charY = textStartY + (lineIndex * globalVars.TILE_HEIGHT);
+
+                const sprite = this.createCharSprite(char, charX, charY, 0x000000);
+                if (sprite) {
+                    boxContainer.addChild(sprite);
+                }
+            }
+        }
+
+        // Render item tiles next to item names (offset for "  a) " = 5 chars)
+        // Items list starts after: title, blank, "Equipped:", 4 slot lines, blank, "Items:"
+        const itemsStartLine = 9; // Line index where item list starts
+        for (let i = 0; i < this.equipmentMenuItems.length; i++) {
+            const entry = this.equipmentMenuItems[i];
+            const lineIndex = itemsStartLine + i;
+            const tileX = textStartX + (5 * globalVars.TILE_WIDTH);
+            const tileY = textStartY + (lineIndex * globalVars.TILE_HEIGHT);
+            this.renderItemTile(boxContainer, entry.item, tileX, tileY);
+        }
+    }
+
+    /**
+     * Close the equipment menu
+     */
+    closeEquipmentMenu() {
+        this.removeBox('equipment_menu');
+        this.equipmentMenuMode = false;
+        this.equipmentMenuPlayer = null;
+        this.equipmentMenuItems = [];
+    }
+
+    /**
+     * Handle keyboard input for equipment menu
+     * @param {string} key - The key pressed
+     * @returns {boolean} True if key was handled
+     */
+    handleEquipmentKey(key) {
+        if (!this.equipmentMenuMode || !this.equipmentMenuPlayer) return false;
+
+        if (key === 'Escape' || key === 'e' || key === 'E') {
+            this.closeEquipmentMenu();
+            return true;
+        }
+
+        // Handle letter keys for item selection (a-z)
+        if (key.length === 1 && key >= 'a' && key <= 'z') {
+            const itemIndex = key.charCodeAt(0) - 97; // 'a' = 0, 'b' = 1, etc.
+            if (itemIndex < this.equipmentMenuItems.length) {
+                const entry = this.equipmentMenuItems[itemIndex];
+                const item = entry.item;
+                const player = this.equipmentMenuPlayer;
+
+                // Toggle equip/unequip
+                if (player.isItemEquipped(item)) {
+                    player.unequipItem(item);
+                    this.engine.playSound?.('tap2');
+                } else {
+                    player.equipItem(item);
+                    this.engine.playSound?.('tap2');
+                }
+
+                // Refresh the menu to show updated state
+                this.showEquipmentMenu(player);
                 return true;
             }
         }

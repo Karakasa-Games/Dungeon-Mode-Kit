@@ -69,7 +69,9 @@ class InputManager {
             'i': 'player_info',
             'I': 'player_info',
             't': 'throw_item',
-            'T': 'throw_item'
+            'T': 'throw_item',
+            'e': 'equipment_menu',
+            'E': 'equipment_menu'
         };
 
         // Global keys (work regardless of player state)
@@ -768,6 +770,12 @@ class InputManager {
             return;
         }
 
+        // Check if equipment menu wants to handle this key
+        if (this.engine.interfaceManager?.handleEquipmentKey(event.key)) {
+            event.preventDefault();
+            return;
+        }
+
         // Check if confirmation dialog wants to handle this key first
         if (this.engine.interfaceManager?.handleConfirmKey(event.key)) {
             event.preventDefault();
@@ -900,6 +908,12 @@ class InputManager {
             case 'throw_item':
                 if (this.engine.interfaceManager) {
                     this.engine.interfaceManager.showThrowItemMenu(player);
+                }
+                break;
+
+            case 'equipment_menu':
+                if (this.engine.interfaceManager) {
+                    this.engine.interfaceManager.toggleEquipmentMenu(player);
                 }
                 break;
         }
