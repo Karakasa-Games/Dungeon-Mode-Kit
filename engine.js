@@ -2394,11 +2394,20 @@ class Actor extends Entity {
 
     /**
      * Get the collision description with template substitution
+     * Checks equipped weapon's collision_description first, then actor's
      * @param {Actor} target - The actor being attacked
      * @returns {string|null} The processed description or null if none
      */
     getCollisionDescription(target) {
-        const template = this.getAttribute('collision_description');
+        // Check equipped weapon for collision description first
+        const weapon = this.getEquippedWeapon?.();
+        let template = weapon?.getAttribute('collision_description');
+
+        // Fall back to actor's collision description
+        if (!template) {
+            template = this.getAttribute('collision_description');
+        }
+
         if (!template) return null;
 
         let result = template.replace(/\[([^\]]+)\]/g, (match, key) => {
@@ -3015,8 +3024,11 @@ class Actor extends Entity {
                 return { moved: false, actionTaken: true };
             }
 
-            // Check for collision_description attribute (for locked stairways, etc.)
-            if (this.hasAttribute('controlled') && actorAtTarget.hasAttribute('collision_description')) {
+            // Check for collision_description attribute (for non-combat interactions like locked stairways)
+            // Only show if no collision_effect - combat descriptions are handled by applyCollisionEffects
+            if (this.hasAttribute('controlled') &&
+                actorAtTarget.hasAttribute('collision_description') &&
+                !actorAtTarget.hasAttribute('collision_effect')) {
                 this.engine.inputManager?.showMessage(actorAtTarget.getAttribute('collision_description'));
                 return { moved: false, actionTaken: true };
             }

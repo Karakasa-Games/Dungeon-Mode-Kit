@@ -26,7 +26,8 @@
       "flammable": false,
       "weapon": true,
       "collision_effect": { "health": -10 },
-      "collision_sound": "tap2"
+      "collision_sound": "tap2",
+      "collision_description": "[actor_name] [attacks.melee_verbs] the [attacked_actor_name] with [a-an] [weapon_name]!"
     }
   },
 
