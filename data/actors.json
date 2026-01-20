@@ -203,6 +203,7 @@
     "animated": true,
     "animation_frames": "fluid",
     "tint": "#9BC964",
+    "personality": "deep_water_behavior",
     "attributes": {
       "solid": false,
       "deep": true,

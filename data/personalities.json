@@ -89,5 +89,15 @@
     "neighbor_count": 4,
     "transform_to": "deep_sewage",
     "check_cardinal": true
+  },
+
+  "deep_water_behavior": {
+    "name": "Deep Water",
+    "hostile": false,
+    "behaviors": [
+      "deep_water_currents"
+    ],
+    "item_drop_chance": 0.1,
+    "item_drift_chance": 0.3
   }
 }

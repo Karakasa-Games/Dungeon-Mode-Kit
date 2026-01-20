@@ -1585,6 +1585,25 @@ class Item extends Entity {
         return processArticleTemplates(result);
     }
 
+    /**
+     * Update sprite position accounting for flip anchor offset
+     */
+    updateSpritePosition() {
+        if (!this.sprite) return;
+
+        let x = this.x * globalVars.TILE_WIDTH;
+        let y = this.y * globalVars.TILE_HEIGHT;
+
+        // Account for center anchor when item has flip
+        if (this.flipH || this.flipV) {
+            x += globalVars.TILE_WIDTH / 2;
+            y += globalVars.TILE_HEIGHT / 2;
+        }
+
+        this.sprite.x = x;
+        this.sprite.y = y;
+    }
+
     use(actor) {
         console.log(`${actor.name} used ${this.name}`);
     }
@@ -1884,7 +1903,7 @@ class Actor extends Entity {
         // Show death message for visible actors (skip for mass nouns like clouds)
         if (this.hasAttribute('visible') && !this.hasAttribute('mass_noun')) {
             if (this.hasAttribute('controlled')) {
-                this.engine.inputManager?.showMessage(`You die...`);
+                this.engine.inputManager?.showMessage(`You die... \n Press esc to restart`);
             } else {
                 this.engine.inputManager?.showMessage(`The ${this.name} dies.`);
             }
@@ -3799,6 +3818,160 @@ const BehaviorLibrary = {
         }
 
         return false;
+    },
+
+    /**
+     * Deep water currents behavior - affects actors and items in the water
+     *
+     * For actors with inventory standing in this water:
+     * - Random chance each turn to drop an item from inventory
+     *
+     * For items on the ground at this position:
+     * - Random chance each turn to drift to an adjacent tile
+     *
+     * Data parameters:
+     * - item_drop_chance: Probability (0-1) that an actor drops an item (default: 0.1)
+     * - item_drift_chance: Probability (0-1) that a ground item drifts (default: 0.3)
+     */
+    deep_water_currents: (actor, data) => {
+        const entityManager = actor.engine.entityManager;
+        const dropChance = data.item_drop_chance ?? 0.1;
+        const driftChance = data.item_drift_chance ?? 0.3;
+        let actionTaken = false;
+
+        // Find solid actors at this position (player, enemies, etc.)
+        for (const other of entityManager.actors) {
+            if (other === actor) continue;
+            if (other.isDead) continue;
+            if (other.x !== actor.x || other.y !== actor.y) continue;
+            if (!other.hasAttribute('solid')) continue;
+
+            // Check if this actor has items in inventory
+            if (other.inventory && other.inventory.length > 0) {
+                if (Math.random() < dropChance) {
+                    // Pick a random item to drop
+                    const itemIndex = Math.floor(Math.random() * other.inventory.length);
+                    const item = other.inventory[itemIndex];
+
+                    // Find an adjacent tile for the item to drift to
+                    const directions = [
+                        {dx: 0, dy: -1}, {dx: 0, dy: 1}, {dx: -1, dy: 0}, {dx: 1, dy: 0}
+                    ];
+                    const validPositions = [];
+                    for (const dir of directions) {
+                        const newX = other.x + dir.dx;
+                        const newY = other.y + dir.dy;
+
+                        // Check bounds
+                        if (newX < 0 || newX >= actor.engine.mapManager.width ||
+                            newY < 0 || newY >= actor.engine.mapManager.height) {
+                            continue;
+                        }
+
+                        // Check for floor
+                        const tile = actor.engine.mapManager.floorMap[newY]?.[newX];
+                        if (!tile || !tile.tileId) continue;
+
+                        // Check for solid actors blocking
+                        const blockingActor = entityManager.actors.find(
+                            a => a.x === newX && a.y === newY && a.hasAttribute('solid') && !a.isDead
+                        );
+                        if (blockingActor) continue;
+
+                        validPositions.push({x: newX, y: newY});
+                    }
+
+                    // If no valid adjacent position, drop at current position
+                    let dropX = other.x;
+                    let dropY = other.y;
+                    if (validPositions.length > 0) {
+                        const dropPos = validPositions[Math.floor(Math.random() * validPositions.length)];
+                        dropX = dropPos.x;
+                        dropY = dropPos.y;
+                    }
+
+                    // Unequip if equipped
+                    if (other.isItemEquipped && other.isItemEquipped(item)) {
+                        other.unequipItem(item);
+                    }
+
+                    // Remove from inventory
+                    other.inventory.splice(itemIndex, 1);
+
+                    // Place item at drop position
+                    item.x = dropX;
+                    item.y = dropY;
+                    entityManager.addEntity(item);
+
+                    // Update z-index so item floats above water if on deep water
+                    actor.engine.renderer?.updateItemZIndex(item);
+
+                    // Show message if player
+                    if (other.hasAttribute('controlled')) {
+                        const displayName = item.getDisplayName ? item.getDisplayName() : item.name;
+                        actor.engine.inputManager?.showMessage(`The current sweeps the ${displayName} from your grasp!`);
+                    }
+
+                    console.log(`${actor.name} currents caused ${other.name} to drop ${item.name} at (${dropX}, ${dropY})`);
+                    actionTaken = true;
+                }
+            }
+        }
+
+        // Find items on the ground at this position and potentially drift them
+        const itemsHere = entityManager.items.filter(
+            item => item.x === actor.x && item.y === actor.y
+        );
+
+        for (const item of itemsHere) {
+            if (Math.random() < driftChance) {
+                // Get valid adjacent positions (must have floor, no solid actors)
+                const directions = [
+                    {dx: 0, dy: -1}, {dx: 0, dy: 1}, {dx: -1, dy: 0}, {dx: 1, dy: 0}
+                ];
+
+                const validPositions = [];
+                for (const dir of directions) {
+                    const newX = actor.x + dir.dx;
+                    const newY = actor.y + dir.dy;
+
+                    // Check bounds
+                    if (newX < 0 || newX >= actor.engine.mapManager.width ||
+                        newY < 0 || newY >= actor.engine.mapManager.height) {
+                        continue;
+                    }
+
+                    // Check for floor
+                    const tile = actor.engine.mapManager.floorMap[newY]?.[newX];
+                    if (!tile || !tile.tileId) continue;
+
+                    // Check for solid actors blocking
+                    const blockingActor = entityManager.actors.find(
+                        a => a.x === newX && a.y === newY && a.hasAttribute('solid') && !a.isDead
+                    );
+                    if (blockingActor) continue;
+
+                    validPositions.push({x: newX, y: newY});
+                }
+
+                if (validPositions.length > 0) {
+                    const newPos = validPositions[Math.floor(Math.random() * validPositions.length)];
+                    const oldX = item.x;
+                    const oldY = item.y;
+                    item.x = newPos.x;
+                    item.y = newPos.y;
+
+                    // Update sprite position and z-index
+                    item.updateSpritePosition();
+                    actor.engine.renderer?.updateItemZIndex(item);
+
+                    console.log(`${item.name} drifted from (${oldX}, ${oldY}) to (${item.x}, ${item.y})`);
+                    actionTaken = true;
+                }
+            }
+        }
+
+        return actionTaken;
     }
 };
 
@@ -5773,7 +5946,7 @@ class RenderSystem {
 
                 sprite.x = item.x * globalVars.TILE_WIDTH;
                 sprite.y = item.y * globalVars.TILE_HEIGHT;
-                sprite.zIndex = 5; // Below actors but above floor
+                sprite.zIndex = this.getItemZIndex(item, entityManager);
                 sprite.tint = item.tint;
 
                 // Apply horizontal/vertical flip using anchor at center
@@ -5817,7 +5990,7 @@ class RenderSystem {
 
         sprite.x = item.x * globalVars.TILE_WIDTH;
         sprite.y = item.y * globalVars.TILE_HEIGHT;
-        sprite.zIndex = 5; // Below actors but above floor
+        sprite.zIndex = this.getItemZIndex(item);
         sprite.tint = item.tint;
 
         // Apply horizontal/vertical flip using anchor at center
@@ -5831,6 +6004,40 @@ class RenderSystem {
 
         this.entityContainer.addChild(sprite);
         item.sprite = sprite;
+    }
+
+    /**
+     * Get the appropriate z-index for an item based on its position
+     * Items floating in deep water render above actors
+     * @param {Item} item - The item to check
+     * @param {EntityManager} entityManager - Optional entity manager (uses this.engine.entityManager if not provided)
+     * @returns {number} The z-index for the item sprite
+     */
+    getItemZIndex(item, entityManager) {
+        const em = entityManager || this.engine.entityManager;
+        if (!em) return 5;
+
+        // Check if there's a deep water actor at this position
+        const deepWaterActor = em.actors.find(
+            a => a.x === item.x && a.y === item.y &&
+                 !a.isDead &&
+                 a.hasAttribute('deep') &&
+                 a.hasAttribute('liquid')
+        );
+
+        // Items in deep water float above actors (zIndex 11), otherwise below (zIndex 5)
+        return deepWaterActor ? 11 : 5;
+    }
+
+    /**
+     * Update an item's z-index based on its current position
+     * Call this when items move (e.g., drift in water)
+     * @param {Item} item - The item to update
+     */
+    updateItemZIndex(item) {
+        if (item.sprite) {
+            item.sprite.zIndex = this.getItemZIndex(item);
+        }
     }
 
     clear() {
