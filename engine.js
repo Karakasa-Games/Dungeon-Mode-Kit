@@ -21,6 +21,7 @@ class SpriteLibrary {
             this.animations = {
                 'fire': 'fire',
                 'smoke': 'smoke',
+                'mist': 'mist',
                 'fluid': 'fluid'
             };
             
@@ -548,6 +549,7 @@ class DungeonEngine {
                         .add('tiles', globalVars.SPRITESHEET_PATH)
                         .add('fire', `${globalVars.BASE_PATH}/assets/sprites/fire-animation.png`)
                         .add('smoke', `${globalVars.BASE_PATH}/assets/sprites/smoke-animation.png`)
+                        .add('mist', `${globalVars.BASE_PATH}/assets/sprites/light-smoke-animation.png`)
                         .add('fluid', `${globalVars.BASE_PATH}/assets/sprites/fluid-animation.png`)
                         .load(() => {
                             this.setupAnimationFrames();
@@ -580,7 +582,7 @@ class DungeonEngine {
     
     setupAnimationFrames() {
         this.animationFrames = {};
-        const animations = ['fire', 'smoke', 'fluid'];
+        const animations = ['fire', 'smoke', 'mist', 'fluid'];
         for (const name of animations) {
             this.animationFrames[name] = [];
             const baseTexture = PIXI.Loader.shared.resources[name].texture.baseTexture;
@@ -1025,6 +1027,28 @@ class DungeonEngine {
         } else {
             console.log(`No ${direction === 'down' ? 'next' : 'previous'} level configured`);
         }
+    }
+
+    /**
+     * Check if a tile is visible to the player
+     * Returns true if darkness is disabled (lit prototype) or if the tile is within view
+     * @param {number} x - Tile x coordinate
+     * @param {number} y - Tile y coordinate
+     * @returns {boolean} True if the tile is visible or darkness is disabled
+     */
+    isTileVisible(x, y) {
+        return this.lightingManager ? this.lightingManager.isVisible(x, y) : true;
+    }
+
+    /**
+     * Check if a tile has been explored by the player
+     * Returns true if darkness is disabled (lit prototype) or if the tile has been seen
+     * @param {number} x - Tile x coordinate
+     * @param {number} y - Tile y coordinate
+     * @returns {boolean} True if the tile is explored or darkness is disabled
+     */
+    isTileExplored(x, y) {
+        return this.lightingManager ? this.lightingManager.isExplored(x, y) : true;
     }
 
     /**
@@ -3764,6 +3788,7 @@ const BehaviorLibrary = {
 
     /**
      * Apply cloud's collision effect to any actors standing in it
+     * Shows a message describing the effect for visible actors
      */
     cloud_affect_actors: (actor) => {
         const collisionEffect = actor.getAttribute('collision_effect');
@@ -3771,12 +3796,18 @@ const BehaviorLibrary = {
 
         const entityManager = actor.engine.entityManager;
 
+        // Check if this tile is visible (or darkness is disabled)
+        const tileIsVisible = actor.engine.isTileVisible(actor.x, actor.y);
+
         // Find actors at this position
         for (const other of entityManager.actors) {
             if (other === actor) continue;
             if (other.isDead) continue;
             if (other.x !== actor.x || other.y !== actor.y) continue;
-            if (other.type === 'cloud') continue; // Don't affect other clouds
+            if (other.type === 'cloud' || other.type === 'mist') continue;
+
+            // Track effects applied for messaging
+            const effectsApplied = [];
 
             // Apply collision effect
             for (const [key, value] of Object.entries(collisionEffect)) {
@@ -3784,10 +3815,34 @@ const BehaviorLibrary = {
                     const stat = other.stats[key];
                     if (typeof stat === 'object' && stat.current !== undefined) {
                         stat.current = Math.max(0, stat.current + value);
+
+                        // Track what happened for the message
+                        const statCapitalized = key.charAt(0).toUpperCase() + key.slice(1);
+                        if (value > 0) {
+                            effectsApplied.push(`+${value} ${statCapitalized}`);
+                        } else {
+                            effectsApplied.push(`${value} ${statCapitalized}`);
+                        }
+
                         if (key === 'health' && stat.current <= 0) {
                             other.die();
                         }
                     }
+                }
+            }
+
+            // Show effect message if effects were applied
+            if (effectsApplied.length > 0) {
+                const gasName = actor.type === 'mist' ? 'mist' : 'clouds';
+                const effectStr = effectsApplied.join(', ');
+
+                if (other.hasAttribute('controlled')) {
+                    // Player message
+                    actor.engine.inputManager?.showMessage(`The ${gasName} engulf you! (${effectStr})`);
+                } else if (tileIsVisible && other.hasAttribute('visible')) {
+                    // Visible NPC message
+                    const otherName = other.name || 'creature';
+                    actor.engine.inputManager?.showMessage(`The ${gasName} engulf the ${otherName}. (${effectStr})`);
                 }
             }
 
@@ -3810,6 +3865,158 @@ const BehaviorLibrary = {
         actor.cloudLifetime--;
 
         if (actor.cloudLifetime <= 0) {
+            actor.die();
+            return true;
+        }
+
+        return false;
+    },
+
+    /**
+     * Cloud dispersion behavior - dense clouds disperse into mist at edges
+     * Uses cellular automata rules: clouds with fewer cloud neighbors disperse first
+     *
+     * Data parameters:
+     * - disperse_to: The actor type to transform into when dispersing (default: "mist")
+     * - disperse_threshold: Maximum cloud neighbors to trigger dispersion (default: 2)
+     * - disperse_chance: Probability of dispersing each turn when conditions met (default: 0.4)
+     * - spawn_mist_chance: Probability of spawning mist in adjacent empty tiles (default: 0.3)
+     */
+    cloud_disperse: (actor, data) => {
+        const disperseTo = data.disperse_to || 'mist';
+        const disperseThreshold = data.disperse_threshold ?? 2;
+        const disperseChance = data.disperse_chance ?? 0.4;
+        const spawnMistChance = data.spawn_mist_chance ?? 0.3;
+
+        const entityManager = actor.engine.entityManager;
+
+        // Initialize lifetime if not set (needed for non-origin clouds)
+        if (actor.cloudLifetime === undefined) {
+            actor.cloudLifetime = actor.lifetime || 10;
+        }
+
+        // All 8 directions for checking neighbors
+        const directions = [
+            {dx: -1, dy: -1}, {dx: 0, dy: -1}, {dx: 1, dy: -1},
+            {dx: -1, dy: 0},                   {dx: 1, dy: 0},
+            {dx: -1, dy: 1},  {dx: 0, dy: 1},  {dx: 1, dy: 1}
+        ];
+
+        // Count cloud neighbors (same type as this actor, typically 'cloud')
+        let cloudNeighbors = 0;
+        const emptyNeighborPositions = [];
+
+        for (const dir of directions) {
+            const checkX = actor.x + dir.dx;
+            const checkY = actor.y + dir.dy;
+
+            // Check if tile is valid (has floor, not a wall)
+            const floorTile = actor.engine.mapManager?.floorMap[checkY]?.[checkX];
+            if (!floorTile || floorTile.tileId <= 0) continue;
+
+            // Find cloud or mist at this position
+            const neighbor = entityManager.actors.find(
+                a => a.x === checkX && a.y === checkY &&
+                     !a.isDead &&
+                     (a.type === actor.type || a.type === disperseTo)
+            );
+
+            if (neighbor) {
+                // Count only dense cloud neighbors, not mist
+                if (neighbor.type === actor.type) {
+                    cloudNeighbors++;
+                }
+            } else {
+                // Track empty valid positions for potential mist spawning
+                emptyNeighborPositions.push({x: checkX, y: checkY});
+            }
+        }
+
+        // Clouds at the edge (fewer dense cloud neighbors) disperse into mist
+        if (cloudNeighbors <= disperseThreshold && Math.random() < disperseChance) {
+            const x = actor.x;
+            const y = actor.y;
+            const tint = actor.tint;
+            const collisionEffect = actor.getAttribute('collision_effect');
+            const remainingLifetime = actor.cloudLifetime;
+
+            // Remove the cloud
+            actor.die();
+
+            // Spawn mist in its place
+            const mist = entityManager.spawnActor(disperseTo, x, y);
+            if (mist) {
+                // Inherit properties from the cloud
+                mist.tint = tint;
+                mist.setAttribute('collision_effect', collisionEffect);
+                // Mist has shorter remaining lifetime
+                mist.cloudLifetime = Math.max(2, Math.floor(remainingLifetime * 0.6));
+                // Update sprites
+                if (mist.spriteBase) mist.spriteBase.tint = tint;
+                if (mist.spriteTop) mist.spriteTop.tint = tint;
+            }
+
+            return true;
+        }
+
+        // Mist can spawn in adjacent empty tiles (spreading outward)
+        if (emptyNeighborPositions.length > 0 && Math.random() < spawnMistChance) {
+            // Pick a random empty neighbor
+            const pos = emptyNeighborPositions[Math.floor(Math.random() * emptyNeighborPositions.length)];
+
+            const mist = entityManager.spawnActor(disperseTo, pos.x, pos.y);
+            if (mist) {
+                mist.tint = actor.tint;
+                mist.setAttribute('collision_effect', actor.getAttribute('collision_effect'));
+                // New mist has short lifetime
+                mist.cloudLifetime = Math.max(2, Math.floor((actor.cloudLifetime || 3) * 0.5));
+                if (mist.spriteBase) mist.spriteBase.tint = actor.tint;
+                if (mist.spriteTop) mist.spriteTop.tint = actor.tint;
+            }
+        }
+
+        return false;
+    },
+
+    /**
+     * Mist fading behavior - mist disperses more rapidly at edges
+     *
+     * Data parameters:
+     * - fade_threshold: Maximum mist/cloud neighbors to trigger faster fade (default: 1)
+     * - fade_chance: Probability of dying early when isolated (default: 0.3)
+     */
+    mist_fade: (actor, data) => {
+        const fadeThreshold = data.fade_threshold ?? 1;
+        const fadeChance = data.fade_chance ?? 0.3;
+
+        const entityManager = actor.engine.entityManager;
+
+        const directions = [
+            {dx: -1, dy: -1}, {dx: 0, dy: -1}, {dx: 1, dy: -1},
+            {dx: -1, dy: 0},                   {dx: 1, dy: 0},
+            {dx: -1, dy: 1},  {dx: 0, dy: 1},  {dx: 1, dy: 1}
+        ];
+
+        // Count any gas neighbors (mist or cloud)
+        let gasNeighbors = 0;
+
+        for (const dir of directions) {
+            const checkX = actor.x + dir.dx;
+            const checkY = actor.y + dir.dy;
+
+            const neighbor = entityManager.actors.find(
+                a => a.x === checkX && a.y === checkY &&
+                     !a.isDead &&
+                     (a.type === 'mist' || a.type === 'cloud')
+            );
+
+            if (neighbor) {
+                gasNeighbors++;
+            }
+        }
+
+        // Isolated mist fades faster
+        if (gasNeighbors <= fadeThreshold && Math.random() < fadeChance) {
             actor.die();
             return true;
         }
@@ -4445,7 +4652,7 @@ class EntityManager {
             entity.sprite = null;
         }
     }
-    
+
     getEntityAt(x, y) {
         return this.entities.find(e => e.x === x && e.y === y);
     }
@@ -5815,8 +6022,8 @@ class RenderSystem {
             return;
         }
 
-        // Clear existing content
-        this.clear();
+        // Clear map layers only (not entityContainer - items/actors may already be there)
+        this.clearMapLayers();
 
         // Initialize sprite tracking arrays
         this.backgroundSprites = Array.from({ length: this.mapHeight }, () =>
@@ -6171,46 +6378,11 @@ class RenderSystem {
     renderItems(entityManager) {
         console.log('Rendering items...');
 
-        const tileset = PIXI.Loader.shared.resources.tiles;
-        if (!tileset) {
-            console.error('Tileset not loaded');
-            return;
-        }
-
         let itemsRendered = 0;
 
         for (const item of entityManager.items) {
-            if (!item.hasAttribute('visible')) continue;
-
-            if (item.tileIndex) {
-                const rect = new PIXI.Rectangle(
-                    item.tileIndex.x * globalVars.TILE_WIDTH,
-                    item.tileIndex.y * globalVars.TILE_HEIGHT,
-                    globalVars.TILE_WIDTH,
-                    globalVars.TILE_HEIGHT
-                );
-                const texture = new PIXI.Texture(tileset.texture.baseTexture, rect);
-                const sprite = new PIXI.Sprite(texture);
-
-                sprite.x = item.x * globalVars.TILE_WIDTH;
-                sprite.y = item.y * globalVars.TILE_HEIGHT;
-                sprite.zIndex = this.getItemZIndex(item, entityManager);
-                sprite.tint = item.tint;
-
-                // Apply horizontal/vertical flip using anchor at center
-                if (item.flipH || item.flipV) {
-                    sprite.anchor.set(0.5, 0.5);
-                    sprite.x += globalVars.TILE_WIDTH / 2;
-                    sprite.y += globalVars.TILE_HEIGHT / 2;
-                    sprite.scale.x = item.flipH ? -1 : 1;
-                    sprite.scale.y = item.flipV ? -1 : 1;
-                }
-
-                this.entityContainer.addChild(sprite);
-                item.sprite = sprite;
-
-                itemsRendered++;
-            }
+            this.createItemSprite(item);
+            if (item.sprite) itemsRendered++;
         }
 
         console.log(`Rendered ${itemsRendered} items`);
@@ -6256,30 +6428,28 @@ class RenderSystem {
 
     /**
      * Get the appropriate z-index for an item based on its position
-     * Items floating in deep water render above actors
+     * Items in liquid render above actors so they appear to float
      * @param {Item} item - The item to check
-     * @param {EntityManager} entityManager - Optional entity manager (uses this.engine.entityManager if not provided)
      * @returns {number} The z-index for the item sprite
      */
-    getItemZIndex(item, entityManager) {
-        const em = entityManager || this.engine.entityManager;
+    getItemZIndex(item) {
+        const em = this.engine.entityManager;
         if (!em) return 5;
 
-        // Check if there's a deep water actor at this position
-        const deepWaterActor = em.actors.find(
+        // Check if there's a liquid actor at this position
+        const liquidActor = em.actors.find(
             a => a.x === item.x && a.y === item.y &&
                  !a.isDead &&
-                 a.hasAttribute('deep') &&
                  a.hasAttribute('liquid')
         );
 
-        // Items in deep water float above actors (zIndex 11), otherwise below (zIndex 5)
-        return deepWaterActor ? 11 : 5;
+        // Items in liquid float above actors (zIndex 11), otherwise below (zIndex 5)
+        return liquidActor ? 11 : 5;
     }
 
     /**
      * Update an item's z-index based on its current position
-     * Call this when items move (e.g., drift in water)
+     * Call this when items move (e.g., drift in water, dropped)
      * @param {Item} item - The item to update
      */
     updateItemZIndex(item) {
@@ -6304,6 +6474,17 @@ class RenderSystem {
         this.highlightEnabled = false;
         this.linePathSprites = [];
         this.walkPathSprites = [];
+    }
+
+    /**
+     * Clear only map layers (background, floor) without touching entities
+     * Use this when re-rendering the map but keeping existing entity sprites
+     */
+    clearMapLayers() {
+        this.backgroundContainer.removeChildren();
+        this.floorContainer.removeChildren();
+        this.floorSprites = [];
+        this.backgroundSprites = [];
     }
 
     initializeDarkness(width, height) {

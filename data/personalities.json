@@ -72,11 +72,28 @@
     "hostile": false,
     "behaviors": [
       "cloud_spread",
+      "cloud_disperse",
       "cloud_affect_actors",
       "cloud_lifetime"
     ],
     "spread_radius": 2,
-    "spread_turns": 4
+    "spread_turns": 4,
+    "disperse_to": "mist",
+    "disperse_threshold": 5,
+    "disperse_chance": 0.5,
+    "spawn_mist_chance": 0.4
+  },
+
+  "mist_behavior": {
+    "name": "Mist",
+    "hostile": false,
+    "behaviors": [
+      "mist_fade",
+      "cloud_affect_actors",
+      "cloud_lifetime"
+    ],
+    "fade_threshold": 1,
+    "fade_chance": 0.25
   },
 
   "liquid_pooling": {

@@ -221,13 +221,8 @@ class InputManager {
         const renderer = this.engine.renderer;
         if (!renderer) return;
 
-        const lightingManager = this.engine.lightingManager;
-
-        // Check if tile is visible (or if darkness is disabled)
-        const isVisible = lightingManager ? lightingManager.isVisible(tileX, tileY) : true;
-
-        // Only highlight visible tiles
-        if (isVisible) {
+        // Only highlight visible tiles (or all tiles if darkness is disabled)
+        if (this.engine.isTileVisible(tileX, tileY)) {
             renderer.showTileHighlight(tileX, tileY);
         } else {
             renderer.hideTileHighlight();
@@ -260,15 +255,10 @@ class InputManager {
             return;
         }
 
-        // Don't show path to dark/unexplored tiles when darkness is enabled
-        const lightingManager = this.engine.lightingManager;
-        if (lightingManager) {
-            const isVisible = lightingManager.isVisible(tileX, tileY);
-            const isExplored = lightingManager.isExplored(tileX, tileY);
-            if (!isVisible && !isExplored) {
-                renderer.hideWalkPath();
-                return;
-            }
+        // Don't show path to dark/unexplored tiles
+        if (!this.engine.isTileVisible(tileX, tileY) && !this.engine.isTileExplored(tileX, tileY)) {
+            renderer.hideWalkPath();
+            return;
         }
 
         // Show walk path (returns null if no valid path)
@@ -428,7 +418,6 @@ class InputManager {
         if (!player) return null;
 
         const entityManager = this.engine.entityManager;
-        const lightingManager = this.engine.lightingManager;
 
         // Track previously visible entities if not already tracking
         if (!this.previouslyVisibleActors) {
@@ -445,9 +434,8 @@ class InputManager {
         for (const actor of entityManager.actors) {
             if (actor === player || actor.isDead) continue;
 
-            // Check if actor is visible
-            const isVisible = lightingManager ? lightingManager.isVisible(actor.x, actor.y) : true;
-            if (isVisible) {
+            // Check if actor is visible (or darkness is disabled)
+            if (this.engine.isTileVisible(actor.x, actor.y)) {
                 currentlyVisibleActors.add(actor);
 
                 // Check if this is a newly visible hostile actor
@@ -479,11 +467,10 @@ class InputManager {
             }
         }
 
-        // Check for newly visible items (only if darkness is enabled)
-        if (STOP_ON_ITEM_COMES_INTO_VIEW && lightingManager) {
+        // Check for newly visible items (only when darkness is enabled)
+        if (STOP_ON_ITEM_COMES_INTO_VIEW && this.engine.lightingManager) {
             for (const item of entityManager.items) {
-                const isVisible = lightingManager.isVisible(item.x, item.y);
-                if (isVisible) {
+                if (this.engine.isTileVisible(item.x, item.y)) {
                     currentlyVisibleItems.add(item);
 
                     if (!this.previouslyVisibleItems.has(item)) {
@@ -538,14 +525,12 @@ class InputManager {
     updateDescription(tileX, tileY) {
         if (!this.descriptionElement) return;
 
-        const lightingManager = this.engine.lightingManager;
         const entityManager = this.engine.entityManager;
         if (!entityManager) return;
 
         // Determine visibility state
-        // If no lightingManager (darkness disabled), treat all tiles as visible
-        const isVisible = lightingManager ? lightingManager.isVisible(tileX, tileY) : true;
-        const isExplored = lightingManager ? lightingManager.isExplored(tileX, tileY) : true;
+        const isVisible = this.engine.isTileVisible(tileX, tileY);
+        const isExplored = this.engine.isTileExplored(tileX, tileY);
         const fogOfWar = this.engine.currentPrototype?.config?.mechanics?.fog_of_war || false;
 
         // Determine if this is a "remembered" tile (explored but not currently visible, with fog of war on)

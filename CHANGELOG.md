@@ -147,7 +147,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `spawnActor` method for dynamically spawning actors at runtime
 - `spawnEntity` method for spawning decorative entities from entities.json
 - `remains` attribute for actors - spawns a decorative entity on death (blood, skull, rubble)
-- `liquid` attribute for actors (used by incineration logic)
+- `liquid` attribute for actors
 - `fireproof` attribute check for lava hazard warnings
 
 ### Changed
