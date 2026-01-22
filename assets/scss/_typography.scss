@@ -13,6 +13,17 @@
 }
 
 @font-face {
+    font-family: 'Computer Modern Bold';
+    src: url('/assets/fonts/cmunbx-webfont.eot');
+    src: url('/assets/fonts/cmunbx-webfont.eot?#iefix') format('embedded-opentype'),
+         url('/assets/fonts/cmunbx-webfont.woff') format('woff'),
+         url('/assets/fonts/cmunbx-webfont.ttf') format('truetype');
+    font-weight: normal;
+    font-style: normal;
+
+}
+
+@font-face {
     font-family: 'courier_prime_coderegular';
     src: url('/assets/fonts/courier_prime_code-webfont.woff2') format('woff2'),
          url('/assets/fonts/courier_prime_code-webfont.woff') format('woff');

@@ -2,13 +2,18 @@
 @import 'scss/base';
 @import 'scss/typography'; 
 @import 'scss/game';
-@import 'scss/details'; 
+@import 'scss/text_container'; 
 
 // Additional styles for the kit
 body {
     margin: 0;
     padding: 20px;
     font-family: 'Computer Modern Roman', serif;
+}
+
+strong {
+    font-family: 'Computer Modern Bold', serif;
+    font-weight: normal;
 }
  
 

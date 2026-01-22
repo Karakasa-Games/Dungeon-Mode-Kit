@@ -1960,4 +1960,121 @@ class InterfaceManager {
 
         return true; // Consume all keys while menu is open
     }
+
+    // ========================================================================
+    // ACTORS AND ITEMS DIVS
+    // ========================================================================
+
+    /**
+     * Update the actors div with visible actors and their stats
+     * Controllable actors (like Player) are listed first
+     */
+    updateActorsDiv() {
+        const actorsDiv = document.getElementById('actors');
+        if (!actorsDiv) return;
+
+        const entityManager = this.engine.entityManager;
+        if (!entityManager) {
+            actorsDiv.innerHTML = '';
+            return;
+        }
+
+        // Get all living actors
+        const actors = entityManager.actors.filter(a => !a.isDead);
+        if (actors.length === 0) {
+            actorsDiv.innerHTML = '';
+            return;
+        }
+
+        // Filter to visible actors with stats (or all if darkness is off)
+        const visibleActors = actors.filter(a =>
+            this.engine.isTileVisible(a.x, a.y) &&
+            a.stats && Object.keys(a.stats).length > 0
+        );
+
+        // Sort: controllable actors first, then by name
+        visibleActors.sort((a, b) => {
+            const aControlled = a.hasAttribute('controlled') ? 0 : 1;
+            const bControlled = b.hasAttribute('controlled') ? 0 : 1;
+            if (aControlled !== bControlled) return aControlled - bControlled;
+            return a.name.localeCompare(b.name);
+        });
+
+        // Build HTML content
+        const actorElements = visibleActors.map(actor => {
+            let html = `<div class="actor-entry">`;
+            html += `<strong class="actor-name">${actor.name}</strong>`;
+
+            // Add stats as thermometer fills in an unordered list
+            if (actor.stats && Object.keys(actor.stats).length > 0) {
+                html += '<ul class="actor-stats">';
+                for (const [key, value] of Object.entries(actor.stats)) {
+                    const current = typeof value === 'object' ? value.current : value;
+                    const max = typeof value === 'object' ? value.max : value;
+                    const percentage = max > 0 ? Math.round((current / max) * 100) : 0;
+                    const altText = `${key}: ${current}/${max}`;
+
+                    html += `<li>`;
+                    html += `<span class="stat-label">${this.capitalize(key)}</span>`;
+                    html += `<figure class="stat-thermometer" title="${altText}">`;
+                    html += `<div class="stat-fill" style="width: ${percentage}%"></div>`;
+                    html += `<figcaption class="sr-only">${altText}</figcaption>`;
+                    html += `</figure>`;
+                    html += `</li>`;
+                }
+                html += '</ul>';
+            }
+
+            html += '</div>';
+            return html;
+        });
+
+        actorsDiv.innerHTML = actorElements.join('');
+    }
+
+    /**
+     * Update the items div with visible items
+     */
+    updateItemsDiv() {
+        const itemsDiv = document.getElementById('items');
+        if (!itemsDiv) return;
+
+        const entityManager = this.engine.entityManager;
+        if (!entityManager) {
+            itemsDiv.innerHTML = '';
+            return;
+        }
+
+        // Get all items on the map (not in inventory)
+        const items = entityManager.items;
+        if (items.length === 0) {
+            itemsDiv.innerHTML = '';
+            return;
+        }
+
+        // Filter to visible items (or all if darkness is off)
+        const visibleItems = items.filter(item => this.engine.isTileVisible(item.x, item.y));
+
+        if (visibleItems.length === 0) {
+            itemsDiv.innerHTML = '';
+            return;
+        }
+
+        // Build HTML content as unordered list
+        const listItems = visibleItems.map(item => {
+            const displayName = item.getDisplayName ? item.getDisplayName() : item.name;
+            return `<li>${displayName}</li>`;
+        });
+
+        itemsDiv.innerHTML = `<ul>${listItems.join('')}</ul>`;
+    }
+
+    /**
+     * Update both actors and items divs
+     * Call this after turns complete or when visibility changes
+     */
+    updateSidebar() {
+        this.updateActorsDiv();
+        this.updateItemsDiv();
+    }
 }

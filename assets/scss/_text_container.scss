@@ -1,0 +1,72 @@
+.text {
+    display: flex;
+    flex-direction: column;
+    @media (max-width: 1000px) {
+        flex-direction: row;
+        justify-content: space-between;
+    }
+    div {
+        margin-bottom: $spacing-unit;
+    }
+    ul {
+        margin: 0;
+        padding:0;
+        padding-left: $spacing-unit;
+        li {
+            display: flex;
+            align-items: center;
+            gap: 0.5em;
+            margin-bottom: 0.25em;
+        }
+    
+        .stat-label {
+            min-width: 5em;
+            font-size: 0.9em;
+        }
+
+        .stat-thermometer {
+            flex: 1;
+            min-width: 50px;
+            max-width: 100px;
+            height: 0.75em;
+            background: #333;
+            margin: 0;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-fill {
+            height: 100%;
+            background: #4a4;
+            transition: width 0.2s ease;
+        }
+
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            border: 0;
+        }
+    }
+    .message-age-1 {
+        color: #878787;
+    }
+
+    .message-age-2 {
+        color: #adadad;
+    }
+
+    .message-hover {
+        font-style: italic;
+    }
+    margin-top: 30px;
+    margin-left: 15px;
+    @media (max-width: 1000px) {
+        margin-top: 10px;
+        min-height: 100px;
+    }
+}

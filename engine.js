@@ -706,6 +706,9 @@ class DungeonEngine {
         this.lightingManager.computeLighting();
         const fogOfWar = this.currentPrototype?.config.mechanics?.fog_of_war || false;
         this.renderer.updateDarkness(this.lightingManager, fogOfWar);
+
+        // Update the sidebar with visible actors and items
+        this.interfaceManager?.updateSidebar();
     }
     playSound(soundName) {
         if (this.audioManager) {
@@ -790,6 +793,11 @@ class DungeonEngine {
         this.renderer.renderTestPattern(this.mapManager);
         this.renderer.renderItems(this.entityManager);
         this.renderer.renderActors(this.entityManager);
+
+        // Update sidebar for non-darkness levels (darkness levels update via updateLighting)
+        if (!prototypeConfig.mechanics?.darkness) {
+            this.interfaceManager?.updateSidebar();
+        }
 
         // Check initial submersion state for all actors (after sprites exist)
         for (const actor of this.entityManager.actors) {
@@ -2038,6 +2046,9 @@ class Actor extends Entity {
         if (!this.hasAttribute('controlled') && this.engine.checkWinConditions()) {
             this.engine.unlockWinConditionStairways();
         }
+
+        // Update sidebar to reflect death
+        this.engine.interfaceManager?.updateSidebar();
     }
 
     pickUpItem(item) {
@@ -4699,6 +4710,9 @@ class EntityManager {
                 this.engine.renderer.createItemSprite(entity);
             }
         }
+
+        // Update sidebar when entities change
+        this.engine.interfaceManager?.updateSidebar();
     }
     
     removeEntity(entity) {
@@ -4729,6 +4743,9 @@ class EntityManager {
             entity.sprite.destroy();
             entity.sprite = null;
         }
+
+        // Update sidebar when entities change
+        this.engine.interfaceManager?.updateSidebar();
     }
 
     getEntityAt(x, y) {
