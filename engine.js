@@ -2112,7 +2112,8 @@ class Actor extends Entity {
         this.applyWearEffect(item);
 
         // Create sprite for the equipped item (skip for weapons - they don't render on actor)
-        if (slot !== 'weapon') {
+        // Only create sprite if renderer exists and actor sprites have been created
+        if (slot !== 'weapon' && this.engine.renderer && this.spriteBase) {
             this.spriteEquipment[slot] = this.engine.renderer.createEquipmentSprite(
                 this,
                 item,
