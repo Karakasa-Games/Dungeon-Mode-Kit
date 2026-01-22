@@ -114,7 +114,7 @@
     "behaviors": [
       "deep_water_currents"
     ],
-    "item_drop_chance": 0.1,
+    "item_drop_chance": 0.3,
     "item_drift_chance": 0.3
   }
 }
