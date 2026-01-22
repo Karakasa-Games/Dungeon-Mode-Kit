@@ -3852,11 +3852,11 @@ const BehaviorLibrary = {
 
                 if (other.hasAttribute('controlled')) {
                     // Player message
-                    actor.engine.inputManager?.showMessage(`The ${gasName} engulf you! (${effectStr})`);
+                    actor.engine.inputManager?.showMessage(`The ${gasName} engulfs you! (${effectStr})`);
                 } else if (tileIsVisible && other.hasAttribute('visible')) {
                     // Visible NPC message
                     const otherName = other.name || 'creature';
-                    actor.engine.inputManager?.showMessage(`The ${gasName} engulf the ${otherName}. (${effectStr})`);
+                    actor.engine.inputManager?.showMessage(`The ${gasName} engulfs the ${otherName}. (${effectStr})`);
                 }
             }
 

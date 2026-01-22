@@ -13,11 +13,11 @@
       "flammable": true,
       "sighted": true,
       "inventory": 5,
+      "strength": 10,
       "remains": "skull"
     },
     "stats": {
-      "health": 100,
-      "strength": 10
+      "health": 100
     },
     "default_items": ["sword"]
   }

@@ -45,8 +45,7 @@
       "defense": 5
     },
     "stats": {
-      "health": 30,
-      "strength": 5
+      "health": 30
     }
   },
 
@@ -62,11 +61,12 @@
       "hostile": true,
       "solid": true,
       "visible": true,
-      "flammable": false
+      "flammable": false,
+      "strength": 8
     },
     "stats": {
-      "health": 50,
-      "strength": 8
+      "health": 50
+      
     }
   },
 
@@ -101,11 +101,11 @@
       "visible": true,
       "flammable": true,
       "inventory": 1,
-      "remains": "skull"
+      "remains": "skull",
+      "strength": 8
     },
     "stats": {
-      "health": 30,
-      "strength": 8
+      "health": 30
     },
     "default_items": ["horns"]
     

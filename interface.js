@@ -2005,24 +2005,51 @@ class InterfaceManager {
             let html = `<div class="actor-entry">`;
             html += `<strong class="actor-name">${actor.name}</strong>`;
 
-            // Add stats as thermometer fills in an unordered list
+            // Add stats as thermometer fills with ratio in an unordered list
             if (actor.stats && Object.keys(actor.stats).length > 0) {
                 html += '<ul class="actor-stats">';
                 for (const [key, value] of Object.entries(actor.stats)) {
-                    const current = typeof value === 'object' ? value.current : value;
-                    const max = typeof value === 'object' ? value.max : value;
+                    const current = value.current;
+                    const max = value.max;
+
+                    // Skip 1/1 stats (one-hit death games)
+                    if (max === 1 && current === 1) continue;
+
                     const percentage = max > 0 ? Math.round((current / max) * 100) : 0;
-                    const altText = `${key}: ${current}/${max}`;
 
                     html += `<li>`;
                     html += `<span class="stat-label">${this.capitalize(key)}</span>`;
-                    html += `<figure class="stat-thermometer" title="${altText}">`;
+                    html += `<figure class="stat-thermometer">`;
                     html += `<div class="stat-fill" style="width: ${percentage}%"></div>`;
-                    html += `<figcaption class="sr-only">${altText}</figcaption>`;
                     html += `</figure>`;
+                    html += `<span class="stat-ratio">${current}/${max}</span>`;
                     html += `</li>`;
                 }
                 html += '</ul>';
+            }
+
+            // For controlled actors, show integer attributes as plain numbers
+            if (actor.hasAttribute('controlled') && actor.attributes instanceof Map) {
+                let attributesHtml = '';
+                for (const [key, value] of actor.attributes) {
+                    if (typeof value === 'number' && Number.isInteger(value)) {
+                        attributesHtml += `<li>`;
+                        attributesHtml += `<span class="stat-label">${this.capitalize(key)}</span>`;
+
+                        // Inventory is special - show as current/max ratio
+                        if (key === 'inventory') {
+                            const currentItems = actor.inventory ? actor.inventory.length : 0;
+                            attributesHtml += `<span class="stat-value">${currentItems}/${value}</span>`;
+                        } else {
+                            attributesHtml += `<span class="stat-value">${value}</span>`;
+                        }
+
+                        attributesHtml += `</li>`;
+                    }
+                }
+                if (attributesHtml) {
+                    html += `<ul class="actor-attributes">${attributesHtml}</ul>`;
+                }
             }
 
             html += '</div>';
