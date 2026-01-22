@@ -1,0 +1,20 @@
+{
+  "gol_cell": {
+    "name": "Cell",
+    "tileIndexBase": "BULLET",
+    "tint": "#00FF00",
+    "attributes": {
+      "solid": false,
+      "visible": true
+    }
+  },
+  "gol_coordinator": {
+    "name": "Life Coordinator",
+    "tileIndexBase": "BLANK",
+    "personality": "game_of_life",
+    "attributes": {
+      "solid": false,
+      "visible": false
+    }
+  }
+}

@@ -767,8 +767,11 @@ class DungeonEngine {
         await this.entityManager.spawnEntities(this.currentPrototype.config, entryDirection);
         await this.mapManager.processWildcards();
 
-        this.ensureUpStairway();
-        this.spawnPlayerAtStairway(entryDirection);
+        // Skip player and stairway spawning in observer mode (pure simulations)
+        if (!prototypeConfig.mechanics?.observer_mode) {
+            this.ensureUpStairway();
+            this.spawnPlayerAtStairway(entryDirection);
+        }
 
         this.mapManager.spawnPendingWalls();
         this.mapManager.spawnPendingDoors();
@@ -4247,6 +4250,81 @@ const BehaviorLibrary = {
         }
 
         return actionTaken;
+    },
+
+    /**
+     * Conway's Game of Life cellular automaton step
+     * Evaluates all cells simultaneously and applies Conway's rules:
+     * - Live cell with 2-3 neighbors survives
+     * - Dead cell with exactly 3 neighbors becomes alive
+     * - All other live cells die
+     *
+     * Data parameters:
+     * - cell_type: The actor type to look for/spawn as cells (default: "gol_cell")
+     */
+    game_of_life_step: (actor, data) => {
+        const cellType = data.cell_type || 'gol_cell';
+        const entityManager = actor.engine.entityManager;
+        const mapManager = actor.engine.mapManager;
+
+        // Build Set of alive cell positions for O(1) lookup
+        const aliveCells = new Set();
+        const cellActors = [];
+
+        for (const a of entityManager.actors) {
+            if (a.isDead || a.type !== cellType) continue;
+            aliveCells.add(`${a.x},${a.y}`);
+            cellActors.push(a);
+        }
+
+        const directions = [
+            {dx: -1, dy: -1}, {dx: 0, dy: -1}, {dx: 1, dy: -1},
+            {dx: -1, dy: 0},                   {dx: 1, dy: 0},
+            {dx: -1, dy: 1},  {dx: 0, dy: 1},  {dx: 1, dy: 1}
+        ];
+
+        const countNeighbors = (x, y) => {
+            let count = 0;
+            for (const dir of directions) {
+                if (aliveCells.has(`${x + dir.dx},${y + dir.dy}`)) count++;
+            }
+            return count;
+        };
+
+        // Phase 1: Find cells that should die (not 2-3 neighbors)
+        const cellsToDie = [];
+        for (const cell of cellActors) {
+            const n = countNeighbors(cell.x, cell.y);
+            if (n < 2 || n > 3) cellsToDie.push(cell);
+        }
+
+        // Phase 2: Find empty tiles that should birth (exactly 3 neighbors)
+        const birthCandidates = new Set();
+        for (const cell of cellActors) {
+            for (const dir of directions) {
+                const key = `${cell.x + dir.dx},${cell.y + dir.dy}`;
+                if (!aliveCells.has(key)) birthCandidates.add(key);
+            }
+        }
+
+        const cellsToBirth = [];
+        for (const key of birthCandidates) {
+            const [x, y] = key.split(',').map(Number);
+            if (x < 0 || x >= mapManager.width || y < 0 || y >= mapManager.height) continue;
+            const floorTile = mapManager.floorMap?.[y]?.[x];
+            if (!floorTile || floorTile.tileId <= 0) continue;
+            if (countNeighbors(x, y) === 3) cellsToBirth.push({x, y});
+        }
+
+        // Phase 3: Apply all changes simultaneously
+        for (const cell of cellsToDie) {
+            entityManager.removeEntity(cell);
+        }
+        for (const pos of cellsToBirth) {
+            entityManager.spawnActor(cellType, pos.x, pos.y);
+        }
+
+        return true;
     }
 };
 

@@ -142,6 +142,13 @@ Personality → behaviors[] → BehaviorLibrary
 - BehaviorLibrary contains pluggable routines: `patrol`, `pursue_target`, `random_walk`, `attack_adjacent`
 - `execute(actor)` runs behaviors in order until one succeeds
 
+**Environmental Behaviors:**
+
+- `lava_behavior` - Incinerates actors/items, spawns fire
+- `cloud_behavior` / `mist_behavior` - Gas clouds that spread, disperse and apply effects
+- `liquid_pooling` - Cellular automata transformation (e.g., sewage → deep_sewage when surrounded)
+- `deep_water_behavior` - Currents that can sweep items from inventory and cause drift
+
 #### MapManager
 
 Handles map loading and procedural generation:
@@ -236,6 +243,7 @@ See [CHANGELOG.md](CHANGELOG.md) for version history and implementation status.
 │   └── sprites
 │       ├── fire-animation.png
 │       ├── fluid-animation.png
+│       ├── light-smoke-animation.png
 │       ├── smoke-animation.png
 │       └── static-tiles.png
 ├── CHANGELOG.md
@@ -273,14 +281,17 @@ See [CHANGELOG.md](CHANGELOG.md) for version history and implementation status.
 ├── lighting.js
 ├── LIGHTING.md
 ├── prototypes # individual level definitions and overrides
-│   ├── default #each level gets a folder with a map and json files to override or suppliment data
+│   ├── default # each level gets a folder with map and json files to override/supplement data
 │   │   ├── actors.json
 │   │   ├── items.json
 │   │   ├── map.tmj
 │   │   └── prototype.json # Level rules and mechanics
-│   └── labyrinth
+│   ├── labyrinth
+│   │   ├── actors.json
+│   │   ├── map.tmj
+│   │   └── prototype.json
+│   └── catacombs
 │       ├── actors.json
-│       ├── map.tmj
 │       └── prototype.json
 ├── README.md
 ├── sound.js

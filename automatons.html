@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Automatons - Conway's Game of Life</title>
+    <link rel="stylesheet" href="assets/main.css">
+</head>
+<body>
+    <h1>Automatons</h1>
+    <p>Conway's Game of Life</p>
+    <div id="game" data-prototype="automatons"></div>
+
+    <script src="lib/rot.js"></script>
+    <script src="lib/pixi.min.js"></script>
+    <script src="lib/tweenjs.js"></script>
+    <script src="lib/howler.js"></script>
+    <script src="globals.js"></script>
+    <script src="lighting.js"></script>
+    <script src="sound.js"></script>
+    <script src="interface.js"></script>
+    <script src="input.js"></script>
+    <script src="engine.js"></script>
+
+    <script>
+        window.addEventListener('load', () => initializeGame());
+    </script>
+</body>
+</html>

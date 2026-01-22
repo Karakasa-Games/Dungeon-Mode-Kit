@@ -116,5 +116,12 @@
     ],
     "item_drop_chance": 0.3,
     "item_drift_chance": 0.3
+  },
+
+  "game_of_life": {
+    "name": "Game of Life",
+    "hostile": false,
+    "behaviors": ["game_of_life_step"],
+    "cell_type": "gol_cell"
   }
 }
