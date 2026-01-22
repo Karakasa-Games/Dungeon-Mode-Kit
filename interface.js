@@ -2060,13 +2060,13 @@ class InterfaceManager {
             return;
         }
 
-        // Build HTML content as unordered list
+        // Build HTML content as unordered list with header
         const listItems = visibleItems.map(item => {
             const displayName = item.getDisplayName ? item.getDisplayName() : item.name;
             return `<li>${displayName}</li>`;
         });
 
-        itemsDiv.innerHTML = `<ul>${listItems.join('')}</ul>`;
+        itemsDiv.innerHTML = `<strong>Items</strong><ul>${listItems.join('')}</ul>`;
     }
 
     /**

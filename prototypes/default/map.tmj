@@ -326,7 +326,7 @@
                  "id":43,
                  "name":"Stairway",
                  "rotation":0,
-                 "type":"stairs_up",
+                 "type":"locked_up_stairway",
                  "visible":true,
                  "width":40,
                  "x":1560,

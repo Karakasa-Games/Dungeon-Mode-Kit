@@ -13,6 +13,17 @@
 }
 
 @font-face {
+    font-family: 'Computer Modern Italic';
+    src: url('/assets/fonts/cmunti-webfont.eot');
+    src: url('/assets/fonts/cmunti-webfont.eot?#iefix') format('embedded-opentype'),
+         url('/assets/fonts/cmunti-webfont.woff') format('woff'),
+         url('/assets/fonts/cmunti-webfont.svg#cmu_serifroman') format('svg');
+    font-weight: normal;
+    font-style: normal;
+
+}
+
+@font-face {
     font-family: 'Computer Modern Bold';
     src: url('/assets/fonts/cmunbx-webfont.eot');
     src: url('/assets/fonts/cmunbx-webfont.eot?#iefix') format('embedded-opentype'),
