@@ -9,6 +9,7 @@ body {
 } 
 
 .game-container {
+ //justify-content: center;
  display: flex;
  flex-direction: row;
  @media (max-width: 1000px) {

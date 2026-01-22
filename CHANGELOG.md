@@ -19,6 +19,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Fire and smoke actors should dissipate better
 
+## [0.7b] 2025-01-22
+
+### Added
+
+- Optional HTML sidebar for actors and items:
+  - `#actors` div displays visible actors with stats
+  - `#items` div displays visible items with "Items" header
+  - Controllable actors show integer attributes (strength, inventory count, etc.)
+  - Stats displayed as thermometer bars with current/max ratios
+  - 1/1 stats hidden (for one-hit-death games)
+  - Inventory attribute shown as current/max ratio
+  - Sidebar updates automatically on visibility changes, entity add/remove, and actor death
+  - Elements are optional - embedded prototypes work without them
+
+### Fixed
+
+- Equipment sprites no longer duplicated when actors have default_items equipped
+
 ## [0.7a] 2025-01-20
 
 ### Added
