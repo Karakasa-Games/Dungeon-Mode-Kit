@@ -9,7 +9,13 @@
     <h1>Automatons</h1>
     <p>Conway's Game of Life</p>
     press esc to restart
-    <div id="game" data-prototype="automatons"></div>
+    <div class="game-container">
+        <div id="game" data-prototype="automatons"></div>
+        <details id="description">
+            <summary>Description</summary>
+            The Description of the Dungeon
+        </details>   
+    </div>
 
     <script src="lib/rot.js"></script>
     <script src="lib/pixi.min.js"></script>

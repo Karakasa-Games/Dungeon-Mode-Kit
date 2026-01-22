@@ -1,6 +1,6 @@
 {
   "name": "Automatons",
-  "description": "Conway's Game of Life.\nObserve the cellular automata evolve.",
+  "description": "Conway's Game of Life. 10 Thalers on the glider!",
   "loaded_sound": "tone3",
   "depth": 0,
   "turn_speed": 150,
