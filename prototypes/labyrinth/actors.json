@@ -14,7 +14,9 @@
       "sighted": true,
       "inventory": 5,
       "strength": 10,
-      "remains": "skull"
+      "remains": "skull",
+      "accuracy": 40,
+      "defense": 8
     },
     "stats": {
       "health": 100

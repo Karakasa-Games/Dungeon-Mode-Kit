@@ -10,5 +10,8 @@
     "fog_of_war": true,
     "darkness": true
   },
+  "random_items": {
+    "shield": { "chance": 100 }
+  },
   "win_conditions": ["killed:minotaur"]
 }

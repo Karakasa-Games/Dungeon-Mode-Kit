@@ -102,7 +102,9 @@
       "flammable": true,
       "inventory": 1,
       "remains": "skull",
-      "strength": 8
+      "strength": 8,
+      "accuracy": 90,
+      "defense": 10
     },
     "stats": {
       "health": 30

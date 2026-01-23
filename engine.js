@@ -2302,6 +2302,10 @@ class Actor extends Entity {
                 }
             }
         }
+
+        // Add passive bonuses from inventory items
+        base += this.getPassiveStatBonus('defense');
+
         return base;
     }
 
@@ -3217,6 +3221,22 @@ class Actor extends Entity {
     // ========================================================================
 
     /**
+     * Get the total passive stat bonus for a given stat from inventory items
+     * @param {string} stat - The stat to get bonuses for (e.g., 'defense', 'accuracy')
+     * @returns {number} Total bonus from all inventory items with stat_bonus passive effects
+     */
+    getPassiveStatBonus(stat) {
+        let total = 0;
+        for (const item of this.inventory) {
+            const passiveEffect = item.getAttribute('passive_effect');
+            if (passiveEffect?.type === 'stat_bonus' && typeof passiveEffect[stat] === 'number') {
+                total += passiveEffect[stat];
+            }
+        }
+        return total;
+    }
+
+    /**
      * Process passive effects from items in inventory after movement
      * @param {Object} fromPos - Previous position {x, y}
      * @param {Object} toPos - New position {x, y}
@@ -3253,19 +3273,16 @@ class Actor extends Entity {
 
         const trailData = item._trailData;
 
-        // Check for backtracking (only owner can remove trail)
-        if (effect.backtrack_removes && trailData.ownerId === this.id) {
-            const existingIndex = trailData.positions.findIndex(
-                p => p.x === toPos.x && p.y === toPos.y
-            );
+        // Check for backtracking (only owner can remove trail, only the last tile)
+        if (effect.backtrack_removes && trailData.ownerId === this.id && trailData.positions.length > 0) {
+            const lastSegment = trailData.positions[trailData.positions.length - 1];
 
-            if (existingIndex !== -1) {
-                // Remove trail from this point forward
-                const toRemove = trailData.positions.splice(existingIndex);
-                for (const pos of toRemove) {
-                    if (pos.entity) {
-                        this.engine.entityManager.removeEntity(pos.entity);
-                    }
+            // Only remove if stepping onto the last tile in the trail (rewinding)
+            if (lastSegment.x === toPos.x && lastSegment.y === toPos.y) {
+                // Remove the last trail segment
+                const removed = trailData.positions.pop();
+                if (removed.entity) {
+                    this.engine.entityManager.removeEntity(removed.entity);
                 }
                 // Update the now-endpoint tile
                 if (trailData.positions.length > 0) {
@@ -4729,48 +4746,6 @@ class EntityManager {
             }
         }
 
-        // Collect all items that are in any actor's default_items list
-        const defaultItemTypes = new Set();
-        for (const actorType of prototype.prototypeActorTypes || []) {
-            const actorData = prototype.getActorData(actorType);
-            if (actorData?.default_items) {
-                for (const itemType of actorData.default_items) {
-                    defaultItemTypes.add(itemType);
-                }
-            }
-        }
-        // Also check global actor data (like player from data/actors.json)
-        for (const actor of this.actors) {
-            if (actor.defaultItems) {
-                for (const itemType of actor.defaultItems) {
-                    defaultItemTypes.add(itemType);
-                }
-            }
-        }
-
-        // Spawn unplaced items (only prototype-specific ones, excluding default items)
-        for (const itemType of prototype.prototypeItemTypes || []) {
-            if (placedItemTypes.has(itemType)) continue;
-            if (defaultItemTypes.has(itemType)) continue; // Skip items that are actor defaults
-
-            const itemData = prototype.getItemData(itemType);
-            if (!itemData) continue;
-
-            // Spawn 1-3 of each unplaced item type
-            const count = Math.floor(Math.random() * 3) + 1;
-            const availableTiles = getAvailableTiles();
-
-            for (let i = 0; i < count && availableTiles.length > 0; i++) {
-                const tileIndex = Math.floor(Math.random() * availableTiles.length);
-                const tile = availableTiles.splice(tileIndex, 1)[0];
-
-                const item = new Item(tile.x, tile.y, itemType, itemData, this.engine);
-                this.addEntity(item);
-
-                console.log(`Randomly spawned ${itemType} at (${tile.x}, ${tile.y})`);
-            }
-        }
-
     }
 
     /**
@@ -4782,7 +4757,7 @@ class EntityManager {
     spawnRandomActorsFromConfig() {
         const walkableTiles = this.engine.mapManager.walkableTiles;
         if (!walkableTiles || walkableTiles.length === 0) {
-            console.warn('random_actors: No walkable tiles available');
+            console.warn('random_actors/items: No walkable tiles available');
             return;
         }
 
@@ -4796,6 +4771,7 @@ class EntityManager {
         };
 
         this.spawnRandomActors(getAvailableTiles);
+        this.spawnRandomItems(getAvailableTiles);
     }
 
     /**
@@ -4861,7 +4837,69 @@ class EntityManager {
             }
         }
     }
-    
+
+    /**
+     * Spawn random items based on prototype's random_items config
+     * @param {Function} getAvailableTiles - Function that returns available spawn tiles
+     */
+    spawnRandomItems(getAvailableTiles) {
+        const prototype = this.engine.currentPrototype;
+        const randomItems = prototype?.config?.random_items;
+        if (!randomItems) return;
+
+        for (const [itemType, spawnConfig] of Object.entries(randomItems)) {
+            const chance = spawnConfig.chance ?? 100;
+            const min = spawnConfig.min ?? 1;
+            const max = spawnConfig.max ?? 1;
+
+            const itemData = prototype.getItemData(itemType);
+            if (!itemData) {
+                console.warn(`random_items: No item data found for "${itemType}"`);
+                continue;
+            }
+
+            // If chance is 100%, spawn exactly one (guaranteed spawn)
+            if (chance >= 100) {
+                const availableTiles = getAvailableTiles();
+                if (availableTiles.length === 0) {
+                    console.warn(`random_items: No tiles available for guaranteed spawn of "${itemType}"`);
+                    continue;
+                }
+
+                const tileIndex = Math.floor(ROT.RNG.getUniform() * availableTiles.length);
+                const tile = availableTiles[tileIndex];
+
+                const item = new Item(tile.x, tile.y, itemType, itemData, this.engine);
+                this.addEntity(item);
+                console.log(`random_items: Spawned guaranteed "${itemType}" at (${tile.x}, ${tile.y})`);
+                continue;
+            }
+
+            // For non-guaranteed spawns, roll for count between min and max
+            const count = min + Math.floor(ROT.RNG.getUniform() * (max - min + 1));
+
+            for (let i = 0; i < count; i++) {
+                // Roll chance for each individual spawn
+                if (ROT.RNG.getPercentage() > chance) {
+                    continue;
+                }
+
+                const availableTiles = getAvailableTiles();
+                if (availableTiles.length === 0) {
+                    console.warn(`random_items: No tiles available for "${itemType}"`);
+                    break;
+                }
+
+                const tileIndex = Math.floor(ROT.RNG.getUniform() * availableTiles.length);
+                const tile = availableTiles[tileIndex];
+
+                const item = new Item(tile.x, tile.y, itemType, itemData, this.engine);
+                this.addEntity(item);
+                console.log(`random_items: Spawned "${itemType}" at (${tile.x}, ${tile.y}) (${i + 1}/${count})`);
+            }
+        }
+    }
+
     spawnActorsFromLayer(layer, entryDirection = null, placedActorTypes = null) {
         console.log(`Processing actors layer with ${layer.objects.length} objects`);
 
@@ -6620,11 +6658,12 @@ class RenderSystem {
         const tileset = PIXI.Loader.shared.resources.tiles;
         const x = entity.x * globalVars.TILE_WIDTH;
         const y = entity.y * globalVars.TILE_HEIGHT;
-        const zIndex = 5; // Below actors (10) but above floor
 
         // Entities that ignore darkness go in uiContainer (above darkness layer)
         const ignoreDarkness = entity.hasAttribute('ignore_darkness');
         const container = ignoreDarkness ? this.uiContainer : this.entityContainer;
+        // Use low zIndex in uiContainer so thread appears below UI windows
+        const zIndex = ignoreDarkness ? 1 : 5;
 
         // If entity has a fill color, create a colored rectangle
         if (entity.fillColor !== null && entity.fillColor !== undefined) {
