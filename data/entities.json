@@ -1,6 +1,6 @@
 {
   "blood": {
-    "name": "Blood",
+    "name": "blood",
     "tileIndex": null,
     "fillColor": "#8B0000",
     "attributes": {
@@ -8,9 +8,18 @@
       "visible": true
     }
   },
+  "slime": {
+    "name": "slime",
+    "tileIndex": null,
+    "fillColor": "#00008B",
+    "attributes": {
+      "walk_description": "The floor here is green and slippery.",
+      "visible": true
+    }
+  },
   "rubble": {
     "name": "Rubble",
-    "tileIndex": "UPWARD_POINTING_TRIANGLE",
+    "tileIndex": "IMPERFECT_DOTTED_LIGHT_SHADE",
     "attributes": {
       "visible": true,
       "walk_description": "You crunch through loose rubble."

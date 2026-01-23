@@ -103,8 +103,8 @@
       "inventory": 1,
       "remains": "skull",
       "strength": 8,
-      "accuracy": 90,
-      "defense": 10
+      "accuracy": 80,
+      "defense": 8
     },
     "stats": {
       "health": 30
@@ -124,6 +124,72 @@
       "pushable": false,
       "breakable": true,
       "paint_tile": "WALL_TOP",
+      "remains": "rubble"
+    }
+  },
+  "wall-bottom-left-corner": {
+    "name": "Wall",
+    "tileIndexBase": "OPAQUE_DARK_SHADE_BOTTOM_LEFT_TRIANGLE",
+    "tileIndexTop": "OPAQUE_LIGHT_SHADE_UPPER_RIGHT_TRIANGLE_AND_OPAQUE_DARK_SHADE_BOTTOM_LEFT_TRIANGLE",
+    "tint": "#ccccbb",
+    "flipBaseH": true,
+    "flipBaseV": true,
+    "attributes": {
+      "solid": true,
+      "visible": true,
+      "pushable": false,
+      "breakable": true,
+      "paint_tile": "LIGHT_SHADE_UPPER_RIGHT_TRIANGLE",
+      "remains": "rubble"
+    }
+  },
+  "wall-bottom-right-corner": {
+    "name": "Wall",
+    "tileIndexTop": "OPAQUE_LIGHT_SHADE_UPPER_RIGHT_TRIANGLE_AND_OPAQUE_DARK_SHADE_BOTTOM_LEFT_TRIANGLE",
+    "tileIndexBase": "OPAQUE_DARK_SHADE_BOTTOM_LEFT_TRIANGLE",
+    "flipBaseV": true,
+    "flipTopH": true,
+    "tint": "#ccccbb",
+    "attributes": {
+      "solid": true,
+      "visible": true,
+      "pushable": false,
+      "breakable": true,
+      "paint_tile": "LIGHT_SHADE_UPPER_LEFT_TRIANGLE",
+      "remains": "rubble"
+    }
+  },
+  "wall-top-right-corner": {
+    "name": "Wall",
+    "tileIndexBase": "OPAQUE_DARK_SHADE",
+    "tileIndexTop": "OPAQUE_LIGHT_SHADE_UPPER_RIGHT_TRIANGLE",
+    "tint": "#ccccbb",
+    "flipTopH": true,
+    "flipTopV": true,
+    "flipBaseV": true,
+    "flipBaseH": true,
+    "attributes": {
+      "solid": true,
+      "visible": true,
+      "pushable": false,
+      "breakable": true,
+      "paint_tile": "LIGHT_SHADE_LOWER_LEFT_TRIANGLE",
+      "remains": "rubble"
+    }
+  },
+  "wall-top-left-corner": {
+    "name": "Wall",
+    "tileIndexBase": "OPAQUE_DARK_SHADE",
+    "tileIndexTop": "OPAQUE_LIGHT_SHADE_UPPER_RIGHT_TRIANGLE",
+    "tint": "#ccccbb",
+    "flipTopV": true,
+    "flipBaseH": true,
+    "attributes": {
+      "solid": true,
+      "visible": true,
+      "pushable": false,
+      "breakable": true,
+      "paint_tile": "LIGHT_SHADE_LOWER_RIGHT_TRIANGLE",
       "remains": "rubble"
     }
   },
@@ -235,7 +301,8 @@
       "liquid": true,
       "ignites": true,
       "nauseates": true,
-      "mass_noun": true
+      "mass_noun": true,
+      "entry_sound": "step_mud"
     }
   },
   "lava": {

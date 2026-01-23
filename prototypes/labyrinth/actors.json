@@ -15,8 +15,8 @@
       "inventory": 5,
       "strength": 10,
       "remains": "skull",
-      "accuracy": 40,
-      "defense": 8
+      "accuracy": 50,
+      "defense": 6
     },
     "stats": {
       "health": 100
