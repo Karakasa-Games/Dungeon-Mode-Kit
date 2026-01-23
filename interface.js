@@ -2093,7 +2093,7 @@ class InterfaceManager {
             return `<li>${displayName}</li>`;
         });
 
-        itemsDiv.innerHTML = `<strong>Items</strong><ul>${listItems.join('')}</ul>`;
+        itemsDiv.innerHTML = `<strong>Visible Items</strong><ul>${listItems.join('')}</ul>`;
     }
 
     /**
