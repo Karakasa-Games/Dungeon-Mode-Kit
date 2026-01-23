@@ -3151,6 +3151,9 @@ class Actor extends Entity {
         this.y = newY;
         this.updateSpritePosition();
 
+        // Process passive effects from inventory items (e.g., thread trail)
+        this.processPassiveEffects(this._lastPosition, { x: newX, y: newY });
+
         // Check for items to pick up
         const itemAtTarget = this.engine.entityManager.getItemAt(newX, newY);
         if (itemAtTarget && itemAtTarget.hasAttribute('pickupable')) {
@@ -3207,6 +3210,225 @@ class Actor extends Entity {
 
     moveBy(dx, dy) {
         return this.tryMove(this.x + dx, this.y + dy);
+    }
+
+    // ========================================================================
+    // PASSIVE ITEM EFFECTS
+    // ========================================================================
+
+    /**
+     * Process passive effects from items in inventory after movement
+     * @param {Object} fromPos - Previous position {x, y}
+     * @param {Object} toPos - New position {x, y}
+     */
+    processPassiveEffects(fromPos, toPos) {
+        for (const item of this.inventory) {
+            const passiveEffect = item.getAttribute('passive_effect');
+            if (!passiveEffect) continue;
+
+            switch (passiveEffect.type) {
+                case 'leave_trail':
+                    this.processTrailEffect(item, passiveEffect, fromPos, toPos);
+                    break;
+                // Future passive effect types can be added here
+            }
+        }
+    }
+
+    /**
+     * Process a trail-leaving passive effect
+     * @param {Item} item - The item with the passive effect
+     * @param {Object} effect - The passive effect configuration
+     * @param {Object} fromPos - Previous position {x, y}
+     * @param {Object} toPos - New position {x, y}
+     */
+    processTrailEffect(item, effect, fromPos, toPos) {
+        // Initialize trail tracking on the item
+        if (!item._trailData) {
+            item._trailData = {
+                positions: [],
+                ownerId: this.id
+            };
+        }
+
+        const trailData = item._trailData;
+
+        // Check for backtracking (only owner can remove trail)
+        if (effect.backtrack_removes && trailData.ownerId === this.id) {
+            const existingIndex = trailData.positions.findIndex(
+                p => p.x === toPos.x && p.y === toPos.y
+            );
+
+            if (existingIndex !== -1) {
+                // Remove trail from this point forward
+                const toRemove = trailData.positions.splice(existingIndex);
+                for (const pos of toRemove) {
+                    if (pos.entity) {
+                        this.engine.entityManager.removeEntity(pos.entity);
+                    }
+                }
+                // Update the now-endpoint tile
+                if (trailData.positions.length > 0) {
+                    this.updateTrailTile(trailData, trailData.positions.length - 1);
+                }
+                return;
+            }
+        }
+
+        // Create new trail segment at previous position
+        const direction = this.getMovementDirection(fromPos, toPos);
+        const prevSegment = trailData.positions[trailData.positions.length - 1];
+        const prevDirection = prevSegment ? prevSegment.exitDirection : null;
+
+        // Create the trail entity
+        const entity = this.createTrailEntity(item, effect, fromPos, prevDirection, direction);
+
+        if (entity) {
+            trailData.positions.push({
+                x: fromPos.x,
+                y: fromPos.y,
+                entity: entity,
+                entryDirection: prevDirection,
+                exitDirection: direction
+            });
+        }
+    }
+
+    /**
+     * Create a trail entity at the specified position
+     * @param {Item} item - The source item
+     * @param {Object} effect - The passive effect configuration
+     * @param {Object} pos - Position to place the entity
+     * @param {string|null} entryDir - Direction we entered from
+     * @param {string} exitDir - Direction we're exiting to
+     * @returns {Entity|null} The created entity
+     */
+    createTrailEntity(item, effect, pos, entryDir, exitDir) {
+        const tileName = this.getTrailTileName(entryDir, exitDir);
+        const tileIndex = this.engine.spriteLibrary.resolveTile(tileName);
+
+        console.log(`[Thread] Creating trail at (${pos.x}, ${pos.y}) - entry: ${entryDir}, exit: ${exitDir} -> tile: ${tileName}`);
+
+        if (!tileIndex) {
+            console.warn(`[Thread] Failed to resolve tile: ${tileName}`);
+            return null;
+        }
+
+        const entity = new Entity(pos.x, pos.y, effect.trail_type || 'thread_trail', this.engine);
+        entity.name = 'Thread';
+        entity.tileIndex = tileIndex;
+        entity.setAttribute('visible', true);
+        entity.setAttribute('ignore_darkness', true);
+
+        // Apply item tint
+        if (effect.use_item_tint && item.tint) {
+            entity.tint = item.tint;
+        }
+
+        // Create sprite and add to entity manager
+        this.engine.renderer?.createEntitySprite(entity);
+        this.engine.entityManager.entities.push(entity);
+
+        return entity;
+    }
+
+    /**
+     * Get the direction of movement between two positions
+     * @param {Object} from - Start position {x, y}
+     * @param {Object} to - End position {x, y}
+     * @returns {string|null} Direction: 'up', 'down', 'left', 'right', or null
+     */
+    getMovementDirection(from, to) {
+        const dx = to.x - from.x;
+        const dy = to.y - from.y;
+
+        if (dy < 0) return 'up';
+        if (dy > 0) return 'down';
+        if (dx < 0) return 'left';
+        if (dx > 0) return 'right';
+        return null;
+    }
+
+    /**
+     * Get the appropriate box drawing tile name for a trail segment
+     * @param {string|null} entryDir - Direction we came FROM to reach this tile
+     * @param {string|null} exitDir - Direction we're going TO from this tile
+     * @returns {string} The tile name to use
+     */
+    getTrailTileName(entryDir, exitDir) {
+        // If no entry (first segment) or no exit (endpoint), show based on the available direction
+        if (!entryDir && !exitDir) {
+            return 'INVERSE_BOX_HORIZONTAL';
+        }
+        if (!entryDir) {
+            return (exitDir === 'up' || exitDir === 'down')
+                ? 'INVERSE_BOX_VERTICAL'
+                : 'INVERSE_BOX_HORIZONTAL';
+        }
+        if (!exitDir) {
+            return (entryDir === 'up' || entryDir === 'down')
+                ? 'INVERSE_BOX_VERTICAL'
+                : 'INVERSE_BOX_HORIZONTAL';
+        }
+
+        // Convert movement directions to connection directions
+        // entryDir is the direction we MOVED to get here, so connection is opposite
+        // exitDir is the direction we MOVE to leave, so connection is same
+        const reverseDir = { 'up': 'down', 'down': 'up', 'left': 'right', 'right': 'left' };
+        const connectFrom = reverseDir[entryDir]; // where we came FROM
+        const connectTo = exitDir;                 // where we're going TO
+
+        // Sort for consistent lookup
+        const connections = [connectFrom, connectTo].sort().join('-');
+
+        // Tile names indicate where the corner is positioned
+        // BOTTOM_RIGHT corner = lines extend UP and LEFT
+        // TOP_RIGHT corner = lines extend DOWN and LEFT
+        // BOTTOM_LEFT corner = lines extend UP and RIGHT
+        // TOP_LEFT corner = lines extend DOWN and RIGHT
+        const tileMap = {
+            // Straight lines
+            'down-up': 'INVERSE_BOX_VERTICAL',
+            'left-right': 'INVERSE_BOX_HORIZONTAL',
+            // Corners - named by corner position, connects the two OTHER directions
+            'left-up': 'INVERSE_BOX_BOTTOM_RIGHT',    // corner at bottom-right, lines go up and left
+            'right-up': 'INVERSE_BOX_BOTTOM_LEFT',    // corner at bottom-left, lines go up and right
+            'down-left': 'INVERSE_BOX_TOP_RIGHT',     // corner at top-right, lines go down and left
+            'down-right': 'INVERSE_BOX_TOP_LEFT'      // corner at top-left, lines go down and right
+        };
+
+        return tileMap[connections] || 'INVERSE_BOX_HORIZONTAL';
+    }
+
+    /**
+     * Update a trail segment's tile when connections change
+     * @param {Object} trailData - The trail tracking data
+     * @param {number} index - Index of the segment to update
+     */
+    updateTrailTile(trailData, index) {
+        if (index < 0 || index >= trailData.positions.length) return;
+
+        const segment = trailData.positions[index];
+        if (!segment.entity) return;
+
+        // Recalculate tile - this segment is now an endpoint (no exit)
+        const tileName = this.getTrailTileName(segment.entryDirection, null);
+        const tileIndex = this.engine.spriteLibrary.resolveTile(tileName);
+
+        console.log(`[Thread] Updating endpoint at (${segment.x}, ${segment.y}) - entry: ${segment.entryDirection}, exit: null -> tile: ${tileName}`);
+
+        if (tileIndex && segment.entity.sprite) {
+            segment.entity.tileIndex = tileIndex;
+            // Update sprite texture
+            const tileset = PIXI.Loader.shared.resources.tiles;
+            const rect = new PIXI.Rectangle(
+                tileIndex.x * globalVars.TILE_WIDTH,
+                tileIndex.y * globalVars.TILE_HEIGHT,
+                globalVars.TILE_WIDTH,
+                globalVars.TILE_HEIGHT
+            );
+            segment.entity.sprite.texture = new PIXI.Texture(tileset.texture.baseTexture, rect);
+        }
     }
 
     updateSpritePosition() {
@@ -4507,9 +4729,29 @@ class EntityManager {
             }
         }
 
-        // Spawn unplaced items (only prototype-specific ones)
+        // Collect all items that are in any actor's default_items list
+        const defaultItemTypes = new Set();
+        for (const actorType of prototype.prototypeActorTypes || []) {
+            const actorData = prototype.getActorData(actorType);
+            if (actorData?.default_items) {
+                for (const itemType of actorData.default_items) {
+                    defaultItemTypes.add(itemType);
+                }
+            }
+        }
+        // Also check global actor data (like player from data/actors.json)
+        for (const actor of this.actors) {
+            if (actor.defaultItems) {
+                for (const itemType of actor.defaultItems) {
+                    defaultItemTypes.add(itemType);
+                }
+            }
+        }
+
+        // Spawn unplaced items (only prototype-specific ones, excluding default items)
         for (const itemType of prototype.prototypeItemTypes || []) {
             if (placedItemTypes.has(itemType)) continue;
+            if (defaultItemTypes.has(itemType)) continue; // Skip items that are actor defaults
 
             const itemData = prototype.getItemData(itemType);
             if (!itemData) continue;
@@ -4743,6 +4985,11 @@ class EntityManager {
         if (entity.sprite) {
             entity.sprite.destroy();
             entity.sprite = null;
+        }
+        // Clean up tileSprite for entities with both fill color and tile
+        if (entity.tileSprite) {
+            entity.tileSprite.destroy();
+            entity.tileSprite = null;
         }
 
         // Update sidebar when entities change
@@ -6375,6 +6622,10 @@ class RenderSystem {
         const y = entity.y * globalVars.TILE_HEIGHT;
         const zIndex = 5; // Below actors (10) but above floor
 
+        // Entities that ignore darkness go in uiContainer (above darkness layer)
+        const ignoreDarkness = entity.hasAttribute('ignore_darkness');
+        const container = ignoreDarkness ? this.uiContainer : this.entityContainer;
+
         // If entity has a fill color, create a colored rectangle
         if (entity.fillColor !== null && entity.fillColor !== undefined) {
             const graphics = new PIXI.Graphics();
@@ -6386,7 +6637,7 @@ class RenderSystem {
             graphics.y = y;
             graphics.zIndex = zIndex;
 
-            this.entityContainer.addChild(graphics);
+            container.addChild(graphics);
             entity.sprite = graphics;
         }
 
@@ -6406,7 +6657,7 @@ class RenderSystem {
             sprite.zIndex = zIndex + 1; // Slightly above fill
             sprite.tint = entity.tint;
 
-            this.entityContainer.addChild(sprite);
+            container.addChild(sprite);
 
             // If we already have a fill sprite, store tile sprite separately
             if (entity.sprite) {
@@ -6733,6 +6984,24 @@ class RenderSystem {
 
             if (item.sprite) {
                 item.sprite.tint = this.blendTints(item.tint, vis.baseTint);
+            }
+        }
+
+        // Update decorative entities (thread trails, etc.)
+        for (const entity of this.engine.entityManager.entities) {
+            if (!entity.sprite) continue;
+
+            if (entity.hasAttribute('ignore_darkness')) {
+                // Always visible with original tint
+                entity.sprite.visible = true;
+                entity.sprite.tint = entity.tint;
+            } else {
+                // Normal visibility based on lighting
+                const vis = lightingManager.getEntityVisibility(entity.x, entity.y, fogOfWar);
+                entity.sprite.visible = vis.showBase;
+                if (vis.showBase) {
+                    entity.sprite.tint = this.blendTints(entity.tint, vis.baseTint);
+                }
             }
         }
     }

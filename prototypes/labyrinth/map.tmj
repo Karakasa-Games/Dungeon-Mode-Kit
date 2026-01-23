@@ -219,8 +219,8 @@
                  "type":"brazier",
                  "visible":true,
                  "width":40,
-                 "x":760,
-                 "y":1020
+                 "x":320,
+                 "y":90
                 }, 
                 {
                  "height":30,
@@ -265,6 +265,28 @@
                  "width":40,
                  "x":800,
                  "y":720
+                }, 
+                {
+                 "height":30,
+                 "id":26,
+                 "name":"brazier2",
+                 "rotation":0,
+                 "type":"brazier",
+                 "visible":true,
+                 "width":40,
+                 "x":759.092702169625,
+                 "y":1011.39963586709
+                }, 
+                {
+                 "height":30,
+                 "id":27,
+                 "name":"brazier2",
+                 "rotation":0,
+                 "type":"brazier",
+                 "visible":true,
+                 "width":40,
+                 "x":1280,
+                 "y":90
                 }],
          "opacity":1,
          "type":"objectgroup",
@@ -276,7 +298,18 @@
          "draworder":"topdown",
          "id":6,
          "name":"items",
-         "objects":[],
+         "objects":[
+                {
+                 "height":30,
+                 "id":24,
+                 "name":"Ball of thread",
+                 "rotation":0,
+                 "type":"thread",
+                 "visible":true,
+                 "width":40,
+                 "x":720,
+                 "y":1080
+                }],
          "opacity":1,
          "type":"objectgroup",
          "visible":true,
@@ -284,7 +317,7 @@
          "y":0
         }],
  "nextlayerid":7,
- "nextobjectid":24,
+ "nextobjectid":28,
  "orientation":"orthogonal",
  "renderorder":"right-down",
  "tiledversion":"1.11.2",

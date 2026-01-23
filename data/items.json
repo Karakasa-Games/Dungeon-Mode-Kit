@@ -18,7 +18,8 @@
 
   "sword": {
     "name": "Sword",
-    "tileIndex": "UPWARDS_ARROW",
+    "tileIndex": "CROSS",
+    "flipV": true,
     "attributes": {
       "pickupable": true,
       "visible": true,

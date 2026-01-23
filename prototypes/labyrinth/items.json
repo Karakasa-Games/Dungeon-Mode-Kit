@@ -1,16 +1,22 @@
 {
   "thread": {
-    "name": "Thread",
+    "name": "Ball of thread",
     "tileIndex": "BALL_OF_THREAD",
     "tint": "#CC0000",
     "attributes": {
       "pickupable": true,
       "visible": true,
-      "stackable": true,
+      "stackable": false,
       "flammable": true,
       "consumable": false,
       "explosive": false,
-      "description": "A ball of thread."
+      "passive_effect": {
+        "type": "leave_trail",
+        "trail_type": "thread_trail",
+        "use_item_tint": true,
+        "backtrack_removes": true
+      },
+      "description": "A ball of red thread. Leaves a trail as you move."
     }
   }
 }
