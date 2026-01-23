@@ -58,10 +58,28 @@ Item JSON schema:
       "use_effect": { "health": 20 },         // stat modification on use
       "use_sound": "sound_name",
       "wearable": "top|middle|lower",         // equipment slot
-      "wear_effect": { "strength": 2 }        // stat bonus when worn
+      "wear_effect": { "strength": 2 },       // stat bonus when worn
+      "passive_effect": {                     // effect while in inventory (no equip needed)
+        "type": "stat_bonus",                 // stat_bonus or leave_trail
+        "defense": 10                         // stat bonuses applied passively
+      }
     }
   }
 }
+```
+
+**Passive Effect Types:**
+
+- `stat_bonus` - Adds stat bonuses while item is in inventory (e.g., `{"type": "stat_bonus", "defense": 10}`)
+- `leave_trail` - Leaves entity trail behind carrier as they move (e.g., thread ball)
+  ```json
+  {
+    "type": "leave_trail",
+    "trail_type": "thread_trail",
+    "use_item_tint": true,
+    "backtrack_removes": true
+  }
+  ```
 ```
 
 **[Items](/ITEMS.md)**
@@ -127,6 +145,35 @@ Actor JSON schema (organized by property type):
       "remains": "skull"       // entity spawned on death
     }
   }
+}
+```
+
+#### Prototype Configuration
+
+Each prototype folder contains a `prototype.json` that configures level-specific rules:
+
+```json
+{
+  "name": "Level Name",
+  "description": "Shown on level load",
+  "loaded_sound": "sound_name",
+  "depth": 1,
+  "turn_speed": 50,
+  "previous_level": "default",
+  "next_level": "next_level_name",
+  "mechanics": {
+    "fog_of_war": true,
+    "darkness": true
+  },
+  "random_actors": {
+    "actor_type": { "chance": 100 },              // 100% = exactly one guaranteed
+    "other_actor": { "chance": 50, "min": 1, "max": 3 }  // 50% chance per roll
+  },
+  "random_items": {
+    "item_type": { "chance": 100 },               // 100% = exactly one guaranteed
+    "other_item": { "chance": 30, "min": 2, "max": 5 }   // 30% chance per roll
+  },
+  "win_conditions": ["killed:actor_type"]
 }
 ```
 
@@ -288,6 +335,7 @@ See [CHANGELOG.md](CHANGELOG.md) for version history and implementation status.
 │   │   └── prototype.json # Level rules and mechanics
 │   ├── labyrinth
 │   │   ├── actors.json
+│   │   ├── items.json
 │   │   ├── map.tmj
 │   │   └── prototype.json
 │   └── catacombs
