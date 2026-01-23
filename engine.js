@@ -2750,7 +2750,7 @@ class Actor extends Entity {
                 const stat = target.stats[key];
                 if (typeof stat === 'object' && stat.current !== undefined) {
                     const oldValue = stat.current;
-                    stat.current = Math.max(0, stat.current + value);
+                    stat.current = Math.min(stat.max, Math.max(0, stat.current + value));
                     console.log(`${source.name}: ${target.name}'s ${key} ${value >= 0 ? '+' : ''}${value} (${oldValue} -> ${stat.current})`);
                     sourceApplied = true;
 

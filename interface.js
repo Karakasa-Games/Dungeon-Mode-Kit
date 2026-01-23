@@ -1504,23 +1504,33 @@ class InterfaceManager {
             if (hitActor) {
                 // Apply collision effect if the item has one
                 const collisionEffect = item.getAttribute('collision_effect');
+                console.log(`[Throw] Item ${item.name} collision_effect:`, collisionEffect);
                 if (collisionEffect) {
                     // Apply effects manually (similar to applyCollisionEffects but simpler)
                     for (const [key, rawValue] of Object.entries(collisionEffect)) {
                         // Resolve attribute references
                         const value = player.resolveAttributeValue(rawValue, player);
+                        console.log(`[Throw] Applying ${key}: ${rawValue} -> ${value} to ${hitActor.name}`);
 
                         if (hitActor.stats && hitActor.stats[key] !== undefined) {
                             const stat = hitActor.stats[key];
                             if (typeof stat === 'object' && stat.current !== undefined) {
-                                stat.current = Math.max(0, stat.current + value);
+                                const oldValue = stat.current;
+                                stat.current = Math.min(stat.max, Math.max(0, stat.current + value));
+                                console.log(`[Throw] ${hitActor.name} ${key}: ${oldValue} -> ${stat.current}`);
                                 if (key === 'health' && stat.current <= 0) {
                                     hitActor.die();
                                 }
                             }
+                        } else {
+                            console.log(`[Throw] ${hitActor.name} has no stat '${key}'`);
                         }
                     }
                     hitActor.flash?.();
+                    // Update sidebar to reflect stat changes
+                    this.updateSidebar();
+                } else {
+                    console.log(`[Throw] Item ${item.name} has no collision_effect`);
                 }
 
                 // Show hit message
