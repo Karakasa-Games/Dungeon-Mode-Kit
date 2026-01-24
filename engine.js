@@ -4198,7 +4198,7 @@ const BehaviorLibrary = {
             const targetY = actor.y + dir.dy;
             const target = actor.engine.entityManager.getActorAt(targetX, targetY);
 
-            if (target && !target.isDead && target.hasAttribute('breakable')) {
+            if (target && !target.isDead && target.hasAttribute('breakable') && target.hasAttribute('lode')) {
                 // Mine the wall using collision effects (which handles mining damage)
                 const result = actor.applyCollisionEffects(target);
                 if (result.effectApplied) {
@@ -4222,7 +4222,7 @@ const BehaviorLibrary = {
         let nearestDist = Infinity;
 
         for (const other of entityManager.actors) {
-            if (other.isDead || !other.hasAttribute('breakable')) continue;
+            if (other.isDead || !other.hasAttribute('breakable') || !other.hasAttribute('lode')) continue;
 
             const dist = Math.abs(other.x - actor.x) + Math.abs(other.y - actor.y);
             if (dist <= visionRange && dist < nearestDist) {
@@ -7608,7 +7608,10 @@ class RenderSystem {
             // Skip dead actors - their sprites should stay hidden
             if (actor.isDead) continue;
 
-            const vis = lightingManager.getEntityVisibility(actor.x, actor.y, fogOfWar);
+            // Static actors (walls, doors, terrain) stay visible in remembered areas
+            // Mobile actors (with personality or controlled) only visible in line of sight
+            const isStatic = !actor.personality && !actor.hasAttribute('controlled');
+            const vis = lightingManager.getEntityVisibility(actor.x, actor.y, fogOfWar, isStatic);
 
             if (actor.spriteBase) actor.spriteBase.visible = vis.showBase;
             if (actor.spriteTop) actor.spriteTop.visible = vis.showTop;

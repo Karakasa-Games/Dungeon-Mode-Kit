@@ -419,10 +419,11 @@ class LightingManager {
         }
     }
 
-    getEntityVisibility(x, y, fogOfWar = false) {
+    getEntityVisibility(x, y, fogOfWar = false, isStatic = false) {
         // Get visibility for an entity at position (x, y)
         // The top sprite should have the same visibility as the base
         // Equipment in "top" slot (at y-2) should also match the actor's visibility
+        // isStatic: true for walls/doors/terrain that should stay visible in remembered areas
         const hasControlled = this.hasControlledActors();
         const light = this.getLightLevel(x, y);
         const visible = this.isVisible(x, y);
@@ -442,16 +443,32 @@ class LightingManager {
             };
         }
 
-        const shouldShow = visible || (fogOfWar && explored);
-        const tint = (!visible && fogOfWar && explored) ? 0x333333 : lightTint;
+        // Static entities (walls, doors, etc.) remain visible in remembered areas
+        // Mobile entities (monsters, NPCs, items) are only shown in currently visible areas
+        if (isStatic && fogOfWar && explored && !visible) {
+            // Static entity in remembered but not visible area - show dimmed
+            const dimTint = 0x333333;
+            return {
+                showBase: true,
+                showTop: true,
+                showEquipmentTop: true,
+                baseTint: dimTint,
+                topTint: dimTint,
+                equipmentTopTint: dimTint,
+                animateBase: false,
+                animateTop: false
+            };
+        }
 
+        // Mobile entities only visible in line of sight
+        // Static entities in visible areas use normal lighting
         return {
-            showBase: shouldShow,
-            showTop: shouldShow,
-            showEquipmentTop: shouldShow,
-            baseTint: tint,
-            topTint: tint,
-            equipmentTopTint: tint,
+            showBase: visible,
+            showTop: visible,
+            showEquipmentTop: visible,
+            baseTint: lightTint,
+            topTint: lightTint,
+            equipmentTopTint: lightTint,
             animateBase: visible,
             animateTop: visible
         };

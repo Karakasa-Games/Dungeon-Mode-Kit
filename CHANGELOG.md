@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Pie in the sky
 
+- falling between levels instead of instadeath
+- tile flipbook animations
+- music engine
 - Continuity: start at any specified prototype as whatever that protos controllable actor is, OR enter from stairway as the previous player character, with inventory etc
 - Optional First-person view pane (for perspective dungeon style play)
 - Extend the text discription area to optionally plug into parallel text environments for a paried room in Evennia or inform7 etc for text adventure or mud stuff
@@ -17,7 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### In Progress
 
-- Fire and smoke actors should dissipate better
+- Mining
+- FOV epistemology
+- Ball of thread item and entity trails
 
 ## [0.7b] 2025-01-22
 
@@ -267,12 +272,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Door actors with open/close functionality
 - Opening doors allows light to pass through
 - Configurable ambient light and player light radius in prototype config
-
-### Changed
-
-- Animation frame loading now calculates frame count from texture width rather than hardcoding to 7
-
-### Fixed
-
-- Animated sprites no longer error when spritesheet has fewer than 7 frames
-- Light sources no longer block their own light emission
