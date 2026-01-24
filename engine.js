@@ -1405,7 +1405,21 @@ class Entity {
     hasAttribute(key) {
         return this.attributes.has(key) && this.attributes.get(key);
     }
-    
+
+    /**
+     * Get the entity's name with appropriate article ("the", or none for proper nouns/mass nouns)
+     * @param {boolean} capitalize - Whether to capitalize "The" (default false)
+     * @returns {string} Name with article if appropriate
+     */
+    getNameWithArticle(capitalize = false) {
+        const name = this.name;
+        if (this.hasAttribute('proper_named') || this.hasAttribute('mass_noun')) {
+            return name;
+        }
+        const article = capitalize ? 'The' : 'the';
+        return `${article} ${name}`;
+    }
+
     updatePosition(newX, newY) {
         this.x = newX;
         this.y = newY;
@@ -2165,29 +2179,37 @@ class Actor extends Entity {
         const wearEffect = item.getAttribute('wear_effect');
         if (!wearEffect) return;
 
-        for (const [attr, value] of Object.entries(wearEffect)) {
+        // Store resolved numeric values for proper removal on unequip
+        if (!item._resolvedWearValues) item._resolvedWearValues = {};
+
+        for (const [attr, rawValue] of Object.entries(wearEffect)) {
             const currentValue = this.getAttribute(attr);
 
             // Only apply if actor has this attribute
             if (currentValue === undefined) continue;
 
             // Handle "toggle" value
-            if (value === 'toggle') {
+            if (rawValue === 'toggle') {
                 this.setAttribute(attr, !currentValue);
                 console.log(`${item.name}: toggled ${this.name}'s ${attr} to ${!currentValue}`);
             }
-            // Handle numeric values (add)
-            else if (typeof currentValue === 'number' && typeof value === 'number') {
-                this.setAttribute(attr, currentValue + value);
-                console.log(`${item.name}: ${this.name}'s ${attr} ${value >= 0 ? '+' : ''}${value} (now ${currentValue + value})`);
-            }
             // Handle boolean values (set directly)
-            else if (typeof value === 'boolean') {
+            else if (typeof rawValue === 'boolean') {
                 // Store original value for restoration on unequip
                 if (!item._originalWearValues) item._originalWearValues = {};
                 item._originalWearValues[attr] = currentValue;
-                this.setAttribute(attr, value);
-                console.log(`${item.name}: set ${this.name}'s ${attr} to ${value}`);
+                this.setAttribute(attr, rawValue);
+                console.log(`${item.name}: set ${this.name}'s ${attr} to ${rawValue}`);
+            }
+            // Handle numeric values or attribute references (add)
+            else if (typeof currentValue === 'number') {
+                // Resolve attribute references like "{strength}"
+                const resolvedValue = this.resolveAttributeValue(rawValue, this);
+                if (typeof resolvedValue === 'number' && resolvedValue !== 0) {
+                    item._resolvedWearValues[attr] = resolvedValue;
+                    this.setAttribute(attr, currentValue + resolvedValue);
+                    console.log(`${item.name}: ${this.name}'s ${attr} ${resolvedValue >= 0 ? '+' : ''}${resolvedValue} (now ${currentValue + resolvedValue})`);
+                }
             }
         }
     }
@@ -2200,31 +2222,39 @@ class Actor extends Entity {
         const wearEffect = item.getAttribute('wear_effect');
         if (!wearEffect) return;
 
-        for (const [attr, value] of Object.entries(wearEffect)) {
+        for (const [attr, rawValue] of Object.entries(wearEffect)) {
             const currentValue = this.getAttribute(attr);
 
             // Only remove if actor has this attribute
             if (currentValue === undefined) continue;
 
             // Handle "toggle" value (toggle back)
-            if (value === 'toggle') {
+            if (rawValue === 'toggle') {
                 this.setAttribute(attr, !currentValue);
                 console.log(`${item.name} removed: toggled ${this.name}'s ${attr} to ${!currentValue}`);
             }
-            // Handle numeric values (subtract)
-            else if (typeof currentValue === 'number' && typeof value === 'number') {
-                this.setAttribute(attr, currentValue - value);
-                console.log(`${item.name} removed: ${this.name}'s ${attr} ${value >= 0 ? '-' : '+'}${Math.abs(value)} (now ${currentValue - value})`);
-            }
             // Handle boolean values (restore original)
-            else if (typeof value === 'boolean') {
+            else if (typeof rawValue === 'boolean') {
                 const originalValue = item._originalWearValues?.[attr];
                 if (originalValue !== undefined) {
                     this.setAttribute(attr, originalValue);
                     console.log(`${item.name} removed: restored ${this.name}'s ${attr} to ${originalValue}`);
                 }
             }
+            // Handle numeric values or attribute references (subtract resolved value)
+            else if (typeof currentValue === 'number') {
+                // Use the resolved value that was stored when equipped
+                const resolvedValue = item._resolvedWearValues?.[attr];
+                if (typeof resolvedValue === 'number') {
+                    this.setAttribute(attr, currentValue - resolvedValue);
+                    console.log(`${item.name} removed: ${this.name}'s ${attr} ${resolvedValue >= 0 ? '-' : '+'}${Math.abs(resolvedValue)} (now ${currentValue - resolvedValue})`);
+                }
+            }
         }
+
+        // Clean up stored values
+        delete item._resolvedWearValues;
+        delete item._originalWearValues;
     }
 
     /**
@@ -2844,7 +2874,7 @@ class Actor extends Entity {
      */
     _showMissMessage(target) {
         if (this.hasAttribute('controlled')) {
-            this.engine.inputManager?.showMessage(`You miss the ${target.name}!`);
+            this.engine.inputManager?.showMessage(`You miss ${target.getNameWithArticle()}!`);
         } else {
             // Use template: "The [actor_name] [attacks.miss_verbs] the [attacked_actor_name]!"
             const template = "The [actor_name] [attacks.miss_verbs] the [attacked_actor_name]!";
@@ -3080,7 +3110,7 @@ class Actor extends Entity {
                     this.engine.playSound('push1');
                     // Show push message if player is pushing
                     if (this.hasAttribute('controlled')) {
-                        this.engine.inputManager?.showMessage(`You push the ${actorAtTarget.name}.`);
+                        this.engine.inputManager?.showMessage(`You push ${actorAtTarget.getNameWithArticle()}.`);
                     }
 
                     // Now move into the vacated space
@@ -3324,7 +3354,7 @@ class Actor extends Entity {
         const tileName = this.getTrailTileName(entryDir, exitDir);
         const tileIndex = this.engine.spriteLibrary.resolveTile(tileName);
 
-        console.log(`[Thread] Creating trail at (${pos.x}, ${pos.y}) - entry: ${entryDir}, exit: ${exitDir} -> tile: ${tileName}`);
+        //console.log(`[Thread] Creating trail at (${pos.x}, ${pos.y}) - entry: ${entryDir}, exit: ${exitDir} -> tile: ${tileName}`);
 
         if (!tileIndex) {
             console.warn(`[Thread] Failed to resolve tile: ${tileName}`);
@@ -3565,7 +3595,7 @@ class Actor extends Entity {
         // If this is the player, apply canvas tinting and show message
         if (this.hasAttribute('controlled') && deepActor) {
             this.engine.renderer?.applySubmersionTint(deepActor.tint);
-            this.engine.inputManager?.showMessage(`You are submerged in the ${deepActor.name}!`);
+            this.engine.inputManager?.showMessage(`You are submerged in ${deepActor.getNameWithArticle()}!`);
         }
 
         console.log(`${this.name} submerges in ${deepActor?.name || 'deep liquid'}`);
@@ -3863,42 +3893,112 @@ const BehaviorLibrary = {
     },
 
     /**
-     * Flee from nearby threats
+     * Flee from danger - triggers when standing in harmful tile, hit by thrown item, or low health
+     * @param {Actor} actor - The actor executing the behavior
+     * @param {Object} data - Behavior parameters
+     * @param {number} [data.health_threshold=0.25] - Flee when health drops below this percentage
      */
     flee_from_danger: (actor, data) => {
-        const fleeDistance = data.flee_threshold || 3;
-        const player = actor.engine.entityManager.player;
+        const healthThreshold = data.health_threshold || 0.25;
+        const entityManager = actor.engine.entityManager;
 
-        if (!player || player.isDead) return false;
+        // Helper to check if an actor is harmful (causes damage or negative effects)
+        const isHarmfulActor = (other) => {
+            // Check explicit damage attributes
+            if (other.hasAttribute('damage_type') ||
+                other.hasAttribute('nauseates') ||
+                other.damage_per_turn > 0) {
+                return true;
+            }
+            // Check collision_effect for negative health effects
+            const collisionEffect = other.getAttribute('collision_effect');
+            if (collisionEffect && typeof collisionEffect === 'object') {
+                if (collisionEffect.health !== undefined && collisionEffect.health < 0) {
+                    return true;
+                }
+            }
+            return false;
+        };
 
-        const distance = getChebyshevDistance(actor.x, actor.y, player.x, player.y);
+        // Check trigger conditions
+        let shouldFlee = false;
 
-        // Only flee if player is within flee threshold
-        if (distance > fleeDistance) return false;
+        // Condition 1: Was hit by a thrown item this turn
+        if (actor.wasHitThisTurn) {
+            shouldFlee = true;
+            actor.wasHitThisTurn = false; // Clear the flag
+        }
 
-        // Move away from the player
-        const dx = Math.sign(actor.x - player.x);
-        const dy = Math.sign(actor.y - player.y);
+        // Condition 2: Standing in a harmful non-solid actor
+        if (!shouldFlee) {
+            const actorsHere = entityManager.actors.filter(a =>
+                a !== actor && !a.isDead &&
+                a.x === actor.x && a.y === actor.y &&
+                !a.hasAttribute('solid')
+            );
+            for (const other of actorsHere) {
+                if (isHarmfulActor(other)) {
+                    shouldFlee = true;
+                    break;
+                }
+            }
+        }
 
-        // Try to move directly away
-        if (dx !== 0 && dy !== 0) {
-            const result = actor.tryMove(actor.x + dx, actor.y + dy);
+        // Condition 3: Health below threshold
+        if (!shouldFlee && actor.stats?.health) {
+            const health = actor.stats.health;
+            const currentHealth = typeof health === 'object' ? health.current : health;
+            const maxHealth = typeof health === 'object' ? health.max : health;
+            if (maxHealth > 0 && currentHealth / maxHealth < healthThreshold) {
+                shouldFlee = true;
+            }
+        }
+
+        if (!shouldFlee) return false;
+
+        // Find a safe adjacent tile to flee to
+        const directions = [
+            { dx: 0, dy: -1 }, { dx: 0, dy: 1 },
+            { dx: -1, dy: 0 }, { dx: 1, dy: 0 },
+            { dx: -1, dy: -1 }, { dx: 1, dy: -1 },
+            { dx: -1, dy: 1 }, { dx: 1, dy: 1 }
+        ];
+
+        // Shuffle directions for variety
+        for (let i = directions.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [directions[i], directions[j]] = [directions[j], directions[i]];
+        }
+
+        // Helper to check if a tile is safe (no harmful actors)
+        const isTileSafe = (x, y) => {
+            const actorsThere = entityManager.actors.filter(a =>
+                !a.isDead && a.x === x && a.y === y && !a.hasAttribute('solid')
+            );
+            for (const other of actorsThere) {
+                if (isHarmfulActor(other)) {
+                    return false;
+                }
+            }
+            return true;
+        };
+
+        // Try each direction, preferring safe tiles
+        for (const dir of directions) {
+            const newX = actor.x + dir.dx;
+            const newY = actor.y + dir.dy;
+
+            if (isTileSafe(newX, newY)) {
+                const result = actor.tryMove(newX, newY);
+                if (result.moved || result.actionTaken) return true;
+            }
+        }
+
+        // If no safe tiles, try any movement to escape
+        for (const dir of directions) {
+            const result = actor.tryMove(actor.x + dir.dx, actor.y + dir.dy);
             if (result.moved || result.actionTaken) return true;
         }
-        if (dx !== 0) {
-            const result = actor.tryMove(actor.x + dx, actor.y);
-            if (result.moved || result.actionTaken) return true;
-        }
-        if (dy !== 0) {
-            const result = actor.tryMove(actor.x, actor.y + dy);
-            if (result.moved || result.actionTaken) return true;
-        }
-
-        // Try perpendicular movement as escape
-        let result = actor.tryMove(actor.x + dy, actor.y + dx);
-        if (result.moved || result.actionTaken) return true;
-        result = actor.tryMove(actor.x - dy, actor.y - dx);
-        if (result.moved || result.actionTaken) return true;
 
         return false;
     },
@@ -3929,7 +4029,7 @@ const BehaviorLibrary = {
 
             // Show incineration message for visible actors
             if (other.hasAttribute('visible')) {
-                const otherName = other.hasAttribute('mass_noun') ? other.name : `the ${other.name}`;
+                const otherName = other.getNameWithArticle();
                 actor.engine.inputManager?.showMessage(`The ${actor.name} incinerates ${otherName}!`);
             }
 
@@ -4095,8 +4195,8 @@ const BehaviorLibrary = {
                     actor.engine.inputManager?.showMessage(`The ${gasName} engulfs you! (${effectStr})`);
                 } else if (tileIsVisible && other.hasAttribute('visible')) {
                     // Visible NPC message
-                    const otherName = other.name || 'creature';
-                    actor.engine.inputManager?.showMessage(`The ${gasName} engulfs the ${otherName}. (${effectStr})`);
+                    const otherName = other.getNameWithArticle ? other.getNameWithArticle() : `the ${other.name}`;
+                    actor.engine.inputManager?.showMessage(`The ${gasName} engulfs ${otherName}. (${effectStr})`);
                 }
             }
 

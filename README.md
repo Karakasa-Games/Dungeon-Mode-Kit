@@ -141,6 +141,8 @@ Actor JSON schema (organized by property type):
       "locked": false,         // current locked state
       "sighted": false,        // AI avoids hazards
       "light_source": false,
+      "proper_named": false,   // true for named characters (no "the" prefix)
+      "mass_noun": false,      // true for substances like "water" (no article)
       "inventory": 1,          // max inventory size
       "remains": "skull"       // entity spawned on death
     }

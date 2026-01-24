@@ -14,7 +14,8 @@
     "hostile": true,
     "behaviors": [
       "attack_adjacent",
-      "pursue_target"
+      "pursue_target",
+      "flee_from_danger"
     ]
   },
   

@@ -17,7 +17,7 @@
       "sighted": true,
       "inventory": 1,
       "remains": "skull",
-      "accuracy": 75
+      "accuracy": 40
     },
     "stats": {
       "health": 1
@@ -56,7 +56,7 @@
     "personality": "ranged_attacker",
     "collision_effect": { "health": -8 },
     "collision_sound": "hit",
-    "collision_description": "The [actor_name] [attacks.melee_verbs] the [attacked_actor_name]!",
+    "collision_description": "[actor_name] [attacks.melee_verbs] [attacked_actor_name]!",
     "attributes": {
       "hostile": true,
       "solid": true,
@@ -100,6 +100,7 @@
       "solid": true,
       "visible": true,
       "flammable": true,
+      "proper_named": true,
       "inventory": 1,
       "remains": "skull",
       "strength": 8,

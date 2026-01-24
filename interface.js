@@ -73,6 +73,7 @@ class InterfaceManager {
         const boxContainer = new PIXI.Container();
         boxContainer.x = x * globalVars.TILE_WIDTH;
         boxContainer.y = y * globalVars.TILE_HEIGHT;
+        boxContainer.zIndex = 10; // Above thread trails (zIndex 1-2) but below projectiles (100)
 
         // Create solid fill background
         const fill = new PIXI.Graphics();
@@ -1502,6 +1503,9 @@ class InterfaceManager {
             const hitActor = this.engine.entityManager?.getActorAt(landingPoint.x, landingPoint.y);
 
             if (hitActor) {
+                // Mark actor as hit this turn for flee_from_danger behavior
+                hitActor.wasHitThisTurn = true;
+
                 // Apply collision effect if the item has one
                 const collisionEffect = item.getAttribute('collision_effect');
                 if (collisionEffect) {
@@ -1524,7 +1528,8 @@ class InterfaceManager {
 
                 // Show hit message
                 const displayName = item.getDisplayName ? item.getDisplayName() : item.name;
-                this.engine.inputManager?.showMessage(`The ${displayName} hits the ${hitActor.name}!`);
+                const targetName = hitActor.getNameWithArticle ? hitActor.getNameWithArticle() : `the ${hitActor.name}`;
+                this.engine.inputManager?.showMessage(`The ${displayName} hits ${targetName}!`);
             }
 
             // Item lands at the tile before the hit (or destroyed if breakable)
