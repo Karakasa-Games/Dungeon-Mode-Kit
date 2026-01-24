@@ -3303,6 +3303,14 @@ class Actor extends Entity {
 
         const trailData = item._trailData;
 
+        // Show previously hidden trail segment (was hidden when walking down)
+        if (trailData.hiddenSegment) {
+            const hiddenEntity = trailData.hiddenSegment.entity;
+            if (hiddenEntity?.sprite) hiddenEntity.sprite.alpha = 1;
+            if (hiddenEntity?.tileSprite) hiddenEntity.tileSprite.alpha = 1;
+            trailData.hiddenSegment = null;
+        }
+
         // Check for backtracking (only owner can remove trail, only the last tile)
         if (effect.backtrack_removes && trailData.ownerId === this.id && trailData.positions.length > 0) {
             const lastSegment = trailData.positions[trailData.positions.length - 1];
@@ -3331,13 +3339,21 @@ class Actor extends Entity {
         const entity = this.createTrailEntity(item, effect, fromPos, prevDirection, direction);
 
         if (entity) {
-            trailData.positions.push({
+            const newSegment = {
                 x: fromPos.x,
                 y: fromPos.y,
                 entity: entity,
                 entryDirection: prevDirection,
                 exitDirection: direction
-            });
+            };
+            trailData.positions.push(newSegment);
+
+            // Hide trail segment when walking down (it would overlap actor's top sprite)
+            if (direction === 'down') {
+                if (entity.sprite) entity.sprite.alpha = 0;
+                if (entity.tileSprite) entity.tileSprite.alpha = 0;
+                trailData.hiddenSegment = newSegment;
+            }
         }
     }
 
