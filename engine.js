@@ -1420,6 +1420,34 @@ class Entity {
         return `${article} ${name}`;
     }
 
+    /**
+     * Check if this entity is player-controlled
+     * @returns {boolean}
+     */
+    isPlayerControlled() {
+        return this.hasAttribute('controlled');
+    }
+
+    /**
+     * Show a message to the player (only if this entity is player-controlled)
+     * @param {string} message - The message to display
+     */
+    showMessage(message) {
+        if (this.isPlayerControlled()) {
+            this.engine.inputManager?.showMessage(message);
+        }
+    }
+
+    /**
+     * Play a sound effect
+     * @param {string} soundName - The sound to play
+     */
+    playSound(soundName) {
+        if (soundName) {
+            this.engine.playSound?.(soundName);
+        }
+    }
+
     updatePosition(newX, newY) {
         this.x = newX;
         this.y = newY;
@@ -1880,28 +1908,10 @@ class Actor extends Entity {
         this.setAttribute('open', true);
         this.setAttribute('solid', false);
 
-        if (this.tileIndexBase_open && this.spriteBase) {
-            const tileset = PIXI.Loader.shared.resources.tiles;
-            const rect = new PIXI.Rectangle(
-                this.tileIndexBase_open.x * globalVars.TILE_WIDTH,
-                this.tileIndexBase_open.y * globalVars.TILE_HEIGHT,
-                globalVars.TILE_WIDTH,
-                globalVars.TILE_HEIGHT
-            );
-            this.spriteBase.texture = new PIXI.Texture(tileset.texture.baseTexture, rect);
-        }
+        this.engine.renderer?.updateSpriteTexture(this.spriteBase, this.tileIndexBase_open);
+        this.engine.renderer?.updateSpriteTexture(this.spriteTop, this.tileIndexTop_open);
 
-        if (this.tileIndexTop_open && this.spriteTop) {
-            const tileset = PIXI.Loader.shared.resources.tiles;
-            const rect = new PIXI.Rectangle(
-                this.tileIndexTop_open.x * globalVars.TILE_WIDTH,
-                this.tileIndexTop_open.y * globalVars.TILE_HEIGHT,
-                globalVars.TILE_WIDTH,
-                globalVars.TILE_HEIGHT
-            );
-            this.spriteTop.texture = new PIXI.Texture(tileset.texture.baseTexture, rect);
-        }
-        this.engine.playSound('plunk3');
+        this.playSound('plunk3');
         console.log(`${this.name} opened`);
         this.engine.inputManager?.showMessage(`The ${this.name} opens.`);
     }
@@ -1912,27 +1922,8 @@ class Actor extends Entity {
         this.setAttribute('open', false);
         this.setAttribute('solid', true);
 
-        if (this.tileIndexBase && this.spriteBase) {
-            const tileset = PIXI.Loader.shared.resources.tiles;
-            const rect = new PIXI.Rectangle(
-                this.tileIndexBase.x * globalVars.TILE_WIDTH,
-                this.tileIndexBase.y * globalVars.TILE_HEIGHT,
-                globalVars.TILE_WIDTH,
-                globalVars.TILE_HEIGHT
-            );
-            this.spriteBase.texture = new PIXI.Texture(tileset.texture.baseTexture, rect);
-        }
-
-        if (this.tileIndexTop && this.spriteTop) {
-            const tileset = PIXI.Loader.shared.resources.tiles;
-            const rect = new PIXI.Rectangle(
-                this.tileIndexTop.x * globalVars.TILE_WIDTH,
-                this.tileIndexTop.y * globalVars.TILE_HEIGHT,
-                globalVars.TILE_WIDTH,
-                globalVars.TILE_HEIGHT
-            );
-            this.spriteTop.texture = new PIXI.Texture(tileset.texture.baseTexture, rect);
-        }
+        this.engine.renderer?.updateSpriteTexture(this.spriteBase, this.tileIndexBase);
+        this.engine.renderer?.updateSpriteTexture(this.spriteTop, this.tileIndexTop);
 
         console.log(`${this.name} closed`);
         this.engine.inputManager?.showMessage(`The ${this.name} closes.`);
@@ -1947,20 +1938,12 @@ class Actor extends Entity {
         const tileIndex = this.engine.spriteLibrary.resolveTile(tileRef);
         if (!tileIndex) return;
 
-        const tileset = PIXI.Loader.shared.resources.tiles;
-        const rect = new PIXI.Rectangle(
-            tileIndex.x * globalVars.TILE_WIDTH,
-            tileIndex.y * globalVars.TILE_HEIGHT,
-            globalVars.TILE_WIDTH,
-            globalVars.TILE_HEIGHT
-        );
-
         if (layer === 'base' && this.spriteBase) {
             this.tileIndexBase = tileIndex;
-            this.spriteBase.texture = new PIXI.Texture(tileset.texture.baseTexture, rect);
+            this.engine.renderer?.updateSpriteTexture(this.spriteBase, tileIndex);
         } else if (layer === 'top' && this.spriteTop) {
             this.tileIndexTop = tileIndex;
-            this.spriteTop.texture = new PIXI.Texture(tileset.texture.baseTexture, rect);
+            this.engine.renderer?.updateSpriteTexture(this.spriteTop, tileIndex);
         }
     }
 
@@ -1977,7 +1960,7 @@ class Actor extends Entity {
      */
     act() {
         // Player-controlled actors lock the engine and wait for input
-        if (this.hasAttribute('controlled')) {
+        if (this.isPlayerControlled()) {
             this.engine.turnEngine.lock();
 
             // Update player info box if visible (reflects stat changes from previous turn)
@@ -2018,7 +2001,7 @@ class Actor extends Entity {
 
         // Show death message for visible actors (skip for mass nouns like clouds)
         if (this.hasAttribute('visible') && !this.hasAttribute('mass_noun')) {
-            if (this.hasAttribute('controlled')) {
+            if (this.isPlayerControlled()) {
                 this.engine.inputManager?.showMessage(`You die... \n Press esc to restart`);
             } else if (!this.stats || this.stats.health === undefined) {
                 // Actors without health (breakable objects like walls)
@@ -2083,12 +2066,12 @@ class Actor extends Entity {
         }
 
         // If this was the controlled actor, transition to observer mode
-        if (this.hasAttribute('controlled')) {
+        if (this.isPlayerControlled()) {
             this.engine.onControlledActorDied();
         }
 
         // Check if this death triggers win conditions
-        if (!this.hasAttribute('controlled') && this.engine.checkWinConditions()) {
+        if (!this.isPlayerControlled() && this.engine.checkWinConditions()) {
             this.engine.unlockWinConditionStairways();
         }
 
@@ -2106,7 +2089,7 @@ class Actor extends Entity {
 
         if (this.inventory.length >= maxInventory) {
             console.log(`${this.name}'s inventory is full`);
-            if (this.hasAttribute('controlled')) {
+            if (this.isPlayerControlled()) {
                 const displayName = item.getDisplayName ? item.getDisplayName() : item.name;
                 const article = this.engine.inputManager?.getIndefiniteArticle(displayName) || 'a';
                 this.engine.inputManager?.showMessage(`Your inventory is full. You can't pick up ${article} ${displayName}.`);
@@ -2139,7 +2122,7 @@ class Actor extends Entity {
         }
 
         // Play pickup sound and show message if this is the player
-        if (this.hasAttribute('controlled')) {
+        if (this.isPlayerControlled()) {
             const pickupSound = item.getAttribute('pickup_sound') || 'tone3';
             this.engine.playSound(pickupSound);
 
@@ -2195,7 +2178,7 @@ class Actor extends Entity {
         console.log(`${this.name} equipped ${item.name} (${slot})`);
 
         // Check if this triggers win conditions (for player only)
-        if (this.hasAttribute('controlled') && this.engine.checkWinConditions()) {
+        if (this.isPlayerControlled() && this.engine.checkWinConditions()) {
             this.engine.unlockWinConditionStairways();
         }
     }
@@ -2223,7 +2206,7 @@ class Actor extends Entity {
         console.log(`${this.name} unequipped ${item.name}`);
 
         // Check if this breaks win conditions (for player only)
-        if (this.hasAttribute('controlled') && !this.engine.checkWinConditions()) {
+        if (this.isPlayerControlled() && !this.engine.checkWinConditions()) {
             this.engine.lockWinConditionStairways();
         }
     }
@@ -2473,7 +2456,7 @@ class Actor extends Entity {
         }
 
         // Play use sound if this is the player
-        if (this.hasAttribute('controlled')) {
+        if (this.isPlayerControlled()) {
             const useSound = item.getAttribute('use_sound') || 'tone1';
             this.engine.playSound(useSound);
         }
@@ -2497,7 +2480,7 @@ class Actor extends Entity {
         }
 
         // Show use description to player if available (before identification changes the name)
-        if (success && this.hasAttribute('controlled') && this.engine.inputManager) {
+        if (success && this.isPlayerControlled() && this.engine.inputManager) {
             const useDescription = item.getUseDescription();
             if (useDescription) {
                 this.engine.inputManager.showMessage(useDescription);
@@ -2511,7 +2494,7 @@ class Actor extends Entity {
             console.log(`${this.name} identified the ${identifiedName}!`);
 
             // Show identification message to player (stacks with use description)
-            if (this.hasAttribute('controlled') && this.engine.inputManager) {
+            if (this.isPlayerControlled() && this.engine.inputManager) {
                 this.engine.inputManager.showMessage(`You identified the ${identifiedName}!`);
             }
         }
@@ -2895,7 +2878,7 @@ class Actor extends Entity {
                     }
 
                     // Show mining progress message
-                    if (this.hasAttribute('controlled') && this.engine.inputManager) {
+                    if (this.isPlayerControlled() && this.engine.inputManager) {
                         const progress = Math.min(100, Math.floor((target._miningDamage / breakThreshold) * 100));
                         if (target._miningDamage >= breakThreshold) {
                             this.engine.inputManager.showMessage(`The ${target.name} crumbles!`);
@@ -2954,7 +2937,7 @@ class Actor extends Entity {
                         this.engine.updateLighting();
                         targetPassable = !target.hasAttribute('solid');
 
-                        if (this.hasAttribute('controlled')) {
+                        if (this.isPlayerControlled()) {
                             this.engine.inputManager?.showMessage(`The ${source.name} unlocks the ${targetLockColor} door!`);
                         }
 
@@ -2964,7 +2947,7 @@ class Actor extends Entity {
                         }
                     } else {
                         console.log(`${source.name} (${sourceLockColor || 'no color'}) doesn't match ${target.name} (${targetLockColor})`);
-                        if (this.hasAttribute('controlled') && targetLockColor) {
+                        if (this.isPlayerControlled() && targetLockColor) {
                             this.engine.inputManager?.showMessage(`The ${targetLockColor} door requires a ${targetLockColor} key.`);
                         }
                     }
@@ -2995,7 +2978,7 @@ class Actor extends Entity {
      * @param {Actor} target - The target that was missed
      */
     _showMissMessage(target) {
-        if (this.hasAttribute('controlled')) {
+        if (this.isPlayerControlled()) {
             this.engine.inputManager?.showMessage(`You miss ${target.getNameWithArticle()}!`);
         } else {
             // Use template: "The [actor_name] [attacks.miss_verbs] the [attacked_actor_name]!"
@@ -3128,7 +3111,7 @@ class Actor extends Entity {
         console.log(`${this.name} fell into the void!`);
 
         // Show fall message
-        if (this.hasAttribute('controlled')) {
+        if (this.isPlayerControlled()) {
             this.engine.inputManager?.showMessage(`You plunge into the depths!`);
         } else if (this.hasAttribute('visible')) {
             this.engine.inputManager?.showMessage(`The ${this.name} falls into the void.`);
@@ -3231,7 +3214,7 @@ class Actor extends Entity {
                     console.log(`${this.name} pushes ${actorAtTarget.name}`);
                     this.engine.playSound('push1');
                     // Show push message if player is pushing
-                    if (this.hasAttribute('controlled')) {
+                    if (this.isPlayerControlled()) {
                         this.engine.inputManager?.showMessage(`You push ${actorAtTarget.getNameWithArticle()}.`);
                     }
 
@@ -3241,7 +3224,7 @@ class Actor extends Entity {
                     this.updateSpritePosition();
 
                     // Update lighting if needed
-                    if (this.hasAttribute('controlled') || this.hasAttribute('light_source')) {
+                    if (this.isPlayerControlled() || this.hasAttribute('light_source')) {
                         this.engine.updateLighting();
                     }
 
@@ -3265,7 +3248,7 @@ class Actor extends Entity {
                 if (actorAtTarget.hasAttribute('locked')) {
                     console.log(`${actorAtTarget.name} is locked`);
                     this.engine.playSound?.('tap1');
-                    if (this.hasAttribute('controlled')) {
+                    if (this.isPlayerControlled()) {
                         this.engine.inputManager?.showMessage(`The ${actorAtTarget.name} is locked.`);
                     }
                     return { moved: false, actionTaken: false };
@@ -3277,7 +3260,7 @@ class Actor extends Entity {
 
             // Check for collision_description attribute (for non-combat interactions like locked stairways)
             // Only show if no collision_effect - combat descriptions are handled by applyCollisionEffects
-            if (this.hasAttribute('controlled') &&
+            if (this.isPlayerControlled() &&
                 actorAtTarget.hasAttribute('collision_description') &&
                 !actorAtTarget.hasAttribute('collision_effect')) {
                 this.engine.inputManager?.showMessage(actorAtTarget.getAttribute('collision_description'));
@@ -3317,7 +3300,7 @@ class Actor extends Entity {
         }
 
         // Check for entity walk descriptions (only for player-controlled actors)
-        if (this.hasAttribute('controlled')) {
+        if (this.isPlayerControlled()) {
             const entityAtTarget = this.engine.entityManager.getEntityAt(newX, newY);
             if (entityAtTarget && entityAtTarget.hasAttribute('walk_description')) {
                 this.engine.inputManager?.showMessage(entityAtTarget.getAttribute('walk_description'));
@@ -3325,7 +3308,7 @@ class Actor extends Entity {
         }
 
         // Check for stairway actors (only for player-controlled actors)
-        if (this.hasAttribute('controlled')) {
+        if (this.isPlayerControlled()) {
             const stairway = this.engine.entityManager.getOtherActorAt(newX, newY, this);
             if (stairway && stairway.hasAttribute('stairway')) {
                 const direction = stairway.getAttribute('stairway');
@@ -3340,7 +3323,7 @@ class Actor extends Entity {
         }
 
         // Update lighting if this actor affects it
-        if (this.hasAttribute('controlled') || this.hasAttribute('light_source')) {
+        if (this.isPlayerControlled() || this.hasAttribute('light_source')) {
             this.engine.updateLighting();
         }
 
@@ -3348,13 +3331,13 @@ class Actor extends Entity {
         this.updateSubmersionState();
 
         // Notify interface of player move (for dismissOnMove text boxes)
-        if (this.hasAttribute('controlled') && this.engine.interfaceManager) {
+        if (this.isPlayerControlled() && this.engine.interfaceManager) {
             this.engine.interfaceManager.onPlayerMove();
         }
 
         // Check for entry sound from non-solid actors at destination (for controlled actors)
         let entrySound = null;
-        if (this.hasAttribute('controlled')) {
+        if (this.isPlayerControlled()) {
             const actorAtTarget = this.engine.entityManager.getOtherActorAt(newX, newY, this);
             if (actorAtTarget && !actorAtTarget.hasAttribute('solid') && actorAtTarget.hasAttribute('entry_sound')) {
                 entrySound = actorAtTarget.getAttribute('entry_sound');
@@ -3731,7 +3714,7 @@ class Actor extends Entity {
         }
 
         // If this is the player, apply canvas tinting and show message
-        if (this.hasAttribute('controlled') && deepActor) {
+        if (this.isPlayerControlled() && deepActor) {
             this.engine.renderer?.applySubmersionTint(deepActor.tint);
             this.engine.inputManager?.showMessage(`You are submerged in ${deepActor.getNameWithArticle()}!`);
         }
@@ -3766,7 +3749,7 @@ class Actor extends Entity {
         }
 
         // If this is the player, remove canvas tinting
-        if (this.hasAttribute('controlled')) {
+        if (this.isPlayerControlled()) {
             this.engine.renderer?.removeSubmersionTint();
         }
 
@@ -5018,9 +5001,9 @@ class EntityManager {
 
                 // Spawn the new actor
                 const newActor = this.spawnActor(t.transformTo, t.x, t.y);
-                if (newActor) {
+                /* if (newActor) {
                     console.log(`Initial CA: ${t.actor.type} at (${t.x}, ${t.y}) -> ${t.transformTo}`);
-                }
+                } */
             }
 
             if (transformations.length > 0) {
@@ -7689,6 +7672,24 @@ class RenderSystem {
                 }
             }
         }
+    }
+
+    /**
+     * Update a sprite's texture to a new tile index
+     * @param {PIXI.Sprite} sprite - The sprite to update
+     * @param {Object} tileIndex - The tile index {x, y}
+     */
+    updateSpriteTexture(sprite, tileIndex) {
+        if (!sprite || !tileIndex) return;
+        const tileset = PIXI.Loader.shared.resources.tiles;
+        if (!tileset) return;
+        const rect = new PIXI.Rectangle(
+            tileIndex.x * globalVars.TILE_WIDTH,
+            tileIndex.y * globalVars.TILE_HEIGHT,
+            globalVars.TILE_WIDTH,
+            globalVars.TILE_HEIGHT
+        );
+        sprite.texture = new PIXI.Texture(tileset.texture.baseTexture, rect);
     }
 
     blendTints(baseTint, lightTint) {
