@@ -757,7 +757,7 @@ class DungeonEngine {
         if (hasAuthoredMap) {
             await this.mapManager.loadTiledMap(`${globalVars.BASE_PATH}/prototypes/${prototypeName}/map.tmj`);
         } else {
-            this.mapManager.generateProceduralMap();
+            this.mapManager.generateProceduralMap(prototypeConfig.map_generator);
         }
 
         this.canvasWidth = this.mapManager.width * this.config.tileWidth;
@@ -1517,6 +1517,12 @@ class Item extends Entity {
         if (data.random_effect && engine.currentPrototype) {
             this.generateRandomEffect(engine);
         }
+
+        // Handle random value (e.g., gold nuggets worth 1-10)
+        if (data.random_value && Array.isArray(data.random_value) && data.random_value.length === 2) {
+            const [min, max] = data.random_value;
+            this.value = min + Math.floor(ROT.RNG.getUniform() * (max - min + 1));
+        }
     }
 
     /**
@@ -1851,7 +1857,12 @@ class Actor extends Entity {
             this.inventory.push(item);
             console.log(`${this.name} starts with ${item.name}`);
 
-            // Auto-equip wearable items for now
+            // Auto-equip weapons
+            if (item.hasAttribute('weapon') && !this.equipment.weapon) {
+                this.equipToSlot(item, 'weapon');
+            }
+
+            // Auto-equip wearable items
             const slot = item.getAttribute('wearable');
             if (slot && ['top', 'middle', 'lower'].includes(slot)) {
                 this.equipToSlot(item, slot);
@@ -2009,6 +2020,9 @@ class Actor extends Entity {
         if (this.hasAttribute('visible') && !this.hasAttribute('mass_noun')) {
             if (this.hasAttribute('controlled')) {
                 this.engine.inputManager?.showMessage(`You die... \n Press esc to restart`);
+            } else if (!this.stats || this.stats.health === undefined) {
+                // Actors without health (breakable objects like walls)
+                this.engine.inputManager?.showMessage(`The ${this.name} crumbles.`);
             } else {
                 this.engine.inputManager?.showMessage(`The ${this.name} dies.`);
             }
@@ -2030,6 +2044,23 @@ class Actor extends Entity {
             const remains = this.getAttribute('remains');
             if (remains) {
                 this.engine.entityManager.spawnEntity(remains, this.x, this.y);
+            }
+
+            // Check for lode drop (e.g., rock_wall drops gold_nugget)
+            const lode = this.getAttribute('lode');
+            const lodeChance = this.getAttribute('lode_chance') || 0;
+            if (lode && lodeChance > 0) {
+                const roll = ROT.RNG.getPercentage();
+                if (roll <= lodeChance) {
+                    const droppedItem = this.engine.entityManager.spawnItem(lode, this.x, this.y);
+                    if (droppedItem) {
+                        console.log(`${this.name} dropped ${droppedItem.name}!`);
+                        if (this.engine.inputManager) {
+                            const displayName = droppedItem.getDisplayName ? droppedItem.getDisplayName() : droppedItem.name;
+                            this.engine.inputManager.showMessage(`A ${displayName} falls from the rubble!`);
+                        }
+                    }
+                }
             }
         }
 
@@ -2087,6 +2118,26 @@ class Actor extends Entity {
         this.engine.entityManager.removeEntity(item);
         console.log(`${this.name} picked up ${item.name}`);
 
+        // Apply pickup_effect (e.g., gold adds to wealth)
+        const pickupEffect = item.getAttribute('pickup_effect');
+        if (pickupEffect && typeof pickupEffect === 'object') {
+            for (const [attr, rawValue] of Object.entries(pickupEffect)) {
+                // Resolve {value} references to item's value property
+                let value = rawValue;
+                if (typeof rawValue === 'string' && rawValue === '{value}') {
+                    value = item.value || 0;
+                }
+
+                // Add to actor's attribute (create if doesn't exist)
+                const currentValue = this.getAttribute(attr) || 0;
+                this.setAttribute(attr, currentValue + value);
+                console.log(`${this.name}'s ${attr}: ${currentValue} + ${value} = ${currentValue + value}`);
+            }
+
+            // Item with pickup_effect is consumed (not kept in inventory)
+            this.inventory = this.inventory.filter(i => i !== item);
+        }
+
         // Play pickup sound and show message if this is the player
         if (this.hasAttribute('controlled')) {
             const pickupSound = item.getAttribute('pickup_sound') || 'tone3';
@@ -2095,7 +2146,13 @@ class Actor extends Entity {
             // Show pickup message in description element
             const displayName = item.getDisplayName ? item.getDisplayName() : item.name;
             const article = this.engine.inputManager?.getIndefiniteArticle(displayName) || 'a';
-            this.engine.inputManager?.showMessage(`You pick up ${article} ${displayName}.`);
+
+            // Show value if item had one
+            if (pickupEffect && item.value) {
+                this.engine.inputManager?.showMessage(`You pick up ${article} ${displayName} worth ${item.value}.`);
+            } else {
+                this.engine.inputManager?.showMessage(`You pick up ${article} ${displayName}.`);
+            }
         }
 
         // Auto-equip wearable items
@@ -2638,6 +2695,17 @@ class Actor extends Entity {
 
         // Determine the damage source: equipped weapon takes priority, then actor's own effect
         const equippedWeapon = this.getEquippedWeapon();
+
+        // Skip combat interaction with breakable objects (walls) unless we have a mining tool
+        // These objects have no health stat and can only be damaged by mining
+        const targetIsMineable = target.hasAttribute('breakable') &&
+            (!target.stats || target.stats.health === undefined);
+        const hasMiningTool = equippedWeapon?.hasAttribute('mining');
+
+        if (targetIsMineable && !hasMiningTool) {
+            // Just bump sound, no combat
+            return { effectApplied: false, targetPassable: false };
+        }
         let damageSource = null;
 
         if (equippedWeapon) {
@@ -2702,9 +2770,11 @@ class Actor extends Entity {
             const attackerAccuracy = this.getEffectiveAccuracy();
 
             // Only roll if attacker has accuracy attribute AND target is not incapacitated
+            // Skip hit roll for stationary objects (breakable actors without health) - always hit
             const targetIncapacitated = target.hasAttribute('sleeping') || target.hasAttribute('paralyzed');
+            const targetIsStationary = target.hasAttribute('breakable') && (!target.stats || target.stats.health === undefined);
 
-            if (attackerAccuracy !== null && !targetIncapacitated) {
+            if (attackerAccuracy !== null && !targetIncapacitated && !targetIsStationary) {
                 const targetDefense = target.getEffectiveDefense ? target.getEffectiveDefense() : 0;
                 const hitChance = Math.max(5, Math.min(95, attackerAccuracy - targetDefense));
 
@@ -2784,6 +2854,11 @@ class Actor extends Entity {
                     console.log(`${source.name}: ${target.name}'s ${key} ${value >= 0 ? '+' : ''}${value} (${oldValue} -> ${stat.current})`);
                     sourceApplied = true;
 
+                    // Track attacker for defend_self behavior (when health is reduced)
+                    if (key === 'health' && value < 0 && source.sourceActor) {
+                        target._lastAttacker = source.sourceActor;
+                    }
+
                     if (key === 'health' && stat.current <= 0) {
                         targetShouldDie = true;
                         targetPassable = true;
@@ -2794,6 +2869,53 @@ class Actor extends Entity {
                     sourceApplied = true;
                 }
                 continue;
+            }
+
+            // Handle mining: health damage to breakable actors without health stat
+            if (key === 'health' && isDamageSource && target.hasAttribute('breakable')) {
+                const isMiningWeapon = source.item?.hasAttribute('mining');
+                if (isMiningWeapon) {
+                    // Use mining_power from the weapon, default to 25
+                    const miningPower = source.item.getAttribute('mining_power') || 25;
+                    // Initialize mining damage tracker on target
+                    if (target._miningDamage === undefined) {
+                        target._miningDamage = 0;
+                    }
+                    target._miningDamage += miningPower;
+
+                    // Threshold to break (default 100)
+                    const breakThreshold = target.getAttribute('break_threshold') || 100;
+
+                    console.log(`Mining ${target.name}: ${target._miningDamage}/${breakThreshold}`);
+                    sourceApplied = true;
+
+                    // Play mining sound
+                    if (source.sound) {
+                        this.engine.playSound(source.sound);
+                    }
+
+                    // Show mining progress message
+                    if (this.hasAttribute('controlled') && this.engine.inputManager) {
+                        const progress = Math.min(100, Math.floor((target._miningDamage / breakThreshold) * 100));
+                        if (target._miningDamage >= breakThreshold) {
+                            this.engine.inputManager.showMessage(`The ${target.name} crumbles!`);
+                        } else if (progress >= 75) {
+                            this.engine.inputManager.showMessage(`The ${target.name} is nearly broken.`);
+                        } else if (progress >= 50) {
+                            this.engine.inputManager.showMessage(`Cracks spread through the ${target.name}.`);
+                        } else if (progress >= 25) {
+                            this.engine.inputManager.showMessage(`The ${target.name} chips away.`);
+                        } else {
+                            this.engine.inputManager.showMessage(`You strike the ${target.name}.`);
+                        }
+                    }
+
+                    if (target._miningDamage >= breakThreshold) {
+                        targetShouldDie = true;
+                        // Don't set targetPassable - miner shouldn't move into the space on the same turn
+                    }
+                    continue;
+                }
             }
 
             // Fall back to attributes
@@ -4014,6 +4136,103 @@ const BehaviorLibrary = {
         for (const dir of directions) {
             const result = actor.tryMove(actor.x + dir.dx, actor.y + dir.dy);
             if (result.moved || result.actionTaken) return true;
+        }
+
+        return false;
+    },
+
+    /**
+     * Defend self - attack back if recently attacked by another actor
+     * Sets _lastAttacker when damaged, clears after retaliation
+     */
+    defend_self: (actor) => {
+        const attacker = actor._lastAttacker;
+        if (!attacker || attacker.isDead) {
+            actor._lastAttacker = null;
+            return false;
+        }
+
+        // Check if attacker is adjacent
+        const dx = Math.abs(actor.x - attacker.x);
+        const dy = Math.abs(actor.y - attacker.y);
+        if (dx > 1 || dy > 1) {
+            // Attacker not adjacent, try to move toward them
+            return actor.moveToward(attacker.x, attacker.y);
+        }
+
+        // Attack the attacker
+        const result = actor.applyCollisionEffects(attacker);
+        if (result.effectApplied) {
+            // Clear attacker after successful retaliation (or keep pursuing)
+            // actor._lastAttacker = null;
+            return true;
+        }
+
+        return false;
+    },
+
+    /**
+     * Mine a nearby breakable wall using equipped mining tool
+     */
+    mine_nearby_wall: (actor) => {
+        // Check if actor has a mining tool equipped
+        const equippedWeapon = actor.getEquippedWeapon?.();
+        if (!equippedWeapon || !equippedWeapon.hasAttribute('mining')) {
+            return false;
+        }
+
+        // Check all adjacent tiles for breakable walls
+        const directions = [
+            {dx: 0, dy: -1}, {dx: 0, dy: 1},
+            {dx: -1, dy: 0}, {dx: 1, dy: 0}
+        ];
+
+        // Shuffle for variety
+        for (let i = directions.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [directions[i], directions[j]] = [directions[j], directions[i]];
+        }
+
+        for (const dir of directions) {
+            const targetX = actor.x + dir.dx;
+            const targetY = actor.y + dir.dy;
+            const target = actor.engine.entityManager.getActorAt(targetX, targetY);
+
+            if (target && !target.isDead && target.hasAttribute('breakable')) {
+                // Mine the wall using collision effects (which handles mining damage)
+                const result = actor.applyCollisionEffects(target);
+                if (result.effectApplied) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    },
+
+    /**
+     * Wander toward the nearest breakable wall to mine
+     */
+    wander_to_wall: (actor) => {
+        const entityManager = actor.engine.entityManager;
+        const visionRange = actor.getAttribute('vision_range') || 10;
+
+        // Find nearest breakable wall within vision range
+        let nearestWall = null;
+        let nearestDist = Infinity;
+
+        for (const other of entityManager.actors) {
+            if (other.isDead || !other.hasAttribute('breakable')) continue;
+
+            const dist = Math.abs(other.x - actor.x) + Math.abs(other.y - actor.y);
+            if (dist <= visionRange && dist < nearestDist) {
+                nearestWall = other;
+                nearestDist = dist;
+            }
+        }
+
+        if (nearestWall) {
+            return actor.moveToward(nearestWall.x, nearestWall.y);
         }
 
         return false;
@@ -5281,6 +5500,26 @@ class EntityManager {
         return entity;
     }
 
+    /**
+     * Spawn an item at a specific location
+     * @param {string} itemType - The item type key from items.json
+     * @param {number} x - X coordinate
+     * @param {number} y - Y coordinate
+     * @returns {Item|null} The spawned item or null if item type not found
+     */
+    spawnItem(itemType, x, y) {
+        const itemData = this.engine.currentPrototype.getItemData(itemType);
+        if (!itemData) {
+            console.warn(`Item type '${itemType}' not found`);
+            return null;
+        }
+
+        const item = new Item(x, y, itemType, itemData, this.engine);
+        this.addEntity(item);
+
+        return item;
+    }
+
     serializeEntities() {
         return this.entities.map(e => e.serialize());
     }
@@ -5541,11 +5780,13 @@ class MapManager {
     
     getWildcardType(tileId) {
         // Map tile IDs to wildcard types (built-in procedural types)
+        // Tile IDs are 1-indexed (Tiled format): y * 23 + x + 1
         const builtinWildcards = {
             210: 'maze',
-            10: 'dungeon',   // OPAQUE_INVERSE_DIAMOND_SUITE - ROT.js Digger dungeon with walls and doors
-            16: 'dungeon',   // PRISON_WINDOW - ROT.js Digger rooms + corridors
+            9: 'dungeon',    // OPAQUE_INVERSE_DIAMOND_SUITE [8,0] - ROT.js Digger dungeon with walls and doors
+            16: 'dungeon',   // PRISON_WINDOW [15,0] - ROT.js Digger rooms + corridors
             152: 'dungeon',  // OPAQUE_PRISON_WINDOW - ROT.js Digger rooms + corridors
+            10: 'cave',      // INVERSE_BULLET [9,0] - Cellular automata cave generation
             143: 'room',
             144: 'room',
             12: 'item_spawn',
@@ -5596,20 +5837,176 @@ class MapManager {
         this.actorWildcardCache = null;
     }
     
-    generateProceduralMap() {
-        console.log('Generating procedural map');
+    generateProceduralMap(generatorConfig = {}) {
+        const generatorType = generatorConfig.type || 'digger';
+        const options = generatorConfig.options || {};
 
-        // Use ROT.js Digger for rooms + corridors style generation
-        const dungeon = new ROT.Map.Digger(this.width, this.height);
+        console.log(`Generating procedural map with ${generatorType} generator`);
 
-        dungeon.create((x, y, value) => {
-            if (value === 0) {
-                this.floorMap[y][x] = { tileId: 158, layer: 'floor' };
-                this.walkableTiles.push({x, y});
+        let generator;
+
+        switch (generatorType) {
+            case 'cellular': {
+                // Cave-like maps using cellular automata
+                // Options: born (array), survive (array), topology (4/6/8),
+                //          probability (0-1), iterations (int), connected (bool)
+                generator = new ROT.Map.Cellular(this.width, this.height, {
+                    born: options.born || [5, 6, 7, 8],
+                    survive: options.survive || [4, 5, 6, 7, 8],
+                    topology: options.topology || 8
+                });
+                // Randomize initial state
+                generator.randomize(options.probability || 0.5);
+                // Run iterations to smooth the cave
+                const iterations = options.iterations || 4;
+                for (let i = 0; i < iterations - 1; i++) {
+                    generator.create();
+                }
+                // Track which tiles are floors
+                const floorTiles = new Set();
+                // Final iteration with callback
+                generator.create((x, y, value) => {
+                    if (value === 0) {
+                        this.floorMap[y][x] = { tileId: 158, layer: 'floor' };
+                        this.walkableTiles.push({x, y});
+                        floorTiles.add(`${x},${y}`);
+                    }
+                });
+                // Optionally ensure connectivity
+                if (options.connected !== false) {
+                    generator.connect((x, y, value) => {
+                        if (value === 0 && !this.floorMap[y][x]) {
+                            this.floorMap[y][x] = { tileId: 158, layer: 'floor' };
+                            this.walkableTiles.push({x, y});
+                            floorTiles.add(`${x},${y}`);
+                        }
+                    }, 1);
+                }
+                // Spawn walls in all non-floor tiles
+                // wall_types config: array of { type: "actor_type", weight: number }
+                // e.g. [{ type: "rock_wall", weight: 95 }, { type: "pitchblende_wall", weight: 5 }]
+                const wallTypes = options.wall_types || [{ type: 'wall', weight: 100 }];
+                const totalWeight = wallTypes.reduce((sum, wt) => sum + wt.weight, 0);
+
+                this.pendingWallSpawns = this.pendingWallSpawns || [];
+                for (let y = 0; y < this.height; y++) {
+                    for (let x = 0; x < this.width; x++) {
+                        if (!floorTiles.has(`${x},${y}`)) {
+                            // Pick wall type based on weighted random
+                            let roll = Math.random() * totalWeight;
+                            let wallType = wallTypes[0].type;
+                            for (const wt of wallTypes) {
+                                roll -= wt.weight;
+                                if (roll <= 0) {
+                                    wallType = wt.type;
+                                    break;
+                                }
+                            }
+                            this.pendingWallSpawns.push({ x, y, type: wallType });
+                        }
+                    }
+                }
+                break;
             }
-        });
 
-        console.log('Procedural map generated with', this.walkableTiles.length, 'walkable tiles');
+            case 'uniform':
+                // Rooms with uniform distribution connected by corridors
+                // Options: roomWidth (array [min, max]), roomHeight (array), roomDugPercentage (float)
+                generator = new ROT.Map.Uniform(this.width, this.height, {
+                    roomWidth: options.roomWidth || [3, 9],
+                    roomHeight: options.roomHeight || [3, 5],
+                    roomDugPercentage: options.roomDugPercentage || 0.1
+                });
+                generator.create((x, y, value) => {
+                    if (value === 0) {
+                        this.floorMap[y][x] = { tileId: 158, layer: 'floor' };
+                        this.walkableTiles.push({x, y});
+                    }
+                });
+                break;
+
+            case 'rogue':
+                // Classic Rogue-like dungeon with rooms in a grid
+                // Options: cellWidth, cellHeight, roomWidth (array), roomHeight (array)
+                generator = new ROT.Map.Rogue(this.width, this.height, {
+                    cellWidth: options.cellWidth || 3,
+                    cellHeight: options.cellHeight || 3,
+                    roomWidth: options.roomWidth || [3, 9],
+                    roomHeight: options.roomHeight || [3, 5]
+                });
+                generator.create((x, y, value) => {
+                    if (value === 0) {
+                        this.floorMap[y][x] = { tileId: 158, layer: 'floor' };
+                        this.walkableTiles.push({x, y});
+                    }
+                });
+                break;
+
+            case 'divided_maze':
+                // Recursive division maze
+                generator = new ROT.Map.DividedMaze(this.width, this.height);
+                generator.create((x, y, value) => {
+                    if (value === 0) {
+                        this.floorMap[y][x] = { tileId: 158, layer: 'floor' };
+                        this.walkableTiles.push({x, y});
+                    }
+                });
+                break;
+
+            case 'icey_maze':
+                // Maze with regularity parameter
+                // Options: regularity (0-10, higher = more regular)
+                generator = new ROT.Map.IceyMaze(this.width, this.height, options.regularity || 0);
+                generator.create((x, y, value) => {
+                    if (value === 0) {
+                        this.floorMap[y][x] = { tileId: 158, layer: 'floor' };
+                        this.walkableTiles.push({x, y});
+                    }
+                });
+                break;
+
+            case 'eller_maze':
+                // Perfect maze using Eller's algorithm
+                generator = new ROT.Map.EllerMaze(this.width, this.height);
+                generator.create((x, y, value) => {
+                    if (value === 0) {
+                        this.floorMap[y][x] = { tileId: 158, layer: 'floor' };
+                        this.walkableTiles.push({x, y});
+                    }
+                });
+                break;
+
+            case 'arena':
+                // Simple empty rectangular room
+                generator = new ROT.Map.Arena(this.width, this.height);
+                generator.create((x, y, value) => {
+                    if (value === 0) {
+                        this.floorMap[y][x] = { tileId: 158, layer: 'floor' };
+                        this.walkableTiles.push({x, y});
+                    }
+                });
+                break;
+
+            case 'digger':
+            default:
+                // Rooms + corridors (default)
+                // Options: roomWidth (array), roomHeight (array), corridorLength (array), dugPercentage (float)
+                generator = new ROT.Map.Digger(this.width, this.height, {
+                    roomWidth: options.roomWidth || [3, 9],
+                    roomHeight: options.roomHeight || [3, 5],
+                    corridorLength: options.corridorLength || [3, 10],
+                    dugPercentage: options.dugPercentage || 0.2
+                });
+                generator.create((x, y, value) => {
+                    if (value === 0) {
+                        this.floorMap[y][x] = { tileId: 158, layer: 'floor' };
+                        this.walkableTiles.push({x, y});
+                    }
+                });
+                break;
+        }
+
+        console.log(`Procedural map generated with ${this.walkableTiles.length} walkable tiles`);
     }
     
     async processWildcards() {
@@ -5683,6 +6080,9 @@ class MapManager {
                 break;
             case 'dungeon':
                 this.generateDungeonAt(region.x, region.y, region.width, region.height);
+                break;
+            case 'cave':
+                this.generateCaveAt(region.x, region.y, region.width, region.height);
                 break;
             case 'room':
                 this.generateRoomAt(region.x, region.y, region.width, region.height);
@@ -5911,6 +6311,118 @@ class MapManager {
         console.log(`Dungeon generated: ${floorCells.size} floor tiles, ${filteredWallPositions.length} walls, ${doorPositions.length} doors, ${torchPositions.length} torches`);
     }
 
+    generateCaveAt(startX, startY, width, height) {
+        // Get cave options from prototype config
+        const mapGenConfig = this.engine.currentPrototype?.config?.map_generator?.options || {};
+
+        // Use cellular automata for cave-like terrain
+        // Classic cave settings (B5678/S45678):
+        // - probability 0.5 = 50% cells start as walls
+        // - born [5,6,7,8] = empty cells become walls only if very surrounded
+        // - survive [4,5,6,7,8] = walls need 4+ neighbors to survive
+        // This creates open cave areas with organic wall formations
+        const cave = new ROT.Map.Cellular(width, height, {
+            born: mapGenConfig.born || [5, 6, 7, 8],
+            survive: mapGenConfig.survive || [4, 5, 6, 7, 8],
+            topology: mapGenConfig.topology || 8
+        });
+
+        // Randomize initial state - 0.5 is balanced, lower = more open
+        cave.randomize(mapGenConfig.probability || 0.5);
+
+        // Run several iterations to smooth the cave
+        const iterations = mapGenConfig.iterations || 4;
+        for (let i = 0; i < iterations; i++) {
+            cave.create();
+        }
+
+        // Track floor cells for wall placement
+        const floorCells = new Set();
+        const wallPositions = [];
+
+        // Final iteration with callback
+        cave.create((x, y, value) => {
+            const worldX = startX + x;
+            const worldY = startY + y;
+
+            if (worldX < this.width && worldY < this.height) {
+                // Only generate where there's actually a wildcard tile
+                const wildcard = this.wildcardMap[worldY][worldX];
+                if (!wildcard || wildcard.type !== 'cave') {
+                    return; // Skip non-wildcard areas (preserve authored content)
+                }
+
+                if (value === 0) {
+                    // Passable floor - clear background and place floor tile
+                    this.backgroundMap[worldY][worldX] = null;
+                    this.floorMap[worldY][worldX] = { tileId: 158, layer: 'floor' };
+                    this.walkableTiles.push({x: worldX, y: worldY});
+                    floorCells.add(`${x},${y}`);
+                }
+            }
+        });
+
+        // Ensure connectivity
+        cave.connect((x, y, value) => {
+            const worldX = startX + x;
+            const worldY = startY + y;
+
+            if (value === 0 && worldX < this.width && worldY < this.height) {
+                const wildcard = this.wildcardMap[worldY][worldX];
+                if (wildcard && wildcard.type === 'cave' && !this.floorMap[worldY][worldX]) {
+                    this.backgroundMap[worldY][worldX] = null;
+                    this.floorMap[worldY][worldX] = { tileId: 158, layer: 'floor' };
+                    this.walkableTiles.push({x: worldX, y: worldY});
+                    floorCells.add(`${x},${y}`);
+                }
+            }
+        }, 1);
+
+        // Find wall positions: all non-floor cells within the wildcard region
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                if (floorCells.has(`${x},${y}`)) continue; // Skip floor cells
+
+                const worldX = startX + x;
+                const worldY = startY + y;
+
+                // Check if within map bounds
+                if (worldX >= this.width || worldY >= this.height) continue;
+
+                // Check if this is within the wildcard region
+                const wildcard = this.wildcardMap[worldY][worldX];
+                if (!wildcard || wildcard.type !== 'cave') continue;
+
+                // Clear background and add wall position
+                this.backgroundMap[worldY][worldX] = null;
+                this.floorMap[worldY][worldX] = { tileId: 158, layer: 'floor' };
+                wallPositions.push({x: worldX, y: worldY});
+            }
+        }
+
+        // Store wall positions for later spawning
+        // Use wall_types config from prototype's map_generator options
+        const wallTypes = mapGenConfig.wall_types || [{ type: 'wall', weight: 100 }];
+        const totalWeight = wallTypes.reduce((sum, wt) => sum + wt.weight, 0);
+
+        this.pendingWallSpawns = this.pendingWallSpawns || [];
+        for (const pos of wallPositions) {
+            // Pick wall type based on weighted random
+            let roll = Math.random() * totalWeight;
+            let wallType = wallTypes[0].type;
+            for (const wt of wallTypes) {
+                roll -= wt.weight;
+                if (roll <= 0) {
+                    wallType = wt.type;
+                    break;
+                }
+            }
+            this.pendingWallSpawns.push({ x: pos.x, y: pos.y, type: wallType });
+        }
+
+        console.log(`Cave generated: ${floorCells.size} floor tiles, ${wallPositions.length} walls`);
+    }
+
     generateRoomAt(startX, startY, width, height) {
         const wallPositions = [];
 
@@ -5973,18 +6485,33 @@ class MapManager {
     spawnPendingWalls() {
         if (!this.pendingWallSpawns || this.pendingWallSpawns.length === 0) return;
 
-        const actorData = this.engine.currentPrototype.getActorData('wall');
-        if (!actorData) {
-            console.warn('No wall actor data found');
-            return;
-        }
+        // Cache actor data by type for efficiency
+        const actorDataCache = {};
+        const typeCounts = {};
 
         for (const pos of this.pendingWallSpawns) {
-            const wall = new Actor(pos.x, pos.y, 'wall', actorData, this.engine);
+            const wallType = pos.type || 'wall';
+
+            // Get or cache actor data for this type
+            if (!actorDataCache[wallType]) {
+                actorDataCache[wallType] = this.engine.currentPrototype.getActorData(wallType);
+                if (!actorDataCache[wallType]) {
+                    console.warn(`No actor data found for wall type: ${wallType}`);
+                    continue;
+                }
+                typeCounts[wallType] = 0;
+            }
+
+            const actorData = actorDataCache[wallType];
+            if (!actorData) continue;
+
+            const wall = new Actor(pos.x, pos.y, wallType, actorData, this.engine);
             this.engine.entityManager.addEntity(wall);
+            typeCounts[wallType]++;
         }
 
-        console.log(`Spawned ${this.pendingWallSpawns.length} wall actors`);
+        const summary = Object.entries(typeCounts).map(([type, count]) => `${count} ${type}`).join(', ');
+        console.log(`Spawned wall actors: ${summary}`);
         this.pendingWallSpawns = [];
     }
 

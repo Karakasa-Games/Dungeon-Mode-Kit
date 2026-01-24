@@ -194,7 +194,37 @@
       "remains": "rubble"
     }
   },
-
+  "rock_wall": {
+    "name": "rock",
+    "tileIndexBase": "OPAQUE_DOTTED_LIGHT_SHADE",
+    "tileIndexTop": "OPAQUE_DOTTED_LIGHT_SHADE",
+    "tint": "#332211",
+    "attributes": {
+      "solid": true,
+      "visible": true,
+      "pushable": false,
+      "lode": "gold_nugget",
+      "lode_chance": 20,
+      "breakable": true,
+      "paint_tile": "DARK_SHADE",
+      "remains": "rubble"
+    }
+  },
+  "pitchblende_wall": {
+    "name": "pitchblende",
+    "tileIndexBase": "OPAQUE_DOTTED_LIGHT_SHADE",
+    "tileIndexTop": "OPAQUE_DOTTED_LIGHT_SHADE",
+    "tint": "#222200",
+    "attributes": {
+      "solid": true,
+      "visible": true,
+      "pushable": false,
+      "lode": "uranium_nugget",
+      "lode_chance": 20,
+      "breakable": true,
+      "remains": "rubble"
+    }
+  },
   "torch": {
     "name": "Torch",
     "tileIndexBase": "OPAQUE_INVERSE_DIAMOND_SUITE",

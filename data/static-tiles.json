@@ -33,6 +33,7 @@
         "DOWNWARDS_ARROW_ON_LIGHT_SHADE": [20, 0],
         "UPWARDS_ARROW_ON_LIGHT_SHADE": [21, 0],
         "UNDERSCORE": [22, 0],
+        "INVERSE_THALER_SIGN": [0,1],
         "UPWARDS_ARROW": [1, 1],
         "DOWNWARDS_ARROW": [2, 1],
         "RIGHTWARDS_ARROW": [3, 1],

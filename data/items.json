@@ -164,8 +164,12 @@
       "visible": true,
       "stackable": false,
       "flammable": false,
-      "use_verb": "Dig",
-      "use_effect": "mine_wall"
+      "weapon": true,
+      "mining": true,
+      "mining_power": 35,
+      "collision_effect": { "health": -5 },
+      "collision_sound": "tap2",
+      "collision_description": "[actor_name] swings [a-an] [weapon_name] at the [attacked_actor_name]!"
     }
   },
 
@@ -193,6 +197,36 @@
       "wearable": "top",
       "wear_effect": { "strength": 5 },
       "description": "A long pair of pale horns."
+    }
+  },
+
+  "gold_nugget": {
+    "name": "gold nugget",
+    "tileIndex": "INVERSE_THALER_SIGN",
+    "tint": "#FFD700",
+    "random_value": [1, 10],
+    "attributes": {
+      "pickupable": true,
+      "visible": true,
+      "stackable": false,
+      "flammable": false,
+      "pickup_effect": { "wealth": "{value}" },
+      "description": "A heavy lump of gold."
+    }
+  },
+  "uranium_nugget": {
+    "name": "gold nugget",
+    "tileIndex": "INVERSE_THALER_SIGN",
+    "tint": "#FFD24A",
+    "flickerTint": true,
+    "random_value": [5, 10],
+    "attributes": {
+      "pickupable": true,
+      "visible": true,
+      "stackable": false,
+      "flammable": false,
+      "pickup_effect": { "wealth": "{value}" },
+      "description": "A heavy lump of gold."
     }
   }
 }

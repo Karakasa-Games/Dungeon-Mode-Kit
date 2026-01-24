@@ -124,5 +124,17 @@
     "hostile": false,
     "behaviors": ["game_of_life_step"],
     "cell_type": "gol_cell"
+  },
+
+  "kobold_miner": {
+    "name": "Kobold Miner",
+    "hostile": false,
+    "behaviors": [
+      "flee_from_danger",
+      "defend_self",
+      "mine_nearby_wall",
+      "wander_to_wall",
+      "random_walk"
+    ]
   }
 }
