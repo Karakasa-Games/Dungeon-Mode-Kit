@@ -24,8 +24,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### In Progress
 
 - Mining (works but requires testing and refinement, Currently 3 hits always removes a breakable actor, which feels unnatural)
-- FOV epistemology (currently messages aren't filtered by vision range, make sound alt, also some things like mining walls can still be seen out of range)
+- FOV epistemology (currently messages aren't filtered by vision range, make sound alternate messages for those, also some things like mining walls can still be seen out of range)
 - Ball of thread item and entity trails (this is almost done, last tile of thread is hidden when walking down but still overlaps actor top tile when approaching from under on either side)
+
+## [0.8a] 2025-01-26
+
+### Added
+
+- Combat turn costs:
+  - Item use takes one turn
+  - Multi-turn armor equipping based on strength requirement
+    - Armor with `requires_stat: { strength: X }` takes X turns to equip and can't be equipped without the minimum strength stat
+    - Progress shown in actor list as "(equipping.)" with dots for turns spent
+    - Equipping can be cancelled by starting to equip a different item
+- Knockback weapon proc now staggers target (target loses next turn)
+- Item action menus now close before effects execute for better visual feedback
+
+### Fixed
+
+- Combat message ordering: attack descriptions now appear before death messages
+- Fixed double death messages when multiple enemies attack simultaneously
+- Fixed dead actors being attacked (early exit check in applyCollisionEffects)
+- Fixed multiple minotaurs spawning in arena:
+  - `spawnUnplacedEntities` now skips actors configured in `random_actors`
+  - Arena respawn button properly removes existing minotaurs before spawning new one
+  - `removeEntity` now also removes actor from scheduler
+
+### Changed
+
+- Death is now triggered after attack messages are shown, not during stat modification
+- Updated COMBAT.md with turn costs, knockback stagger, and multi-turn equipping documentation
 
 ## [0.7b] 2025-01-22
 
