@@ -13,18 +13,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - tile flipbook animations
 - music engine
 - Continuity: start at any specified prototype as whatever that protos controllable actor is, OR enter from stairway as the previous player character, with inventory etc
-- Optional First-person view pane (for perspective dungeon style play)
-- Extend the text discription area to optionally plug into parallel text environments for a paried room in Evennia or inform7 etc for text adventure or mud stuff
+- Alternative first-person view pane (for perspective dungeon style play)
+- Extend the text discription area to optionally plug into parallel text environments for a paired room in Evennia or inform7 etc for text adventure or mud stuff?
 
 ### Planned
 
+- stats that have per-turn operations, like "nutrition" that ticks down or "health" that ticks up. Not hard-coded, can be set in actor json when defining the stat. The amount-per-turn can be modified by item wear effects etc.
 - put a counter by repeated description messages rather than let them add additional messages to list
 
 ### In Progress
 
-- Mining
-- FOV epistemology
-- Ball of thread item and entity trails
+- Mining (works but requires testing and refinement, Currently 3 hits always removes a breakable actor, which feels unnatural)
+- FOV epistemology (currently messages aren't filtered by vision range, make sound alt, also some things like mining walls can still be seen out of range)
+- Ball of thread item and entity trails (this is almost done, last tile of thread is hidden when walking down but still overlaps actor top tile when approaching from under on either side)
 
 ## [0.7b] 2025-01-22
 
@@ -33,12 +34,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Optional HTML sidebar for actors and items:
   - `#actors` div displays visible actors with stats
   - `#items` div displays visible items with "Visible Items" header
-  - Controllable actors show integer attributes (strength, inventory count, etc.)
-  - Stats displayed as thermometer bars with current/max ratios
-  - 1/1 stats hidden (for one-hit-death games)
-  - Inventory attribute shown as current/max ratio
-  - Sidebar updates automatically on visibility changes, entity add/remove, and actor death
-  - HTML description Elements are optional - embedded prototypes work without them
+  - `#description` existing area for action messages and hover inspection messages which clear.
+  - Actors with stats are listed in actors, not doors walls lava etc.
+  - Stats with current/max ratios displayed as thermometer bars (1/1 stats hidden)
+  - Inventory attribute shown as current/max ratio numbers not thermometer
+  - Sidebar updates automatically on visibility changes (needs testing), entity add/remove, and actor death
+  - Sidebar elements optional - embedded prototypes work without them, could start simply and then add complexity over each level
 
 ### Fixed
 
