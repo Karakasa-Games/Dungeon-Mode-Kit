@@ -2,7 +2,6 @@
 // ARCHITECT - Dungeon Generation System
 // ============================================================================
 // Handles map generation, loading, and terrain management
-// Replaces MapManager with enhanced room type system inspired by Brogue
 
 class Architect {
     constructor(options = {}) {
@@ -189,7 +188,7 @@ class Architect {
 
     /**
      * Generate a cross-shaped room (two overlapping rectangles)
-     * Brogue-inspired: creates more interesting room shapes
+     *
      */
     generateCrossRoom(startX, startY, width, height, options = {}) {
         const floorTiles = [];
@@ -225,7 +224,6 @@ class Architect {
 
     /**
      * Generate a circular/elliptical room
-     * Brogue-inspired: organic room shapes
      */
     generateCircularRoom(startX, startY, width, height, options = {}) {
         const floorTiles = [];
@@ -251,7 +249,6 @@ class Architect {
 
     /**
      * Generate a chunky/organic room using overlapping circles
-     * Brogue-inspired: creates blob-like cave rooms
      */
     generateChunkyRoom(startX, startY, width, height, options = {}) {
         const floorTiles = [];

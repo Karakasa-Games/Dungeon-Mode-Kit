@@ -1,0 +1,66 @@
+{
+  "player": {
+    "name": "Arena Champion",
+    "tileIndexBase": "WHITE_LEG",
+    "tileIndexTop": "OPAQUE_WHITE_SMILING_FACE",
+    "vision_range": 20,
+    "collision_effect": { "health": "-{strength}" },
+    "collision_sound": "hit",
+    "attributes": {
+      "controlled": true,
+      "solid": true,
+      "visible": true,
+      "flammable": true,
+      "sighted": true,
+      "inventory": 10,
+      "strength": 8,
+      "remains": "skull",
+      "accuracy": 50,
+      "defense": 5
+    },
+    "stats": {
+      "health": 100
+    },
+    "default_items": ["sword"]
+  },
+
+  "minotaur": {
+    "name": "Asterion",
+    "tileIndexBase": "DOOR_TOP",
+    "tileIndexTop": "CABESA_DE_VACA",
+    "personality": "stationed_melee",
+    "collision_effect": { "health": "-{strength}" },
+    "collision_sound": "hit",
+    "death_sound": "minotaur-death",
+    "attributes": {
+      "hostile": true,
+      "solid": true,
+      "visible": true,
+      "flammable": true,
+      "proper_named": true,
+      "inventory": 1,
+      "remains": "skull",
+      "strength": 10,
+      "accuracy": 40,
+      "defense": 15
+    },
+    "stats": {
+      "health": 80
+    }
+  },
+
+  "training_dummy": {
+    "name": "Training Dummy",
+    "tileIndexBase": "CROSS",
+    "tileIndexTop": "BULLET",
+    "attributes": {
+      "hostile": false,
+      "solid": true,
+      "visible": true,
+      "remains": "rubble"
+    },
+    "stats": {
+      "health": 50
+    }
+  }
+}

@@ -55,10 +55,12 @@ Item JSON schema:
       "collision_effect": { "stat": value },  // applied when holder collides (supports "-{attr}" refs)
       "collision_sound": "sound_name",
       "use_verb": "Drink",                    // action menu label
-      "use_effect": { "health": 20 },         // stat modification on use
+      "use_effect": { "health": 20 },         // stat/attribute modification on use
       "use_sound": "sound_name",
+      "weapon": true,                         // or "knockback", "lifesteal", "critical" for proc effects
       "wearable": "top|middle|lower",         // equipment slot
-      "wear_effect": { "strength": 2 },       // stat bonus when worn
+      "requires_stat": { "strength": 8 },     // stat requirements to equip; strength value = turns to equip
+      "wear_effect": { "defense": 5 },        // stat bonuses when worn
       "passive_effect": {                     // effect while in inventory (no equip needed)
         "type": "stat_bonus",                 // stat_bonus or leave_trail
         "defense": 10                         // stat bonuses applied passively
@@ -82,7 +84,7 @@ Item JSON schema:
   ```
 ```
 
-**[Items](/ITEMS.md)**
+**[Items](/ITEMS.md)** | **[Combat](/COMBAT.md)**
 
 **Actor (extends Entity)** - Interactive 2-tile entities (player, monsters, doors, walls)
 
@@ -144,7 +146,10 @@ Actor JSON schema (organized by property type):
       "proper_named": false,   // true for named characters (no "the" prefix)
       "mass_noun": false,      // true for substances like "water" (no article)
       "inventory": 1,          // max inventory size
-      "remains": "skull"       // entity spawned on death
+      "remains": "skull",      // entity spawned on death
+      "accuracy": 70,          // hit chance percentage (combat)
+      "defense": 5,            // reduces hit chance exponentially (combat)
+      "strength": 10           // multiplies weapon damage (combat)
     }
   }
 }
@@ -303,6 +308,7 @@ See [CHANGELOG.md](CHANGELOG.md) for version history and implementation status.
 │       ├── smoke-animation.png
 │       └── static-tiles.png
 ├── CHANGELOG.md
+├── COMBAT.md
 ├── data # Global entity definitions
 │   ├── actors.json  # Actor templates (player, skeleton, wall, fire, etc.)
 │   ├── adjectives.json #wordstuff
@@ -320,6 +326,7 @@ See [CHANGELOG.md](CHANGELOG.md) for version history and implementation status.
 ├── DUNGEON_MODE_KIT_DESIGN.md
 ├── embed-example.html
 ├── architect.js # Map generation and terrain management
+├── arena.html # Combat balance testing page
 ├── engine.js # Core engine
 ├── globals.js # Global variables and constants
 ├── index.html

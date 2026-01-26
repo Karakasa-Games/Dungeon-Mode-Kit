@@ -1877,6 +1877,10 @@ class Actor extends Entity {
 
         this.isDead = false;
 
+        // Equipping state for multi-turn armor equipping
+        this._equippingItem = null;      // Item currently being equipped
+        this._equippingTurnsLeft = 0;    // Turns remaining to finish equipping
+        this._equippingTurnsTotal = 0;   // Total turns needed (for progress display)
 
         this.defaultItems = data.default_items || [];
     }
@@ -1900,6 +1904,10 @@ class Actor extends Entity {
 
             this.inventory.push(item);
             console.log(`${this.name} starts with ${item.name}`);
+
+            // Check stat requirements before auto-equipping
+            const { canEquip } = this.canEquipItem(item);
+            if (!canEquip) continue;
 
             // Auto-equip weapons
             if (item.hasAttribute('weapon') && !this.equipment.weapon) {
@@ -1985,6 +1993,12 @@ class Actor extends Entity {
             return Promise.resolve();
         }
 
+        // Skip turn if staggered from knockback
+        if (this._knockedBack) {
+            this._knockedBack = false;
+            return Promise.resolve();
+        }
+
         // AI actors execute their personality behaviors
         if (this.personality) {
             this.personality.execute(this);
@@ -2005,6 +2019,54 @@ class Actor extends Entity {
                 this.die();
             }
         }
+    }
+
+    /**
+     * Centralized stat modification with immediate UI update
+     * Use this method for all stat changes to ensure UI stays in sync
+     * @param {string} statName - Name of stat to modify (e.g., 'health', 'nutrition')
+     * @param {number} amount - Amount to add (negative for damage/reduction)
+     * @param {Object} options - { skipUIUpdate: false, source: null }
+     * @returns {number|null} New stat value, or null if stat doesn't exist
+     */
+    modifyStat(statName, amount, options = {}) {
+        if (!this.stats || this.stats[statName] === undefined) {
+            return null;
+        }
+
+        const stat = this.stats[statName];
+        let oldValue, newValue;
+
+        if (typeof stat === 'object' && stat.current !== undefined) {
+            // Object format: { max, current }
+            oldValue = stat.current;
+            stat.current = Math.max(0, Math.min(stat.max, stat.current + amount));
+            newValue = stat.current;
+        } else if (typeof stat === 'number') {
+            // Simple number format
+            oldValue = stat;
+            this.stats[statName] += amount;
+            newValue = this.stats[statName];
+        } else {
+            return null;
+        }
+
+        console.log(`${this.name}'s ${statName}: ${oldValue} -> ${newValue} (${amount >= 0 ? '+' : ''}${amount})`);
+
+        // Trigger immediate UI updates
+        if (!options.skipUIUpdate) {
+            // Update player info box if this is the player
+            if (this.isPlayerControlled()) {
+                this.engine.interfaceManager?.updatePlayerInfo();
+            }
+            // Update sidebar actor list (shows all actors' health thermometers)
+            this.engine.interfaceManager?.updateActorsDiv();
+        }
+
+        // Note: Death is handled by applyCollisionEffects AFTER showing the attack message
+        // Don't call die() here to avoid double death and wrong message order
+
+        return newValue;
     }
     
     /**
@@ -2154,10 +2216,15 @@ class Actor extends Entity {
             }
         }
 
-        // Auto-equip wearable items
+        // Auto-equip wearable items (if meets requirements)
         const slot = item.getAttribute('wearable');
         if (slot && ['top', 'middle', 'lower'].includes(slot)) {
-            this.equipToSlot(item, slot);
+            const { canEquip, reason } = this.canEquipItem(item);
+            if (canEquip) {
+                this.equipToSlot(item, slot);
+            } else if (this.isPlayerControlled()) {
+                this.engine.inputManager?.showMessage(`You cannot equip the ${item.name}. ${reason}.`);
+            }
         }
 
         return true;
@@ -2331,6 +2398,31 @@ class Actor extends Entity {
     }
 
     /**
+     * Check if actor meets the stat requirements to equip an item
+     * @param {Item} item - The item to check
+     * @returns {{canEquip: boolean, reason: string|null}} Result with reason if cannot equip
+     */
+    canEquipItem(item) {
+        const requiresStat = item.getAttribute('requires_stat');
+        if (!requiresStat || typeof requiresStat !== 'object') {
+            return { canEquip: true, reason: null };
+        }
+
+        // Check each required stat
+        for (const [stat, requiredValue] of Object.entries(requiresStat)) {
+            const actorValue = this.getAttribute(stat) || 0;
+            if (actorValue < requiredValue) {
+                return {
+                    canEquip: false,
+                    reason: `Requires ${stat} ${requiredValue} (you have ${actorValue})`
+                };
+            }
+        }
+
+        return { canEquip: true, reason: null };
+    }
+
+    /**
      * Check if a specific item is currently equipped
      * @param {Item} item - The item to check
      * @returns {boolean} True if the item is equipped in any slot
@@ -2396,9 +2488,155 @@ class Actor extends Entity {
     }
 
     /**
+     * Calculate hit probability 
+     * This provides diminishing returns on defense stacking
+     * @param {Actor} defender - The target being attacked
+     * @returns {number} Hit probability as percentage (5-95)
+     */
+    calculateHitProbability(defender) {
+        const accuracy = this.getEffectiveAccuracy();
+        if (accuracy === null) return 100; // No accuracy = deterministic hit
+
+        const defense = defender.getEffectiveDefense?.() || 0;
+
+        // Brogue formula: accuracy * 0.987^defense
+        // Each point of defense reduces hit chance by ~1.3% (multiplicatively)
+        const rawProbability = accuracy * Math.pow(0.987, defense);
+
+        // Clamp to 5-95% - always some chance to hit/miss
+        return Math.max(5, Math.min(95, Math.round(rawProbability)));
+    }
+
+    /**
+     * Get the actor's effective strength (base + equipment bonuses)
+     * Strength multiplies weapon damage: damage = base * (strength / 10)
+     * Default strength of 10 = 1x multiplier (no change)
+     * @returns {number} Strength value (10 if no strength attribute - baseline)
+     */
+    getEffectiveStrength() {
+        let base = this.getAttribute('strength');
+        if (base === undefined) base = 10; // Default strength is 10 (1x multiplier)
+
+        // Add bonuses from equipped items' wear_effects
+        for (const slot of ['weapon', 'top', 'middle', 'lower']) {
+            const item = this.equipment[slot];
+            if (item) {
+                const wearEffect = item.getAttribute('wear_effect');
+                if (wearEffect && typeof wearEffect.strength === 'number') {
+                    base += wearEffect.strength;
+                }
+            }
+        }
+
+        // Add passive bonuses from inventory items
+        base += this.getPassiveStatBonus('strength');
+
+        return base;
+    }
+
+    /**
+     * Get weapon type from weapon attribute
+     * Supports boolean (true = 'normal') or string type names
+     * @param {Item} weapon - The weapon item
+     * @returns {string} Weapon type ('normal', 'knockback', 'lifesteal', 'critical')
+     */
+    getWeaponType(weapon) {
+        if (!weapon) return 'normal';
+        const attr = weapon.getAttribute('weapon');
+        if (attr === true) return 'normal';
+        if (typeof attr === 'string') return attr;
+        return 'normal';
+    }
+
+    /**
+     * Apply weapon proc effects after a successful hit
+     * @param {Actor} target - The target that was hit
+     * @param {Item|null} weapon - The weapon used (null for unarmed)
+     * @param {number} damageDealt - Actual damage dealt (negative number)
+     */
+    applyWeaponProc(target, weapon, damageDealt) {
+        if (!weapon) return; // No procs for unarmed attacks
+
+        const weaponType = this.getWeaponType(weapon);
+
+        switch (weaponType) {
+            case 'knockback':
+                this._procKnockback(target);
+                break;
+            case 'lifesteal':
+                this._procLifesteal(damageDealt);
+                break;
+            case 'critical':
+                // Critical is handled during damage calculation, not as a post-hit proc
+                break;
+            case 'normal':
+            default:
+                // No special proc effect
+                break;
+        }
+    }
+
+    /**
+     * Knockback proc: Push target 1 tile away from attacker
+     * @param {Actor} target - The target to knock back
+     */
+    _procKnockback(target) {
+        if (!target || target.isDead) return;
+
+        // Calculate direction from attacker to target
+        const dx = Math.sign(target.x - this.x);
+        const dy = Math.sign(target.y - this.y);
+        const newX = target.x + dx;
+        const newY = target.y + dy;
+
+        // Check if target can be pushed there (use target's isPassableAt which checks floor and actors)
+        const canPush = target.isPassableAt(newX, newY);
+
+        if (canPush) {
+            target.x = newX;
+            target.y = newY;
+            target.updateSpritePosition();
+            target._lastAttacker = null; // Prevent immediate pursuit via defend_self
+            target._knockedBack = true; // Skip next turn due to knockback stagger
+            this.engine.playSound('push1');
+            if (this.isPlayerControlled()) {
+                this.engine.inputManager?.showMessage(`${target.name} is knocked back!`);
+            }
+        }
+    }
+
+    /**
+     * Lifesteal proc: Heal attacker for 25% of damage dealt
+     * @param {number} damageDealt - Damage dealt (negative number)
+     */
+    _procLifesteal(damageDealt) {
+        const healAmount = Math.max(1, Math.floor(Math.abs(damageDealt) * 0.25));
+        this.modifyStat('health', healAmount);
+        if (this.isPlayerControlled()) {
+            this.engine.inputManager?.showMessage(`You drain ${healAmount} health!`);
+        }
+        console.log(`Lifesteal: ${this.name} healed ${healAmount} HP`);
+    }
+
+    /**
+     * Check if critical hit should proc (15% chance)
+     * @param {Item|null} weapon - The weapon being used
+     * @returns {boolean} True if critical hit
+     */
+    checkCriticalHit(weapon) {
+        if (!weapon) return false;
+        const weaponType = this.getWeaponType(weapon);
+        if (weaponType !== 'critical') return false;
+
+        const roll = ROT.RNG.getPercentage();
+        return roll <= 15; // 15% critical chance
+    }
+
+    /**
      * Equip a wearable item or weapon (convenience method)
+     * For armor with strength requirements, starts multi-turn equipping process
      * @param {Item} item - The item to equip
-     * @returns {boolean} True if successfully equipped
+     * @returns {boolean} True if successfully equipped or started equipping
      */
     equipItem(item) {
         if (!this.inventory.includes(item)) {
@@ -2406,7 +2644,24 @@ class Actor extends Entity {
             return false;
         }
 
-        // Check if it's a weapon
+        // Cancel any current equipping if starting a new one
+        if (this._equippingItem && this._equippingItem !== item) {
+            this._equippingItem = null;
+            this._equippingTurnsLeft = 0;
+            this._equippingTurnsTotal = 0;
+        }
+
+        // Check stat requirements
+        const { canEquip, reason } = this.canEquipItem(item);
+        if (!canEquip) {
+            console.log(`${this.name} cannot equip ${item.name}: ${reason}`);
+            if (this.isPlayerControlled()) {
+                this.engine.inputManager?.showMessage(`You cannot equip the ${item.name}. ${reason}.`);
+            }
+            return false;
+        }
+
+        // Check if it's a weapon (instant equip)
         if (item.hasAttribute('weapon')) {
             this.equipToSlot(item, 'weapon');
             return true;
@@ -2419,8 +2674,84 @@ class Actor extends Entity {
             return false;
         }
 
+        // Check for strength requirement - determines equip time
+        const requiresStat = item.getAttribute('requires_stat');
+        const strengthReq = requiresStat?.strength || 0;
+
+        if (strengthReq > 0) {
+            // Start multi-turn equipping process
+            this._equippingItem = item;
+            this._equippingTurnsLeft = strengthReq;
+            this._equippingTurnsTotal = strengthReq;
+
+            if (this.isPlayerControlled()) {
+                this.engine.inputManager?.showMessage(`You begin equipping ${item.name}...`);
+            }
+            return true;
+        }
+
+        // No strength requirement - instant equip
         this.equipToSlot(item, slot);
         return true;
+    }
+
+    /**
+     * Progress the equipping process by one turn
+     * Called when player takes an action while equipping
+     * @returns {boolean} True if still equipping, false if done or not equipping
+     */
+    progressEquipping() {
+        if (!this._equippingItem || this._equippingTurnsLeft <= 0) {
+            return false;
+        }
+
+        this._equippingTurnsLeft--;
+
+        if (this._equippingTurnsLeft <= 0) {
+            // Finished equipping
+            const item = this._equippingItem;
+            const slot = item.getAttribute('wearable');
+
+            this._equippingItem = null;
+            this._equippingTurnsTotal = 0;
+
+            this.equipToSlot(item, slot);
+
+            if (this.isPlayerControlled()) {
+                this.engine.inputManager?.showMessage(`You finish equipping ${item.name}.`);
+            }
+            return false;
+        }
+
+        // Still equipping
+        if (this.isPlayerControlled()) {
+            this.engine.inputManager?.showMessage(`Equipping ${this._equippingItem.name}... (${this._equippingTurnsLeft} turns left)`);
+        }
+        return true;
+    }
+
+    /**
+     * Cancel any in-progress equipping
+     */
+    cancelEquipping() {
+        if (this._equippingItem) {
+            const itemName = this._equippingItem.name;
+            this._equippingItem = null;
+            this._equippingTurnsLeft = 0;
+            this._equippingTurnsTotal = 0;
+
+            if (this.isPlayerControlled()) {
+                this.engine.inputManager?.showMessage(`You stop equipping ${itemName}.`);
+            }
+        }
+    }
+
+    /**
+     * Check if actor is currently equipping something
+     * @returns {boolean} True if in the process of equipping
+     */
+    isEquipping() {
+        return this._equippingItem !== null && this._equippingTurnsLeft > 0;
     }
 
     /**
@@ -2525,35 +2856,44 @@ class Actor extends Entity {
      * @returns {boolean} True if effect executed successfully
      */
     executeItemEffect(item, effect) {
-        // Handle object format: { "health": 20, "nutrition": 10 } for direct stat modification
+        // Handle object format: { "health": 20, "strength": 2, "defense": 5 }
+        // Supports both stats (health, nutrition) and attributes (strength, defense, accuracy, armor)
         if (typeof effect === 'object') {
-            let anyStatModified = false;
-            for (const [statName, amount] of Object.entries(effect)) {
-                if (this.stats[statName] !== undefined) {
-                    // Stats are stored as { max, current } objects
-                    if (typeof this.stats[statName] === 'object') {
-                        const oldValue = this.stats[statName].current;
-                        this.stats[statName].current = Math.min(
-                            this.stats[statName].max,
-                            Math.max(0, this.stats[statName].current + amount)
-                        );
-                        console.log(`${this.name}'s ${statName}: ${oldValue} -> ${this.stats[statName].current}`);
-
-                        // Check for death if health dropped to 0
-                        if (statName === 'health' && this.stats[statName].current <= 0) {
-                            this.die();
-                        }
-                    } else {
-                        // Simple number stat
-                        this.stats[statName] += amount;
-                        console.log(`${this.name}'s ${statName} modified by ${amount}`);
+            let anyModified = false;
+            let shouldDie = false;
+            for (const [key, amount] of Object.entries(effect)) {
+                // Try stat modification first (for health, nutrition, etc.)
+                const statResult = this.modifyStat(key, amount, { source: item });
+                if (statResult !== null) {
+                    anyModified = true;
+                    // Check if health dropped to 0 (for poison effects)
+                    if (key === 'health' && statResult <= 0) {
+                        shouldDie = true;
                     }
-                    anyStatModified = true;
+                    continue;
+                }
+
+                // Fall back to attribute modification (for strength, defense, accuracy, armor)
+                const currentAttr = this.getAttribute(key);
+                if (currentAttr !== undefined && typeof currentAttr === 'number') {
+                    const newValue = currentAttr + amount;
+                    this.setAttribute(key, newValue);
+                    console.log(`${this.name}'s ${key}: ${currentAttr} -> ${newValue} (${amount >= 0 ? '+' : ''}${amount})`);
+                    anyModified = true;
+
+                    // Update UI if player
+                    if (this.isPlayerControlled()) {
+                        this.engine.interfaceManager?.updatePlayerInfo();
+                    }
                 } else {
-                    console.log(`${this.name} has no ${statName} stat to modify`);
+                    console.log(`${this.name} has no ${key} stat or attribute to modify`);
                 }
             }
-            return anyStatModified;
+            // Trigger death after all effects are applied
+            if (shouldDie) {
+                this.die();
+            }
+            return anyModified;
         }
 
         // Handle string format: method name for complex effects
@@ -2688,6 +3028,11 @@ class Actor extends Entity {
      * @returns {{effectApplied: boolean, targetPassable: boolean}}
      */
     applyCollisionEffects(target) {
+        // Skip if target is already dead
+        if (target.isDead) {
+            return { effectApplied: false, targetPassable: true, targetKilled: false };
+        }
+
         let effectApplied = false;
         let targetPassable = false;
         let targetShouldDie = false;
@@ -2774,14 +3119,13 @@ class Actor extends Entity {
             const targetIsStationary = target.hasAttribute('breakable') && (!target.stats || target.stats.health === undefined);
 
             if (attackerAccuracy !== null && !targetIncapacitated && !targetIsStationary) {
-                const targetDefense = target.getEffectiveDefense ? target.getEffectiveDefense() : 0;
-                const hitChance = Math.max(5, Math.min(95, attackerAccuracy - targetDefense));
-
+                const hitChance = this.calculateHitProbability(target);
                 // Use ROT.RNG for deterministic/seedable combat
                 const roll = ROT.RNG.getPercentage(); // Returns 1-100
                 damageHits = roll <= hitChance;
 
-                console.log(`Hit roll: ${roll} vs ${hitChance}% (accuracy ${attackerAccuracy} - defense ${targetDefense}) = ${damageHits ? 'HIT' : 'MISS'}`);
+                const targetDefense = target.getEffectiveDefense?.() || 0;
+                console.log(`Hit roll: ${roll} vs ${hitChance}% (${attackerAccuracy} * 0.987^${targetDefense}) = ${damageHits ? 'HIT' : 'MISS'}`);
             }
             // If no accuracy attribute or target incapacitated, damageHits remains true (deterministic combat)
         }
@@ -2823,7 +3167,7 @@ class Actor extends Entity {
             target.die();
         }
 
-        return { effectApplied, targetPassable };
+        return { effectApplied, targetPassable, targetKilled: targetShouldDie };
     }
 
     /**
@@ -2846,26 +3190,55 @@ class Actor extends Entity {
             if (target.stats && target.stats[key] !== undefined) {
                 if (!isDamageSource) continue; // Skip stat effects for utility sources
 
-                const stat = target.stats[key];
-                if (typeof stat === 'object' && stat.current !== undefined) {
-                    const oldValue = stat.current;
-                    stat.current = Math.min(stat.max, Math.max(0, stat.current + value));
-                    console.log(`${source.name}: ${target.name}'s ${key} ${value >= 0 ? '+' : ''}${value} (${oldValue} -> ${stat.current})`);
+                // Track attacker for defend_self behavior (when health is reduced)
+                if (key === 'health' && value < 0 && source.sourceActor) {
+                    target._lastAttacker = source.sourceActor;
+                }
+
+                let finalValue = value;
+
+                // For health damage from weapons, apply critical hits and strength multiplier
+                if (key === 'health' && value < 0) {
+                    const isWeaponDamage = source.item?.hasAttribute('weapon') ||
+                                           (source.sourceActor && !source.item); // Unarmed counts as weapon damage
+
+                    if (isWeaponDamage && source.sourceActor) {
+                        // Check for critical hit (before strength scaling)
+                        if (source.item && source.sourceActor.checkCriticalHit(source.item)) {
+                            finalValue = value * 2; // Double damage
+                            if (source.sourceActor.isPlayerControlled()) {
+                                source.sourceActor.engine.inputManager?.showMessage('Critical hit!');
+                            }
+                            console.log(`Critical hit! ${value} -> ${finalValue}`);
+                        }
+
+                        // Apply strength multiplier: damage = base * (strength / 10)
+                        const strength = source.sourceActor.getEffectiveStrength();
+                        const multiplier = strength / 10;
+                        const strengthScaledDamage = Math.round(finalValue * multiplier);
+
+                        if (multiplier !== 1) {
+                            console.log(`Strength scaling: ${finalValue} * ${multiplier.toFixed(2)} (str ${strength}) = ${strengthScaledDamage}`);
+                        }
+                        finalValue = strengthScaledDamage;
+                    }
+                }
+
+                // Use centralized modifyStat for immediate UI updates
+                const newValue = target.modifyStat(key, finalValue, { source: source });
+                if (newValue !== null) {
+                    console.log(`${source.name}: applied ${finalValue >= 0 ? '+' : ''}${finalValue} to ${target.name}'s ${key}`);
                     sourceApplied = true;
 
-                    // Track attacker for defend_self behavior (when health is reduced)
-                    if (key === 'health' && value < 0 && source.sourceActor) {
-                        target._lastAttacker = source.sourceActor;
+                    // Apply weapon proc effects after successful damage
+                    if (key === 'health' && finalValue < 0 && source.sourceActor && source.item) {
+                        source.sourceActor.applyWeaponProc(target, source.item, finalValue);
                     }
 
-                    if (key === 'health' && stat.current <= 0) {
+                    if (key === 'health' && newValue <= 0) {
                         targetShouldDie = true;
                         targetPassable = true;
                     }
-                } else if (typeof stat === 'number') {
-                    target.stats[key] += value;
-                    console.log(`${source.name}: ${target.name}'s ${key} ${value >= 0 ? '+' : ''}${value}`);
-                    sourceApplied = true;
                 }
                 continue;
             }
@@ -3253,7 +3626,8 @@ class Actor extends Entity {
             const collisionResult = this.applyCollisionEffects(actorAtTarget);
 
             // If collision effects made the actor passable, try again
-            if (collisionResult.targetPassable) {
+            // But don't move onto a tile where we just killed something - attack is the action
+            if (collisionResult.targetPassable && !collisionResult.targetKilled) {
                 // Recurse to check if we can now move
                 return this.tryMove(newX, newY);
             }
@@ -5176,10 +5550,14 @@ class EntityManager {
         // Types to skip - these are structural or special and shouldn't be randomly spawned
         const skipActorTypes = new Set(['player', 'wall', 'door', 'stairway_up', 'stairway_down']);
 
+        // Also skip actor types that are configured in random_actors (they'll be spawned separately)
+        const randomActorTypes = new Set(Object.keys(prototype.config?.random_actors || {}));
+
         // Spawn unplaced actors (only prototype-specific ones)
         for (const actorType of prototype.prototypeActorTypes || []) {
             if (placedActorTypes.has(actorType)) continue;
             if (skipActorTypes.has(actorType)) continue;
+            if (randomActorTypes.has(actorType)) continue;
 
             const actorData = prototype.getActorData(actorType);
             if (!actorData) continue;
@@ -5482,6 +5860,11 @@ class EntityManager {
         if (entity.tileSprite) {
             entity.tileSprite.destroy();
             entity.tileSprite = null;
+        }
+
+        // Remove from scheduler if it's an actor
+        if (this.engine.scheduler && entity.act) {
+            this.engine.scheduler.remove(entity);
         }
 
         // Update sidebar when entities change

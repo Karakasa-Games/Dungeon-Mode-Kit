@@ -783,10 +783,11 @@ class InterfaceManager {
 
     /**
      * Update the player info box if it's currently visible
-     * Call this after turns complete to reflect stat changes
+     * Call this after stat changes to reflect updates immediately
      */
     updatePlayerInfo() {
-        if (this.inventoryMode && this.currentPlayer && this.boxes.has('player_info')) {
+        // Update regardless of inventoryMode - stat changes should always reflect
+        if (this.currentPlayer && this.boxes.has('player_info')) {
             // Re-render the player info box with updated stats
             this.showPlayerInfo(this.currentPlayer);
         }
@@ -1086,11 +1087,14 @@ class InterfaceManager {
     executeWearItem(item) {
         if (!this.currentPlayer) return;
 
+        // Close menus first
+        this.closeItemActionMenu();
+
         this.currentPlayer.equipItem(item);
 
-        // Close menus and refresh
-        this.closeItemActionMenu();
+        // Refresh and consume turn
         this.showPlayerInfo(this.currentPlayer);
+        this.engine.inputManager?.onPlayerAction();
     }
 
     /**
@@ -1099,11 +1103,14 @@ class InterfaceManager {
     executeRemoveItem(item) {
         if (!this.currentPlayer) return;
 
+        // Close menus first
+        this.closeItemActionMenu();
+
         this.currentPlayer.unequipItem(item);
 
-        // Close menus and refresh
-        this.closeItemActionMenu();
+        // Refresh and consume turn
         this.showPlayerInfo(this.currentPlayer);
+        this.engine.inputManager?.onPlayerAction();
     }
 
     /**
@@ -1112,13 +1119,16 @@ class InterfaceManager {
     executeUseItem(item) {
         if (!this.currentPlayer) return;
 
+        // Close menus first before executing the effect
+        this.closeItemActionMenu();
+
         if (this.currentPlayer.useItem) {
             this.currentPlayer.useItem(item);
         }
 
-        // Close menus and refresh
-        this.closeItemActionMenu();
+        // Refresh and consume turn
         this.showPlayerInfo(this.currentPlayer);
+        this.engine.inputManager?.onPlayerAction();
     }
 
     /**
@@ -2007,7 +2017,16 @@ class InterfaceManager {
         // Build HTML content
         const actorElements = visibleActors.map(actor => {
             let html = `<div class="actor-entry">`;
-            html += `<strong class="actor-name">${actor.name}</strong>`;
+            html += `<strong class="actor-name">${actor.name}`;
+
+            // Show equipping status with dots for progress
+            if (actor.isEquipping && actor.isEquipping()) {
+                const turnsCompleted = actor._equippingTurnsTotal - actor._equippingTurnsLeft;
+                const dots = '.'.repeat(turnsCompleted);
+                html += ` <span class="equipping-status">(equipping${dots})</span>`;
+            }
+
+            html += `</strong>`;
 
             // Add stats as thermometer fills with ratio in an unordered list
             if (actor.stats && Object.keys(actor.stats).length > 0) {
