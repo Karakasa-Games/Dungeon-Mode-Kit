@@ -4,7 +4,7 @@
   "loaded_sound": "levelout",
   "depth": 4,
   "turn_speed": 50,
-  "previous_level": "Catacombs",
+  "previous_level": "Caverns",
   "next_level": "Underworld",
   "mechanics": {
     "fog_of_war": true,

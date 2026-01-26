@@ -622,7 +622,18 @@ class Architect {
         const generatorType = generatorConfig.type || 'digger';
         const options = generatorConfig.options || {};
 
-        console.log(`Generating procedural map with ${generatorType} generator`);
+        // Allow map dimensions from config
+        if (options.map_width) this.width = options.map_width;
+        if (options.map_height) this.height = options.map_height;
+
+        // Recreate maps with new dimensions
+        this.backgroundMap = this.createEmptyMap();
+        this.floorMap = this.createEmptyMap();
+        this.wallMap = this.createEmptyMap();
+        this.wildcardMap = this.createEmptyMap();
+        this.walkableTiles = [];
+
+        console.log(`Generating procedural map with ${generatorType} generator (${this.width}x${this.height})`);
 
         let generator;
 
@@ -833,7 +844,8 @@ class Architect {
             }
 
             case 'digger':
-            default:
+            default: {
+                const diggerFloorTiles = new Set();
                 generator = new ROT.Map.Digger(this.width, this.height, {
                     roomWidth: options.roomWidth || [3, 9],
                     roomHeight: options.roomHeight || [3, 5],
@@ -844,9 +856,85 @@ class Architect {
                     if (value === 0) {
                         this.floorMap[y][x] = { tileId: this.config.defaultFloorTileId, layer: 'floor' };
                         this.walkableTiles.push({ x, y });
+                        diggerFloorTiles.add(`${x},${y}`);
                     }
                 });
+
+                // Queue wall spawns for non-floor tiles adjacent to floors
+                const diggerWallTypes = options.wall_types || [{ type: 'wall', weight: 100 }];
+                const diggerTotalWeight = diggerWallTypes.reduce((sum, wt) => sum + wt.weight, 0);
+
+                const hasDiggerFloor = (fx, fy) => diggerFloorTiles.has(`${fx},${fy}`);
+
+                for (let y = 0; y < this.height; y++) {
+                    for (let x = 0; x < this.width; x++) {
+                        if (diggerFloorTiles.has(`${x},${y}`)) continue;
+
+                        // Check if adjacent to any floor (8-directional)
+                        const adjacentToFloor =
+                            hasDiggerFloor(x - 1, y) || hasDiggerFloor(x + 1, y) ||
+                            hasDiggerFloor(x, y - 1) || hasDiggerFloor(x, y + 1) ||
+                            hasDiggerFloor(x - 1, y - 1) || hasDiggerFloor(x + 1, y - 1) ||
+                            hasDiggerFloor(x - 1, y + 1) || hasDiggerFloor(x + 1, y + 1);
+
+                        if (adjacentToFloor && y > 0) {
+                            let roll = Math.random() * diggerTotalWeight;
+                            let wallType = diggerWallTypes[0].type;
+                            for (const wt of diggerWallTypes) {
+                                roll -= wt.weight;
+                                if (roll <= 0) {
+                                    wallType = wt.type;
+                                    break;
+                                }
+                            }
+                            // Place floor under wall
+                            this.floorMap[y][x] = { tileId: this.config.defaultFloorTileId, layer: 'floor' };
+                            this.pendingWallSpawns.push({ x, y, type: wallType });
+                        }
+                    }
+                }
+
+                // Also spawn doors and torches from rooms
+                const rooms = generator.getRooms();
+                const wallPositions = new Set(this.pendingWallSpawns.map(p => `${p.x},${p.y}`));
+
+                for (const room of rooms) {
+                    // Doors at room connections
+                    room.getDoors((x, y) => {
+                        if (y > 0 && ROT.RNG.getPercentage() <= 50) {
+                            this.pendingDoorSpawns.push({ x, y });
+                        }
+                    });
+
+                    // 30% chance for brazier in room
+                    if (ROT.RNG.getPercentage() <= 30) {
+                        const roomWalls = [];
+                        const left = room.getLeft();
+                        const right = room.getRight();
+                        const top = room.getTop();
+                        const bottom = room.getBottom();
+
+                        // Find walls on room perimeter
+                        for (const wallPos of this.pendingWallSpawns) {
+                            if (wallPos.x >= left - 1 && wallPos.x <= right + 1 &&
+                                wallPos.y >= top - 1 && wallPos.y <= bottom + 1) {
+                                roomWalls.push(wallPos);
+                            }
+                        }
+
+                        if (roomWalls.length > 0) {
+                            const torchPos = roomWalls[Math.floor(ROT.RNG.getUniform() * roomWalls.length)];
+                            this.pendingTorchSpawns.push({ x: torchPos.x, y: torchPos.y });
+                            // Remove from wall spawns
+                            const idx = this.pendingWallSpawns.findIndex(p => p.x === torchPos.x && p.y === torchPos.y);
+                            if (idx !== -1) this.pendingWallSpawns.splice(idx, 1);
+                        }
+                    }
+                }
+
+                console.log(`Digger map: ${diggerFloorTiles.size} floors, ${this.pendingWallSpawns.length} walls, ${this.pendingDoorSpawns.length} doors, ${this.pendingTorchSpawns.length} torches`);
                 break;
+            }
         }
 
         console.log(`Procedural map generated with ${this.walkableTiles.length} walkable tiles`);
