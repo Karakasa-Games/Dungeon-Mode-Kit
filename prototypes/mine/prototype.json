@@ -5,6 +5,7 @@
   "depth": 4,
   "turn_speed": 50,
   "previous_level": "Catacombs",
+  "next_level": "Underworld",
   "mechanics": {
     "fog_of_war": true,
     "darkness": true

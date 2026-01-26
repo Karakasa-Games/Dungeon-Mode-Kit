@@ -68,6 +68,15 @@
     "spawn_on_incinerate": "fire"
   },
 
+  "fire_behavior": {
+    "name": "Fire",
+    "hostile": false,
+    "behaviors": [
+      "fire_spread",
+      "fire_burn_out"
+    ]
+  },
+
   "cloud_behavior": {
     "name": "Cloud",
     "hostile": false,

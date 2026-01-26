@@ -779,6 +779,7 @@ class DungeonEngine {
         this.mapManager.spawnPendingWalls();
         this.mapManager.spawnPendingDoors();
         this.mapManager.spawnPendingTorches();
+        this.mapManager.spawnPendingLava();
 
         // Spawn random actors after wildcard processing (walkable tiles now exist)
         this.entityManager.spawnRandomActorsFromConfig();
@@ -4237,6 +4238,9 @@ const BehaviorLibrary = {
             if (other.isDead) continue;
             if (other.x !== actor.x || other.y !== actor.y) continue;
 
+            // Skip fireproof actors
+            if (other.hasAttribute('fireproof')) continue;
+
             const isSolid = other.hasAttribute('solid');
             const isLiquid = other.hasAttribute('liquid');
 
@@ -4271,8 +4275,8 @@ const BehaviorLibrary = {
         );
 
         for (const item of itemsAtPosition) {
-            // Only incinerate flammable items
-            if (!item.hasAttribute('flammable')) continue;
+            // Skip fireproof items
+            if (item.hasAttribute('fireproof')) continue;
 
             console.log(`${actor.name} incinerates ${item.name}!`);
 
@@ -4282,6 +4286,10 @@ const BehaviorLibrary = {
                 const article = actor.engine.inputManager?.getIndefiniteArticle(displayName) || 'a';
                 actor.engine.inputManager?.showMessage(`The ${actor.name} incinerates ${article} ${displayName}!`);
             }
+
+            // Spawn fire where the item was destroyed
+            entityManager.spawnActor(spawnType, item.x, item.y);
+            actor.engine.playSound?.('fireball');
 
             entityManager.removeEntity(item);
             incinerated = true;
@@ -4403,7 +4411,7 @@ const BehaviorLibrary = {
                 }
             }
 
-            // Show effect message if effects were applied
+            // Show effect message and flash only if effects were applied
             if (effectsApplied.length > 0) {
                 const gasName = actor.type === 'mist' ? 'mist' : 'clouds';
                 const effectStr = effectsApplied.join(', ');
@@ -4416,10 +4424,10 @@ const BehaviorLibrary = {
                     const otherName = other.getNameWithArticle ? other.getNameWithArticle() : `the ${other.name}`;
                     actor.engine.inputManager?.showMessage(`The ${gasName} engulfs ${otherName}. (${effectStr})`);
                 }
-            }
 
-            // Flash the affected actor
-            other.flash?.();
+                // Flash the affected actor
+                other.flash?.();
+            }
         }
 
         return false; // Don't stop other behaviors
@@ -4894,6 +4902,119 @@ const BehaviorLibrary = {
         }
 
         return true;
+    },
+
+    /**
+     * Fire spreading behavior - spreads to adjacent flammable actors/items
+     * Uses actor's spread_chance from actor data
+     */
+    fire_spread: (actor) => {
+        const spreadChance = actor.data?.spread_chance ?? 0.3;
+        const entityManager = actor.engine.entityManager;
+        const mapManager = actor.engine.mapManager;
+
+        // Cardinal directions for fire spread
+        const directions = [
+            {dx: 0, dy: -1}, {dx: 1, dy: 0},
+            {dx: 0, dy: 1},  {dx: -1, dy: 0}
+        ];
+
+        for (const dir of directions) {
+            if (Math.random() > spreadChance) continue;
+
+            const targetX = actor.x + dir.dx;
+            const targetY = actor.y + dir.dy;
+
+            // Check bounds and floor
+            if (targetX < 0 || targetX >= mapManager.width) continue;
+            if (targetY < 0 || targetY >= mapManager.height) continue;
+            const floorTile = mapManager.floorMap?.[targetY]?.[targetX];
+            if (!floorTile || floorTile.tileId <= 0) continue;
+
+            // Don't spread where fire already exists
+            const existingFire = entityManager.actors.find(
+                a => a.x === targetX && a.y === targetY && !a.isDead && a.type === 'fire'
+            );
+            if (existingFire) continue;
+
+            // Check for flammable actors at target position
+            const targetActor = entityManager.actors.find(
+                a => a.x === targetX && a.y === targetY && !a.isDead && a.type !== 'fire'
+            );
+
+            if (targetActor && targetActor.hasAttribute('flammable')) {
+                // Ignite the flammable actor - spawn fire at its position
+                const newFire = entityManager.spawnActor('fire', targetX, targetY);
+                if (newFire) {
+                    newFire.fireLifetime = newFire.lifetime || 5;
+                }
+                continue;
+            }
+
+            // Check for flammable items at target position
+            const targetItem = entityManager.items.find(
+                i => i.x === targetX && i.y === targetY && !i.isDead
+            );
+
+            if (targetItem && targetItem.hasAttribute('flammable')) {
+                // Burn the item and spawn fire
+                targetItem.die();
+                const newFire = entityManager.spawnActor('fire', targetX, targetY);
+                if (newFire) {
+                    newFire.fireLifetime = newFire.lifetime || 5;
+                }
+            }
+        }
+
+        return false;
+    },
+
+    /**
+     * Fire burn out behavior - counts down lifetime and removes fire when expired
+     * Also damages entities standing in the fire
+     */
+    fire_burn_out: (actor) => {
+        const entityManager = actor.engine.entityManager;
+        const damagePerTurn = actor.data?.damage_per_turn ?? 10;
+
+        // Initialize lifetime from actor data if not set
+        if (actor.fireLifetime === undefined) {
+            actor.fireLifetime = actor.lifetime || 5;
+        }
+
+        // Damage any actor standing in the fire (except other fire/lava)
+        const victim = entityManager.actors.find(
+            a => a.x === actor.x && a.y === actor.y && !a.isDead && a !== actor &&
+                 a.type !== 'fire' && a.type !== 'lava' && a.type !== 'intense_fire'
+        );
+
+        if (victim && damagePerTurn > 0 && victim.stats?.health) {
+            const oldHealth = victim.stats.health.current;
+            victim.stats.health.current = Math.max(0, oldHealth - damagePerTurn);
+
+            // Show damage message
+            if (victim.hasAttribute('visible')) {
+                actor.engine.inputManager?.showMessage(`The fire burns ${victim.name} for ${damagePerTurn} damage!`);
+            }
+
+            // Flash the victim
+            victim.flash?.();
+
+            // Check for death
+            if (victim.stats.health.current <= 0) {
+                victim.die();
+            }
+        }
+
+        // Countdown and burn out
+        actor.fireLifetime--;
+
+        if (actor.fireLifetime <= 0) {
+            actor.die();
+            return true;
+        }
+
+        return false;
     }
 };
 
@@ -5770,6 +5891,7 @@ class MapManager {
             16: 'dungeon',   // PRISON_WINDOW [15,0] - ROT.js Digger rooms + corridors
             152: 'dungeon',  // OPAQUE_PRISON_WINDOW - ROT.js Digger rooms + corridors
             10: 'cave',      // INVERSE_BULLET [9,0] - Cellular automata cave generation
+            11: 'infernal',  // INVERSE_WHITE_CIRCLE [10,0] - Cave with lava pools
             143: 'room',
             144: 'room',
             12: 'item_spawn',
@@ -5970,6 +6092,98 @@ class MapManager {
                 });
                 break;
 
+            case 'infernal': {
+                // Infernal caves: cellular automata with lava pools
+                // Options: same as cellular, plus lava_chance (percentage)
+                const infernalCave = new ROT.Map.Cellular(this.width, this.height, {
+                    born: options.born || [5, 6, 7, 8],
+                    survive: options.survive || [4, 5, 6, 7, 8],
+                    topology: options.topology || 8
+                });
+
+                infernalCave.randomize(options.probability || 0.5);
+
+                const infernalIterations = options.iterations || 4;
+                for (let i = 0; i < infernalIterations; i++) {
+                    infernalCave.create();
+                }
+
+                const infernalFloorTiles = new Set();
+
+                infernalCave.create((x, y, value) => {
+                    if (value === 0) {
+                        this.floorMap[y][x] = { tileId: 158, layer: 'floor' };
+                        this.walkableTiles.push({x, y});
+                        infernalFloorTiles.add(`${x},${y}`);
+                    }
+                });
+
+                if (options.connected !== false) {
+                    infernalCave.connect((x, y, value) => {
+                        if (value === 0 && !this.floorMap[y][x]) {
+                            this.floorMap[y][x] = { tileId: 158, layer: 'floor' };
+                            this.walkableTiles.push({x, y});
+                            infernalFloorTiles.add(`${x},${y}`);
+                        }
+                    }, 1);
+                }
+
+                // Generate lava pools using a second cellular pass
+                const lavaChance = options.lava_chance || 15;
+                const lavaCave = new ROT.Map.Cellular(this.width, this.height, {
+                    // Use more forgiving rules for sparse seeding - cells survive with fewer neighbors
+                    born: [4, 5, 6, 7, 8],
+                    survive: [3, 4, 5, 6, 7, 8],
+                    topology: 8
+                });
+
+                lavaCave.randomize(lavaChance / 100);
+
+                // Single iteration to form small pools without dying out
+                lavaCave.create();
+
+                const lavaPositions = [];
+
+                lavaCave.create((x, y, value) => {
+                    if (value === 0) return; // Empty in lava CA = no lava
+                    if (!infernalFloorTiles.has(`${x},${y}`)) return; // Only on floor tiles
+                    lavaPositions.push({ x, y });
+                });
+
+                // Remove lava positions from walkable tiles
+                const lavaSet = new Set(lavaPositions.map(p => `${p.x},${p.y}`));
+                this.walkableTiles = this.walkableTiles.filter(t => !lavaSet.has(`${t.x},${t.y}`));
+
+                // Spawn walls in non-floor tiles
+                const infernalWallTypes = options.wall_types || [{ type: 'wall', weight: 100 }];
+                const infernalTotalWeight = infernalWallTypes.reduce((sum, wt) => sum + wt.weight, 0);
+
+                this.pendingWallSpawns = this.pendingWallSpawns || [];
+                for (let y = 0; y < this.height; y++) {
+                    for (let x = 0; x < this.width; x++) {
+                        if (!infernalFloorTiles.has(`${x},${y}`)) {
+                            let roll = Math.random() * infernalTotalWeight;
+                            let wallType = infernalWallTypes[0].type;
+                            for (const wt of infernalWallTypes) {
+                                roll -= wt.weight;
+                                if (roll <= 0) {
+                                    wallType = wt.type;
+                                    break;
+                                }
+                            }
+                            this.pendingWallSpawns.push({ x, y, type: wallType });
+                        }
+                    }
+                }
+
+                // Store lava positions for spawning
+                this.pendingLavaSpawns = this.pendingLavaSpawns || [];
+                this.pendingLavaSpawns.push(...lavaPositions);
+
+                console.log(`Infernal map generated: ${infernalFloorTiles.size} floor tiles, ${lavaPositions.length} lava tiles`);
+                break;
+            }
+
             case 'digger':
             default:
                 // Rooms + corridors (default)
@@ -6066,6 +6280,9 @@ class MapManager {
                 break;
             case 'cave':
                 this.generateCaveAt(region.x, region.y, region.width, region.height);
+                break;
+            case 'infernal':
+                this.generateInfernalAt(region.x, region.y, region.width, region.height);
                 break;
             case 'room':
                 this.generateRoomAt(region.x, region.y, region.width, region.height);
@@ -6406,6 +6623,148 @@ class MapManager {
         console.log(`Cave generated: ${floorCells.size} floor tiles, ${wallPositions.length} walls`);
     }
 
+    generateInfernalAt(startX, startY, width, height) {
+        // Infernal caves: cellular automata cave with occasional lava pools
+        const mapGenConfig = this.engine.currentPrototype?.config?.map_generator?.options || {};
+
+        // Generate base cave structure
+        const cave = new ROT.Map.Cellular(width, height, {
+            born: mapGenConfig.born || [5, 6, 7, 8],
+            survive: mapGenConfig.survive || [4, 5, 6, 7, 8],
+            topology: mapGenConfig.topology || 8
+        });
+
+        cave.randomize(mapGenConfig.probability || 0.5);
+
+        const iterations = mapGenConfig.iterations || 4;
+        for (let i = 0; i < iterations; i++) {
+            cave.create();
+        }
+
+        // Track cells
+        const floorCells = new Set();
+        const wallPositions = [];
+
+        // Final iteration with callback
+        cave.create((x, y, value) => {
+            const worldX = startX + x;
+            const worldY = startY + y;
+
+            if (worldX < this.width && worldY < this.height) {
+                const wildcard = this.wildcardMap[worldY][worldX];
+                if (!wildcard || wildcard.type !== 'infernal') {
+                    return;
+                }
+
+                if (value === 0) {
+                    this.backgroundMap[worldY][worldX] = null;
+                    this.floorMap[worldY][worldX] = { tileId: 158, layer: 'floor' };
+                    this.walkableTiles.push({x: worldX, y: worldY});
+                    floorCells.add(`${x},${y}`);
+                }
+            }
+        });
+
+        // Ensure connectivity
+        cave.connect((x, y, value) => {
+            const worldX = startX + x;
+            const worldY = startY + y;
+
+            if (value === 0 && worldX < this.width && worldY < this.height) {
+                const wildcard = this.wildcardMap[worldY][worldX];
+                if (wildcard && wildcard.type === 'infernal' && !this.floorMap[worldY][worldX]) {
+                    this.backgroundMap[worldY][worldX] = null;
+                    this.floorMap[worldY][worldX] = { tileId: 158, layer: 'floor' };
+                    this.walkableTiles.push({x: worldX, y: worldY});
+                    floorCells.add(`${x},${y}`);
+                }
+            }
+        }, 1);
+
+        // Generate lava pools using a second cellular pass with different parameters
+        const lavaChance = mapGenConfig.lava_chance || 15; // % chance for lava pool seeds
+        const lavaCave = new ROT.Map.Cellular(width, height, {
+            // Use more forgiving rules for sparse seeding - cells survive with fewer neighbors
+            born: [4, 5, 6, 7, 8],
+            survive: [3, 4, 5, 6, 7, 8],
+            topology: 8
+        });
+
+        // Sparse initial seeding for lava
+        lavaCave.randomize(lavaChance / 100);
+
+        // Single iteration to form small pools without dying out
+        lavaCave.create();
+
+        const lavaPositions = [];
+
+        // Final lava pass - only place lava on floor tiles where lava CA is "alive"
+        lavaCave.create((x, y, value) => {
+            if (value === 0) return; // Empty in lava map = no lava (we want lava where value === 1)
+
+            const worldX = startX + x;
+            const worldY = startY + y;
+
+            if (worldX >= this.width || worldY >= this.height) return;
+
+            const wildcard = this.wildcardMap[worldY][worldX];
+            if (!wildcard || wildcard.type !== 'infernal') return;
+
+            // Only place lava on floor cells (not walls)
+            if (!floorCells.has(`${x},${y}`)) return;
+
+            lavaPositions.push({ x: worldX, y: worldY });
+        });
+
+        // Find wall positions (non-floor, non-lava)
+        const lavaSet = new Set(lavaPositions.map(p => `${p.x},${p.y}`));
+
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                if (floorCells.has(`${x},${y}`)) continue;
+
+                const worldX = startX + x;
+                const worldY = startY + y;
+
+                if (worldX >= this.width || worldY >= this.height) continue;
+
+                const wildcard = this.wildcardMap[worldY][worldX];
+                if (!wildcard || wildcard.type !== 'infernal') continue;
+
+                this.backgroundMap[worldY][worldX] = null;
+                this.floorMap[worldY][worldX] = { tileId: 158, layer: 'floor' };
+                wallPositions.push({x: worldX, y: worldY});
+            }
+        }
+
+        // Remove lava positions from walkable tiles
+        this.walkableTiles = this.walkableTiles.filter(t => !lavaSet.has(`${t.x},${t.y}`));
+
+        // Store wall positions
+        const wallTypes = mapGenConfig.wall_types || [{ type: 'wall', weight: 100 }];
+        const totalWeight = wallTypes.reduce((sum, wt) => sum + wt.weight, 0);
+
+        this.pendingWallSpawns = this.pendingWallSpawns || [];
+        for (const pos of wallPositions) {
+            let roll = Math.random() * totalWeight;
+            let wallType = wallTypes[0].type;
+            for (const wt of wallTypes) {
+                roll -= wt.weight;
+                if (roll <= 0) {
+                    wallType = wt.type;
+                    break;
+                }
+            }
+            this.pendingWallSpawns.push({ x: pos.x, y: pos.y, type: wallType });
+        }
+
+        // Store lava positions for later spawning
+        this.pendingLavaSpawns = this.pendingLavaSpawns || [];
+        this.pendingLavaSpawns.push(...lavaPositions);
+
+        console.log(`Infernal cave generated: ${floorCells.size} floor tiles, ${wallPositions.length} walls, ${lavaPositions.length} lava`);
+    }
+
     generateRoomAt(startX, startY, width, height) {
         const wallPositions = [];
 
@@ -6532,6 +6891,24 @@ class MapManager {
 
         console.log(`Spawned ${this.pendingTorchSpawns.length} brazier actors`);
         this.pendingTorchSpawns = [];
+    }
+
+    spawnPendingLava() {
+        if (!this.pendingLavaSpawns || this.pendingLavaSpawns.length === 0) return;
+
+        const actorData = this.engine.currentPrototype.getActorData('lava');
+        if (!actorData) {
+            console.warn('No lava actor data found');
+            return;
+        }
+
+        for (const pos of this.pendingLavaSpawns) {
+            const lava = new Actor(pos.x, pos.y, 'lava', actorData, this.engine);
+            this.engine.entityManager.addEntity(lava);
+        }
+
+        console.log(`Spawned ${this.pendingLavaSpawns.length} lava actors`);
+        this.pendingLavaSpawns = [];
     }
 
     getRandomWalkableTile() {

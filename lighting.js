@@ -184,6 +184,8 @@ class LightingManager {
             // Check actors within light radius
             for (const actor of this.engine.entityManager.actors) {
                 if (actor === lightSource || actor.isDead) continue;
+                // Non-solid actors (fire, lava, etc.) don't cast shadows
+                if (!actor.hasAttribute('solid')) continue;
 
                 const ax = actor.x;
                 const ay = actor.y;

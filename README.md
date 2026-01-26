@@ -193,10 +193,13 @@ Personality → behaviors[] → BehaviorLibrary
 
 **Environmental Behaviors:**
 
-- `lava_behavior` - Incinerates actors/items, spawns fire
+- `lava_behavior` - Incinerates non-fireproof actors/items, spawns fire
+- `fire_behavior` - Spreads to adjacent flammable entities, burns out after lifetime, damages entities standing in it
 - `cloud_behavior` / `mist_behavior` - Gas clouds that spread, disperse and apply effects
 - `liquid_pooling` - Cellular automata transformation (e.g., sewage → deep_sewage when surrounded)
 - `deep_water_behavior` - Currents that can sweep items from inventory and cause drift
+
+**Fire System:** Lava incinerates any entity without `fireproof` attribute. Fire spreads to adjacent tiles with `flammable` entities. Use `fireproof: true` to make items/actors immune to incineration.
 
 #### MapManager
 

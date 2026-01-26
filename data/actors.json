@@ -69,6 +69,33 @@
       
     }
   },
+  "kobold": {
+    "name": "kobold",
+    "description": "A small humanoid with a stooped back, face hidden beneath a ragged hood.",
+    "tileIndexBase": "LEG",
+    "tileIndexTop": "UPWARD_POINTING_TRIANGLE",
+    "tint": "#8B7355",
+    "vision_range": 10,
+    "personality": "kobold_miner",
+    "collision_effect": { "health": -3 },
+    "collision_sound": "hit",
+    "collision_description": "The [actor_name] strikes back at [attacked_actor_name]!",
+    "attributes": {
+      "hostile": false,
+      "solid": true,
+      "visible": true,
+      "flammable": true,
+      "sighted": true,
+      "inventory": 1,
+      "remains": "skull",
+      "accuracy": 35,
+      "defense": 5
+    },
+    "stats": {
+      "health": 20
+    },
+    "default_items": ["mattock"]
+  },
 
    "deer": {
     "name": "Deer",
@@ -309,7 +336,6 @@
       "visible": true,
       "spreads": false,
       "liquid": true,
-      "ignites": true,
       "nauseates": true,
       "paint_tile": "OPAQUE_DOTTED_LIGHT_SHADE",
       "mass_noun": true,
@@ -330,7 +356,6 @@
       "visible": true,
       "spreads": false,
       "liquid": true,
-      "ignites": true,
       "nauseates": true,
       "mass_noun": true,
       "entry_sound": "step_mud"
@@ -342,14 +367,13 @@
     "tileIndexTop": "BLANK",
     "animated": true,
     "animation_frames": "fluid",
-    "tint": "#FFB49D",
+    "tint": "#FF2200",
     "personality": "lava_behavior",
     "attributes": {
       "solid": false,
       "visible": true,
       "damage_type": "fire",
       "spreads": false,
-      "ignites": false,
       "light_source": true,
       "paint_tile": "DOUBLE_EXCLAMATION_MARK",
       "mass_noun": true
@@ -363,18 +387,38 @@
     "animation_frames": "fire",
     "tint": "#EC7505",
     "flickerTint": true,
+    "personality": "fire_behavior",
     "attributes": {
       "solid": false,
       "visible": true,
       "damage_type": "fire",
-      "spreads": true,
-      "ignites": true,
       "light_source": true,
-      "paint_tile": "OPAQUE_INVERSE_DIAMOND_SUITE"
+      "paint_tile": "OPAQUE_INVERSE_DIAMOND_SUITE",
+      "mass_noun": true
     },
     "damage_per_turn": 10,
     "spread_chance": 0.3,
     "lifetime": 5
+  },
+  "intense_fire": {
+    "name": "Fire",
+    "tileIndexBase": "BLANK",
+    "tileIndexTop": "BLANK",
+    "animated": true,
+    "animation_frames": "fire",
+    "tint": "#FFCCBB",
+    "flickerTint": true,
+    "personality": "fire_behavior",
+    "attributes": {
+      "solid": false,
+      "visible": true,
+      "damage_type": "fire",
+      "light_source": true,
+      "mass_noun": true
+    },
+    "damage_per_turn": 20,
+    "spread_chance": 0.3,
+    "lifetime": 7
   },
 
   "brazier": {
@@ -464,7 +508,8 @@
     "attributes": {
       "solid": false,
       "visible": true,
-      "mass_noun": true
+      "mass_noun": true,
+      "flammable": true
     },
     "collision_effect": {},
     "lifetime": 10
@@ -479,7 +524,8 @@
     "attributes": {
       "solid": false,
       "visible": true,
-      "mass_noun": true
+      "mass_noun": true,
+      "flammable": true
     },
     "collision_effect": {},
     "lifetime": 4

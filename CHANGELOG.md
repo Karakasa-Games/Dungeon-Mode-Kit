@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Mining
 - FOV epistemology
 - Ball of thread item and entity trails
+- light_source actors shouldn't cast a shadow entity
 
 ## [0.7b] 2025-01-22
 
