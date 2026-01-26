@@ -18,12 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Planned
 
+- put a counter by repeated description messages rather than let them add additional messages to list
+
 ### In Progress
 
 - Mining
 - FOV epistemology
 - Ball of thread item and entity trails
-- light_source actors shouldn't cast a shadow entity
 
 ## [0.7b] 2025-01-22
 
@@ -31,17 +32,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Optional HTML sidebar for actors and items:
   - `#actors` div displays visible actors with stats
-  - `#items` div displays visible items with "Items" header
+  - `#items` div displays visible items with "Visible Items" header
   - Controllable actors show integer attributes (strength, inventory count, etc.)
   - Stats displayed as thermometer bars with current/max ratios
   - 1/1 stats hidden (for one-hit-death games)
   - Inventory attribute shown as current/max ratio
   - Sidebar updates automatically on visibility changes, entity add/remove, and actor death
-  - Elements are optional - embedded prototypes work without them
+  - HTML description Elements are optional - embedded prototypes work without them
 
 ### Fixed
 
 - Equipment sprites no longer duplicated when actors have default_items equipped
+- light_source actors no longer cast a shadow entity
 
 ## [0.7a] 2025-01-20
 

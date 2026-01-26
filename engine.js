@@ -868,8 +868,8 @@ class DungeonEngine {
                 health: { max: 1, current: 1 }
             },
             inventory: { max_items: 10 },
-            available_items: ["key", "bow", "arrow"],
-            available_actors: ["player", "monster", "wall"],
+            available_items: ["key", "sword"],
+            available_actors: ["player", "skeleton", "wall"],
             win_conditions: ["reach_exit"]
         };
     }
