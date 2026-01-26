@@ -77,109 +77,63 @@ Actor behavior is controlled by the `personality` attribute (e.g., `"aggressive_
 
 ## Combat System
 
-Combat occurs when actors collide. The system uses RNG-based hit rolls and supports both melee and equipped weapon attacks.
+Combat occurs when actors collide. The system uses exponential hit calculations, strength-based damage scaling, and weapon special effects.
 
-### Hit Calculation
+**See [COMBAT.md](/COMBAT.md) for full documentation.**
 
-When an actor with an `accuracy` attribute attacks a target:
+### Quick Reference
 
-```
-hit_chance = clamp(attacker_accuracy - target_defense, 5, 95)
-```
+**Hit Calculation:** `hit_chance = accuracy × 0.987^defense` (clamped 5-95%)
 
-- Roll uses `ROT.RNG.getPercentage()` (1-100)
-- If roll ≤ hit_chance, the attack hits
-- Minimum 5% hit chance, maximum 95%
+- Exponential formula provides diminishing returns on defense stacking
 - Actors without `accuracy` always hit (deterministic combat)
-- Incapacitated targets (sleeping, paralyzed) are always hit
 
-### Damage Sources
+**Damage Calculation:**
 
-The combat system determines damage from multiple sources in priority order:
+1. Base damage from weapon or actor `collision_effect`
+2. Critical hit check (15% for `"critical"` weapons = 2x damage)
+3. Strength multiplier: `damage × (strength / 10)`
 
-1. **Equipped Weapon**: If the attacker has a weapon in their `equipment.weapon` slot, its `collision_effect` is used, replacing a same-atrribute-effecting actor collision effect
-2. **Actor's Collision Effect**: Falls back to the attacker's own `collision_effect` attribute
+**Combat Attributes:**
 
-Damage values can reference stats using `"{stat}"` syntax (e.g., `"-{strength}"` deals damage equal to the attacker's strength).
+- `accuracy`: Base hit chance percentage
+- `defense`: Reduces hit chance (exponential)
+- `strength`: Multiplies weapon damage (default 10 = 1x)
 
-### Equipment Slots
+**Weapon Types:**
 
-Actors have equipment slots for wearable items and weapons:
+- `"weapon": true` or `"normal"` - Standard weapon
+- `"weapon": "knockback"` - Pushes target back on hit
+- `"weapon": "lifesteal"` - Heals 25% of damage dealt
+- `"weapon": "critical"` - 15% chance for double damage
 
-- **weapon**: Equipped weapon (replaces unarmed `collision_effect`)
-- **top**: Head/hat slot
-- **middle**: Body/torso slot
-- **lower**: Legs/feet slot
-
-Items with `"weapon": true` equip to the weapon slot. Items with `"wearable": "top|middle|lower"` equip to armor slots and render visually on the actor.
-
-### Combat Attributes
-
-**Actor attributes:**
-- `accuracy`: Base hit chance percentage (e.g., 75)
-- `defense`: Reduces attacker's hit chance (e.g., 5)
-- `collision_effect`: Damage/effects applied on unarmed collision
-- `collision_sound`: Sound played when hitting
-- `collision_description`: Template for attack messages
-
-**Item attributes (weapons):**
-- `weapon`: Boolean flag marking item as a weapon
-- `collision_effect`: Damage dealt when equipped weapon hits
-- `collision_sound`: Sound played on weapon hit
-- `collision_description`: Template for weapon attack messages
-
-### Attack Messages
-
-Attack descriptions use template substitution:
-
-```json
-"collision_description": "[actor_name] [attacks.melee_verbs] the [attacked_actor_name] with [a-an] [weapon_name]!"
-```
-
-**Template variables:**
-- `[actor_name]`: The attacker's name
-- `[attacked_actor_name]`: The target's name
-- `[weapon_name]`: Equipped weapon's name (if any)
-- `[attacks.melee_verbs]`: Random verb from `attacks.json` melee_verbs array
-- `[attacks.miss_verbs]`: Random verb from miss_verbs array
-- `[a-an]`: Automatically selects "a" or "an" based on following word
-
-Miss messages are shown when attacks fail the hit roll.
+**Equipment Slots:** `weapon`, `top`, `middle`, `lower`
 
 ### Example Configuration
 
-**Actor with accuracy (actors.json):**
 ```json
 "player": {
-  "collision_effect": { "health": -2 },
-  "collision_description": "You [attacks.melee_verbs] the [attacked_actor_name]!",
+  "collision_effect": { "health": "-{strength}" },
   "attributes": {
-    "accuracy": 75
-  }
-}
-```
-
-**Weapon item (items.json):**
-```json
-"sword": {
-  "name": "Sword",
-  "attributes": {
-    "weapon": true,
-    "collision_effect": { "health": -10 },
-    "collision_description": "[actor_name] [attacks.melee_verbs] the [attacked_actor_name] with [a-an] [weapon_name]!"
-  }
-}
-```
-
-**Enemy with defense (actors.json):**
-```json
-"skeleton": {
-  "collision_effect": { "health": -5 },
-  "collision_description": "The [actor_name] [attacks.melee_verbs] the [attacked_actor_name]!",
-  "attributes": {
-    "hostile": true,
-    "accuracy": 60,
+    "strength": 10,
+    "accuracy": 70,
     "defense": 5
+  }
+}
+
+"minotaur": {
+  "collision_effect": { "health": "-{strength}" },
+  "attributes": {
+    "strength": 12,
+    "accuracy": 80,
+    "defense": 15
+  }
+}
+
+"warhammer": {
+  "attributes": {
+    "weapon": "knockback",
+    "collision_effect": { "health": -8 }
   }
 }
 ```

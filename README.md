@@ -55,10 +55,12 @@ Item JSON schema:
       "collision_effect": { "stat": value },  // applied when holder collides (supports "-{attr}" refs)
       "collision_sound": "sound_name",
       "use_verb": "Drink",                    // action menu label
-      "use_effect": { "health": 20 },         // stat modification on use
+      "use_effect": { "health": 20 },         // stat/attribute modification on use
       "use_sound": "sound_name",
+      "weapon": true,                         // or "knockback", "lifesteal", "critical" for proc effects
       "wearable": "top|middle|lower",         // equipment slot
-      "wear_effect": { "strength": 2 },       // stat bonus when worn
+      "requires_stat": { "strength": 8 },     // stat requirements to equip; strength value = turns to equip
+      "wear_effect": { "defense": 5 },        // stat bonuses when worn
       "passive_effect": {                     // effect while in inventory (no equip needed)
         "type": "stat_bonus",                 // stat_bonus or leave_trail
         "defense": 10                         // stat bonuses applied passively
@@ -82,7 +84,7 @@ Item JSON schema:
   ```
 ```
 
-**[Items](/ITEMS.md)**
+**[Items](/ITEMS.md)** | **[Combat](/COMBAT.md)**
 
 **Actor (extends Entity)** - Interactive 2-tile entities (player, monsters, doors, walls)
 
@@ -144,7 +146,10 @@ Actor JSON schema (organized by property type):
       "proper_named": false,   // true for named characters (no "the" prefix)
       "mass_noun": false,      // true for substances like "water" (no article)
       "inventory": 1,          // max inventory size
-      "remains": "skull"       // entity spawned on death
+      "remains": "skull",      // entity spawned on death
+      "accuracy": 70,          // hit chance percentage (combat)
+      "defense": 5,            // reduces hit chance exponentially (combat)
+      "strength": 10           // multiplies weapon damage (combat)
     }
   }
 }
@@ -201,16 +206,20 @@ Personality → behaviors[] → BehaviorLibrary
 
 **Fire System:** Lava incinerates any entity without `fireproof` attribute. Fire spreads to adjacent tiles with `flammable` entities. Use `fireproof: true` to make items/actors immune to incineration.
 
-#### MapManager
+#### Architect
 
-Handles map loading and procedural generation:
+Handles map loading and procedural generation (see **[ARCHITECT.md](/ARCHITECT.md)** for full documentation):
 
 - **Tiled Integration**: Loads `.tmj` files with floor, background, and object layers for actors and items.
 - **Wildcard System**: Special tiles in the `wildcards` layer trigger procedural content generation. Wildcards detect contiguous regions and generate content sized to fit, preserving any authored content within gaps.
   - `maze` (tile 210) - Generates ROT.js EllerMaze, only filling wildcard tiles
-  - `room` (tiles 143, 144) - Creates rectangular room with wall actors on perimeter
-  - `item_spawn` / `actor_spawn` - Placeholder for random placement (not yet implemented)
-- **Procedural Fallback**: Uses ROT.js Uniform algorithm if no `map.tmj` exists
+  - `dungeon` (tiles 9, 16, 152) - ROT.js Digger with rooms, corridors, doors, and torches
+  - `cave` (tile 10) - Cellular automata organic cave shapes
+  - `infernal` (tile 11) - Cave with lava pools
+  - `room` (tiles 143, 144) - Room type system with Brogue-inspired variants
+  - Actor wildcards - Actors with `paint_tile` attribute spawn at matching tiles
+- **Room Type Registry**: Data-driven room shapes (rectangular, cross, circular, chunky) selected by depth
+- **Procedural Fallback**: Uses ROT.js generators if no `map.tmj` exists
 
 Note: Tiled tile IDs are 1-indexed, so tile 210 in Tiled maps to ID 210 in `getWildcardType()`.
 
@@ -256,11 +265,11 @@ Howler.js wrapper for audio sprite playback with multi-format support.
        └─> loadPrototype('default')
            ├─> loadPrototypeConfig()
            ├─> checkForAuthoredMap()
-           ├─> MapManager.loadTiledMap() or generateProceduralMap()
+           ├─> Architect.loadTiledMap() or generateProceduralMap()
            ├─> initializeRenderer()
            ├─> EntityManager.spawnEntities()
-           ├─> MapManager.processWildcards()
-           ├─> MapManager.spawnPendingWalls()
+           ├─> Architect.processWildcards(context)
+           ├─> Architect.spawnPending*() [walls, doors, torches, lava]
            └─> RenderSystem.renderTestPattern() + renderActors()
 ```
 
@@ -299,6 +308,7 @@ See [CHANGELOG.md](CHANGELOG.md) for version history and implementation status.
 │       ├── smoke-animation.png
 │       └── static-tiles.png
 ├── CHANGELOG.md
+├── COMBAT.md
 ├── data # Global entity definitions
 │   ├── actors.json  # Actor templates (player, skeleton, wall, fire, etc.)
 │   ├── adjectives.json #wordstuff
@@ -315,8 +325,10 @@ See [CHANGELOG.md](CHANGELOG.md) for version history and implementation status.
 ├── DESCRIPTIONS.md
 ├── DUNGEON_MODE_KIT_DESIGN.md
 ├── embed-example.html
+├── architect.js # Map generation and terrain management
+├── arena.html # Combat balance testing page
 ├── engine.js # Core engine
-├── globals.js # Global variables leftover from prototype
+├── globals.js # Global variables and constants
 ├── index.html
 ├── input.js
 ├── interface.js
@@ -332,6 +344,7 @@ See [CHANGELOG.md](CHANGELOG.md) for version history and implementation status.
 ├── LICENSE.txt
 ├── lighting.js
 ├── LIGHTING.md
+├── ARCHITECT.md
 ├── prototypes # individual level definitions and overrides
 │   ├── default # each level gets a folder with map and json files to override/supplement data
 │   │   ├── actors.json

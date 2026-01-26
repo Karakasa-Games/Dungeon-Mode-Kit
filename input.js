@@ -905,6 +905,13 @@ class InputManager {
     }
 
     onPlayerAction() {
+        // Progress any equipping in progress
+        const player = this.engine.entityManager?.player;
+        if (player?.isEquipping()) {
+            player.progressEquipping();
+            this.engine.interfaceManager?.updateSidebar();
+        }
+
         // Called after player takes an action - unlock the turn engine to let AI act
         if (this.engine.turnEngine && this.engine.turnEngine._lock) {
             this.engine.turnEngine.unlock();

@@ -249,5 +249,84 @@
       "pickup_effect": { "wealth": "{value}" },
       "description": "A heavy lump of gold."
     }
+  },
+
+  "warhammer": {
+    "name": "Warhammer",
+    "tileIndex": "LATIN_SMALL_LETTER_R",
+    "attributes": {
+      "pickupable": true,
+      "visible": true,
+      "stackable": false,
+      "flammable": false,
+      "weapon": "knockback",
+      "collision_effect": { "health": -8 },
+      "collision_sound": "tap2",
+      "collision_description": "[actor_name] smashes [attacked_actor_name] with [a-an] [weapon_name]!",
+      "description": "A heavy hammer that knocks enemies back on hit."
+    }
+  },
+
+  "vampiric_blade": {
+    "name": "Vampiric Blade",
+    "tileIndex": "CROSS",
+    "flipV": true,
+    "tint": "#880000",
+    "attributes": {
+      "pickupable": true,
+      "visible": true,
+      "stackable": false,
+      "flammable": false,
+      "weapon": "lifesteal",
+      "collision_effect": { "health": -6 },
+      "collision_sound": "tap2",
+      "collision_description": "[actor_name] slashes [attacked_actor_name] with [a-an] [weapon_name]!",
+      "description": "A dark blade that drains life from enemies."
+    }
+  },
+
+  "assassin_dagger": {
+    "name": "Assassin's Dagger",
+    "tileIndex": "LATIN_SMALL_LETTER_T",
+    "attributes": {
+      "pickupable": true,
+      "visible": true,
+      "stackable": false,
+      "flammable": false,
+      "weapon": "critical",
+      "collision_effect": { "health": -4 },
+      "collision_sound": "tap2",
+      "collision_description": "[actor_name] stabs [attacked_actor_name] with [a-an] [weapon_name]!",
+      "description": "A lightweight dagger with a 15% chance for critical hits (double damage)."
+    }
+  },
+
+  "chainmail": {
+    "name": "Chainmail",
+    "tileIndex": "WHITE_LEG",
+    "tint": "#CCEECC",
+    "attributes": {
+      "pickupable": true,
+      "visible": true,
+      "stackable": false,
+      "wearable": "lower",
+      "wear_effect": { "defense": 8 },
+      "description": "Interlocking metal rings that make you harder to hit."
+    }
+  },
+
+  "plate": {
+    "name": "Plate Armor",
+    "tileIndex": "WHITE_LEG",
+    "tint": "#888888",
+    "attributes": {
+      "pickupable": true,
+      "visible": true,
+      "stackable": false,
+      "wearable": "lower",
+      "requires_stat": { "strength": 8 },
+      "wear_effect": { "defense": 10 },
+      "description": "A suit of heavy iron plate. Requires strength 8 to wear."
+    }
   }
 }

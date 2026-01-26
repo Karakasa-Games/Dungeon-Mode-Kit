@@ -1,0 +1,32 @@
+{
+  "name": "Combat Arena",
+  "description": "A test arena for combat mechanics.\nDefeat the Minotaur to proceed.\nPress 'i' for info.",
+  "loaded_sound": "tone3",
+  "depth": 99,
+  "turn_speed": 50,
+  "mechanics": {
+    "fog_of_war": false,
+    "darkness": false
+  },
+  "map_generator": {
+    "type": "arena",
+    "options": {
+      "map_width": 25,
+      "map_height": 20
+    }
+  },
+  "random_actors": {
+    "minotaur": { "chance": 100, "min": 1, "max": 1 },
+    "training_dummy": { "chance": 100, "min": 2, "max": 2 }
+  },
+  "random_items": {
+    "strength_potion": { "chance": 100, "min": 2, "max": 3 },
+    "health_potion": { "chance": 100, "min": 3, "max": 3 },
+    "warhammer": { "chance": 100, "min": 1, "max": 1 },
+    "vampiric_blade": { "chance": 100, "min": 1, "max": 1 },
+    "assassin_dagger": { "chance": 100, "min": 1, "max": 1 },
+    "chainmail": { "chance": 100, "min": 1, "max": 1 },
+    "plate": { "chance": 100, "min": 1, "max": 1 }
+  },
+  "win_conditions": ["killed:minotaur"]
+}

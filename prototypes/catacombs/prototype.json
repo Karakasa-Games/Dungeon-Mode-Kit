@@ -5,6 +5,7 @@
   "depth": 3,
   "turn_speed": 50,
   "previous_level": "labyrinth",
+  "next_level": "dungeon",
   "mechanics": {
     "fog_of_war": true,
     "darkness": true
