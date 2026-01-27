@@ -433,7 +433,7 @@ class DungeonEngine {
     async loadGlobalData() {
         try {
             // Load global entity definitions
-            const [actorsRes, itemsRes, personalitiesRes, entitiesRes, colorsRes, adjectivesRes, attacksRes, reagentsRes] = await Promise.all([
+            const [actorsRes, itemsRes, personalitiesRes, entitiesRes, colorsRes, adjectivesRes, attacksRes, reagentsRes, substancesRes] = await Promise.all([
                 fetch(`${globalVars.BASE_PATH}/data/actors.json`),
                 fetch(`${globalVars.BASE_PATH}/data/items.json`),
                 fetch(`${globalVars.BASE_PATH}/data/personalities.json`),
@@ -441,7 +441,8 @@ class DungeonEngine {
                 fetch(`${globalVars.BASE_PATH}/data/colors.json`),
                 fetch(`${globalVars.BASE_PATH}/data/adjectives.json`),
                 fetch(`${globalVars.BASE_PATH}/data/attacks.json`),
-                fetch(`${globalVars.BASE_PATH}/data/reagents.json`)
+                fetch(`${globalVars.BASE_PATH}/data/reagents.json`),
+                fetch(`${globalVars.BASE_PATH}/data/substances.json`)
             ]);
 
             this.globalActors = await actorsRes.json();
@@ -457,6 +458,9 @@ class DungeonEngine {
             const fullReagents = await reagentsRes.json();
             this.globalReagents = this.sampleReagents(fullReagents, 100);
 
+            // Load substances
+            this.globalSubstances = await substancesRes.json();
+
             console.log('Global data loaded:', {
                 actors: Object.keys(this.globalActors).length,
                 items: Object.keys(this.globalItems).length,
@@ -465,7 +469,8 @@ class DungeonEngine {
                 colors: this.globalColors.length,
                 adjectives: Object.keys(this.globalAdjectives).length,
                 attacks: Object.keys(this.globalAttacks).length,
-                reagents: Object.keys(this.globalReagents).length
+                reagents: Object.keys(this.globalReagents).length,
+                substances: this.globalSubstances?.substances?.length || 0
             });
         } catch (error) {
             console.error('Failed to load global data:', error);
@@ -477,6 +482,7 @@ class DungeonEngine {
             this.globalAdjectives = {};
             this.globalAttacks = {};
             this.globalReagents = {};
+            this.globalSubstances = { substances: [] };
         }
     }
 
@@ -775,6 +781,7 @@ class DungeonEngine {
             getTileIdByName: (name) => this.spriteLibrary?.getTileIdByName(name),
             getPrototypeActors: () => this.currentPrototype?.actors,
             getMapGeneratorConfig: () => this.currentPrototype?.config?.map_generator?.options || {},
+            getActorAt: (x, y) => this.entityManager?.getActorAt(x, y),
             createActor: (x, y, type, actorData) => {
                 const actor = new Actor(x, y, type, actorData, this);
                 this.entityManager.addEntity(actor);
@@ -1567,6 +1574,101 @@ class Item extends Entity {
             const [min, max] = data.random_value;
             this.value = min + Math.floor(ROT.RNG.getUniform() * (max - min + 1));
         }
+
+        // Initialize item stats (similar to Actor stats)
+        // Supports per_turn modification for recharging items like staffs
+        this.stats = {};
+        if (data.stats) {
+            for (const [stat, value] of Object.entries(data.stats)) {
+                if (typeof value === 'object' && value.max !== undefined) {
+                    this.stats[stat] = {
+                        ...value, // Preserve all config (per_turn, ready_at, etc.)
+                        current: value.current !== undefined ? value.current : (value.start !== undefined ? value.start : value.max),
+                        per_turn: value.per_turn || 0
+                    };
+                } else {
+                    // Simple numeric value - store as current/max object
+                    this.stats[stat] = { current: value, max: value, per_turn: 0 };
+                }
+            }
+        }
+    }
+
+    /**
+     * Process per-turn stat changes for this item (recharging, decay, etc.)
+     * Called by the owner's act() method
+     */
+    processPerTurnStats() {
+        if (!this.stats) return;
+
+        for (const [statName, stat] of Object.entries(this.stats)) {
+            if (typeof stat !== 'object' || stat.per_turn === undefined) continue;
+
+            const perTurn = stat.per_turn;
+            if (perTurn === 0) continue;
+
+            const oldValue = stat.current;
+            stat.current = Math.min(stat.max, Math.max(0, stat.current + perTurn));
+
+            // Check if stat crossed the ready_at threshold (for charged items)
+            if (stat.ready_at !== undefined) {
+                const wasReady = oldValue >= stat.ready_at;
+                const isReady = stat.current >= stat.ready_at;
+
+                // Show message when item becomes ready
+                if (!wasReady && isReady && stat.ready_message && this.owner?.isPlayerControlled()) {
+                    const message = stat.ready_message.replace('[item_name]', this.getDisplayName ? this.getDisplayName() : this.name);
+                    this.owner.engine.inputManager?.showMessage(message);
+                }
+            }
+        }
+    }
+
+    /**
+     * Get the current value of an item stat
+     * @param {string} statName - Name of the stat
+     * @returns {number|null} Current value or null if stat doesn't exist
+     */
+    getStat(statName) {
+        const stat = this.stats?.[statName];
+        if (!stat) return null;
+        return typeof stat === 'object' ? stat.current : stat;
+    }
+
+    /**
+     * Check if an item stat is at or above its ready threshold
+     * @param {string} statName - Name of the stat to check
+     * @returns {boolean} True if stat is ready (at or above ready_at threshold)
+     */
+    isStatReady(statName) {
+        const stat = this.stats?.[statName];
+        if (!stat || typeof stat !== 'object') return true; // No stat or simple stat = always ready
+
+        // If no ready_at defined, check if current >= max
+        if (stat.ready_at === undefined) {
+            return stat.current >= stat.max;
+        }
+
+        return stat.current >= stat.ready_at;
+    }
+
+    /**
+     * Modify an item stat
+     * @param {string} statName - Name of the stat
+     * @param {number} amount - Amount to add (negative to subtract)
+     * @returns {number|null} New value or null if stat doesn't exist
+     */
+    modifyStat(statName, amount) {
+        const stat = this.stats?.[statName];
+        if (!stat) return null;
+
+        if (typeof stat === 'object') {
+            stat.current = Math.min(stat.max, Math.max(0, stat.current + amount));
+            return stat.current;
+        } else {
+            this.stats[statName] += amount;
+            return this.stats[statName];
+        }
     }
 
     /**
@@ -1651,6 +1753,8 @@ class Item extends Entity {
                     dataSource = this.engine.globalReagents;
                 } else if (file === 'adjectives') {
                     dataSource = this.engine.globalAdjectives;
+                } else if (file === 'substances') {
+                    dataSource = this.engine.globalSubstances;
                 }
 
                 if (dataSource && dataSource[category] && dataSource[category].length > 0) {
@@ -1906,6 +2010,7 @@ class Actor extends Entity {
 
 
             const item = new Item(-1, -1, itemType, itemData, this.engine);
+            item.owner = this; // Track item owner for per-turn stat messages
 
             this.inventory.push(item);
             console.log(`${this.name} starts with ${item.name}`);
@@ -1991,6 +2096,9 @@ class Actor extends Entity {
         // Process per-turn stat changes (regeneration, hunger, poison, etc.)
         this.processPerTurnStats();
         if (this.isDead) return Promise.resolve(); // Died from stat depletion
+
+        // Process per-turn stats for items in inventory (recharging staffs, etc.)
+        this.processInventoryItemStats();
 
         // Player-controlled actors lock the engine and wait for input
         if (this.isPlayerControlled()) {
@@ -2185,6 +2293,7 @@ class Actor extends Entity {
         }
 
         this.inventory.push(item);
+        item.owner = this; // Track item owner for per-turn stat messages
         this.engine.entityManager.removeEntity(item);
         console.log(`${this.name} picked up ${item.name}`);
 
@@ -2617,7 +2726,7 @@ class Actor extends Entity {
             // Only process if value actually changed
             if (oldValue === newValue) continue;
 
-            console.log(`${this.name}'s ${statName} per-turn: ${oldValue} -> ${newValue} (${perTurn >= 0 ? '+' : ''}${perTurn})`);
+            //console.log(`${this.name}'s ${statName} per-turn: ${oldValue} -> ${newValue} (${perTurn >= 0 ? '+' : ''}${perTurn})`);
 
             // Check for death - health is always fatal, other stats need fatal: true
             const isFatal = statName === 'health' || stat.fatal === true;
@@ -2650,6 +2759,20 @@ class Actor extends Entity {
             this.engine.interfaceManager?.updatePlayerInfo();
         }
         this.engine.interfaceManager?.updateActorsDiv();
+    }
+
+    /**
+     * Process per-turn stat changes for items in inventory
+     * Handles recharging staffs, decaying items, etc.
+     */
+    processInventoryItemStats() {
+        if (!this.inventory || this.inventory.length === 0) return;
+
+        for (const item of this.inventory) {
+            if (item.processPerTurnStats) {
+                item.processPerTurnStats();
+            }
+        }
     }
 
     /**
@@ -2928,6 +3051,7 @@ class Actor extends Entity {
 
         // Get the use effect to determine what happens
         const useEffect = item.getAttribute('use_effect');
+        console.log('useItem: use_effect =', useEffect, 'type =', typeof useEffect);
         let success = false;
 
         if (useEffect) {
@@ -2936,6 +3060,11 @@ class Actor extends Entity {
             // Item has a verb but no effect - just mark as used
             console.log(`${this.name} used ${item.name}`);
             success = true;
+        }
+
+        // For targeted spells, identification/consumption happens when spell is cast, not on aiming
+        if (useEffect === 'targeted_spell') {
+            return success; // Early return - spell handling continues in interface.completeSpell
         }
 
         // Handle consumable items (remove from inventory after use)
@@ -2974,9 +3103,11 @@ class Actor extends Entity {
      * @returns {boolean} True if effect executed successfully
      */
     executeItemEffect(item, effect) {
+        console.log('executeItemEffect called with effect:', effect, 'typeof:', typeof effect);
         // Handle object format: { "health": 20, "strength": 2, "defense": 5 }
         // Supports both stats (health, nutrition) and attributes (strength, defense, accuracy, armor)
         if (typeof effect === 'object') {
+            console.log('Effect is an object, processing as stat modifiers');
             let anyModified = false;
             let shouldDie = false;
             for (const [key, amount] of Object.entries(effect)) {
@@ -3015,7 +3146,30 @@ class Actor extends Entity {
         }
 
         // Handle string format: method name for complex effects
+        console.log('Effect is a string, checking switch cases for:', effect);
         switch (effect) {
+            case 'targeted_spell':
+                console.log('Matched targeted_spell case!');
+                // Targeted spell enters aiming mode - handled by interface
+                // Check if item stat is ready (for charged items like staffs)
+                const chargeStat = item.getAttribute('charge_stat');
+                console.log('chargeStat:', chargeStat, 'item.stats:', item.stats, 'isStatReady:', chargeStat ? item.isStatReady(chargeStat) : 'no charge stat');
+                if (chargeStat && !item.isStatReady(chargeStat)) {
+                    console.log('Staff not charged - returning false');
+                    const stat = item.stats?.[chargeStat];
+                    const current = stat?.current ?? 0;
+                    const readyAt = stat?.ready_at ?? stat?.max ?? 100;
+                    if (this.isPlayerControlled()) {
+                        const displayName = item.getDisplayName ? item.getDisplayName() : item.name;
+                        this.engine.inputManager?.showMessage(`The ${displayName} is not charged yet (${Math.floor(current)}/${readyAt}).`);
+                    }
+                    return false;
+                }
+                // Enter spell aiming mode via interface manager
+                console.log('About to enter spell aiming mode, interfaceManager:', !!this.engine.interfaceManager);
+                this.engine.interfaceManager?.enterSpellAimingMode(item, this);
+                console.log('After enterSpellAimingMode, spellAimingMode:', this.engine.interfaceManager?.spellAimingMode);
+                return true; // Returns true but turn is consumed in executeSpell
             default:
                 console.log(`Unknown item effect: ${effect}`);
                 return false;
@@ -3743,17 +3897,7 @@ class Actor extends Entity {
                 // Can't push - fall through to normal blocking behavior
             }
 
-            // Apply collision effects from held items
-            const collisionResult = this.applyCollisionEffects(actorAtTarget);
-
-            // If collision effects made the actor passable, try again
-            // But don't move onto a tile where we just killed something - attack is the action
-            if (collisionResult.targetPassable && !collisionResult.targetKilled) {
-                // Recurse to check if we can now move
-                return this.tryMove(newX, newY);
-            }
-
-            // Check if actor can be opened (doors, chests, etc.)
+            // Check if actor can be opened (doors, chests, etc.) BEFORE combat
             if (actorAtTarget.hasAttribute('openable') && !actorAtTarget.hasAttribute('open')) {
                 // Check if locked - play tap sound and block
                 if (actorAtTarget.hasAttribute('locked')) {
@@ -3767,6 +3911,16 @@ class Actor extends Entity {
                 actorAtTarget.open();
                 this.engine.updateLighting();
                 return { moved: false, actionTaken: true };
+            }
+
+            // Apply collision effects from held items
+            const collisionResult = this.applyCollisionEffects(actorAtTarget);
+
+            // If collision effects made the actor passable, try again
+            // But don't move onto a tile where we just killed something - attack is the action
+            if (collisionResult.targetPassable && !collisionResult.targetKilled) {
+                // Recurse to check if we can now move
+                return this.tryMove(newX, newY);
             }
 
             // Check for collision_description attribute (for non-combat interactions like locked stairways)
@@ -6361,9 +6515,10 @@ class RenderSystem {
      * @param {number} startY - Starting tile Y
      * @param {number} endX - Target tile X
      * @param {number} endY - Target tile Y
+     * @param {number} color - Optional color for the path (default: 0xFF0000 red)
      * @returns {{path: Array, blockedAt: {x,y}|null}} The path and where it was blocked (if any)
      */
-    showLinePath(startX, startY, endX, endY) {
+    showLinePath(startX, startY, endX, endY, color = 0xFF0000) {
         // Clear any existing path highlight
         this.hideLinePath();
 
@@ -6403,13 +6558,13 @@ class RenderSystem {
             const graphics = new PIXI.Graphics();
 
             if (isTarget || isBlocked) {
-                // Target/blocked tile - brighter red, inverted
-                graphics.beginFill(0xFF0000, 1);
+                // Target/blocked tile - brighter, inverted
+                graphics.beginFill(color, 1);
                 graphics.blendMode = PIXI.BLEND_MODES.MULTIPLY;
             } else {
-                // Path tile - faint red
-                graphics.beginFill(0xFF0000, 0.6);
-                graphics.blendMode = PIXI.BLEND_MODES.MULTIPLY; 
+                // Path tile - faint
+                graphics.beginFill(color, 0.6);
+                graphics.blendMode = PIXI.BLEND_MODES.MULTIPLY;
             }
 
             graphics.drawRect(0, 0, tileWidth, tileHeight);

@@ -148,7 +148,6 @@
     "name": "Wall",
     "tileIndexBase": "OPAQUE_DARK_SHADE",
     "tileIndexTop": "OPAQUE_MEDIUM_LIGHT_SHADE",
-    "tint": "#ccccbb",
     "attributes": {
       "solid": true,
       "visible": true,
@@ -162,7 +161,6 @@
     "name": "Wall",
     "tileIndexBase": "OPAQUE_DARK_SHADE_BOTTOM_LEFT_TRIANGLE",
     "tileIndexTop": "OPAQUE_LIGHT_SHADE_UPPER_RIGHT_TRIANGLE_AND_OPAQUE_DARK_SHADE_BOTTOM_LEFT_TRIANGLE",
-    "tint": "#ccccbb",
     "flipBaseH": true,
     "flipBaseV": true,
     "attributes": {
@@ -180,7 +178,6 @@
     "tileIndexBase": "OPAQUE_DARK_SHADE_BOTTOM_LEFT_TRIANGLE",
     "flipBaseV": true,
     "flipTopH": true,
-    "tint": "#ccccbb",
     "attributes": {
       "solid": true,
       "visible": true,
@@ -194,7 +191,6 @@
     "name": "Wall",
     "tileIndexBase": "OPAQUE_DARK_SHADE",
     "tileIndexTop": "OPAQUE_LIGHT_SHADE_UPPER_RIGHT_TRIANGLE",
-    "tint": "#ccccbb",
     "flipTopH": true,
     "flipTopV": true,
     "flipBaseV": true,
@@ -212,7 +208,6 @@
     "name": "Wall",
     "tileIndexBase": "OPAQUE_DARK_SHADE",
     "tileIndexTop": "OPAQUE_LIGHT_SHADE_UPPER_RIGHT_TRIANGLE",
-    "tint": "#ccccbb",
     "flipTopV": true,
     "flipBaseH": true,
     "attributes": {
@@ -275,7 +270,6 @@
     "name": "Wall",
     "tileIndexBase": "OPAQUE_MEDIUM_SHADE",
     "tileIndexTop": "OPAQUE_LIGHT_SHADE",
-    "tint": "#ccccb5",
     "attributes": {
       "solid": true,
       "visible": true,
@@ -287,7 +281,6 @@
     "name": "Wall",
     "tileIndexBase": "MEDIUM_SHADE",
     "tileIndexTop": "LIGHT_SHADE",
-    "tint": "#ccccbb",
     "attributes": {
       "solid": true,
       "visible": true,

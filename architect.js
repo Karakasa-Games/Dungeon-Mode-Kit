@@ -1501,6 +1501,14 @@ class Architect {
         const typeCounts = {};
 
         for (const pos of this.pendingWallSpawns) {
+            // Skip if there's a stairway at this position (keep stairways visible)
+            if (context.getActorAt) {
+                const existingActor = context.getActorAt(pos.x, pos.y);
+                if (existingActor && existingActor.hasAttribute('stairway')) {
+                    continue;
+                }
+            }
+
             const wallType = pos.type || 'wall';
 
             if (!actorDataCache[wallType]) {

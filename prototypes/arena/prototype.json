@@ -11,8 +11,8 @@
   "map_generator": {
     "type": "arena",
     "options": {
-      "map_width": 25,
-      "map_height": 20
+      "map_width": 40,
+      "map_height": 30
     }
   },
   "random_actors": {
@@ -26,7 +26,8 @@
     "vampiric_blade": { "chance": 100, "min": 1, "max": 1 },
     "assassin_dagger": { "chance": 100, "min": 1, "max": 1 },
     "chainmail": { "chance": 100, "min": 1, "max": 1 },
-    "plate": { "chance": 100, "min": 1, "max": 1 }
+    "plate": { "chance": 100, "min": 1, "max": 1 },
+    "staff_of_fireball": { "chance": 100, "min": 1, "max": 1 }
   },
   "win_conditions": ["killed:minotaur"]
 }

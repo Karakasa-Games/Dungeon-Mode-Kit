@@ -24,6 +24,11 @@ class InterfaceManager {
         this.throwAimingMode = false;
         this.throwItem = null; // Item being thrown
 
+        // Spell aiming mode state (for targeted spells like fireball)
+        this.spellAimingMode = false;
+        this.spellItem = null; // Item casting the spell
+        this.spellCaster = null; // Actor casting the spell
+
         // Throw menu mode state (T key menu)
         this.throwMenuMode = false;
 
@@ -1080,6 +1085,7 @@ class InterfaceManager {
             // Place item at player's position
             item.x = this.currentPlayer.x;
             item.y = this.currentPlayer.y;
+            item.owner = null; // Clear owner reference
             this.engine.entityManager.addEntity(item);
 
             console.log(`${this.currentPlayer.name} dropped ${item.name}`);
@@ -1133,6 +1139,13 @@ class InterfaceManager {
 
         if (this.currentPlayer.useItem) {
             this.currentPlayer.useItem(item);
+        }
+
+        // Don't consume turn if we entered spell aiming mode (turn consumed on cast)
+        console.log('After useItem, spellAimingMode:', this.spellAimingMode);
+        if (this.spellAimingMode) {
+            console.log('Returning early - spell aiming mode active');
+            return;
         }
 
         // Refresh and consume turn
@@ -1654,6 +1667,332 @@ class InterfaceManager {
      */
     isThrowAiming() {
         return this.throwAimingMode;
+    }
+
+    // ========================================================================
+    // SPELL AIMING MODE (for targeted spells like fireball)
+    // ========================================================================
+
+    /**
+     * Enter spell aiming mode for a targeted spell item
+     * @param {Item} item - The item casting the spell
+     * @param {Actor} caster - The actor using the item
+     */
+    enterSpellAimingMode(item, caster) {
+        console.log('Entering spell aiming mode for', item.name);
+        this.spellAimingMode = true;
+        this.spellItem = item;
+        this.spellCaster = caster;
+        this.currentPlayer = caster;
+
+        // Close any open menus
+        this.closeItemActionMenu();
+        this.removeBox('player_info');
+
+        // Update the spell path based on current mouse position
+        this.updateSpellPath();
+    }
+
+    /**
+     * Exit spell aiming mode without casting
+     */
+    exitSpellAimingMode() {
+        this.spellAimingMode = false;
+        this.spellItem = null;
+        this.spellCaster = null;
+
+        // Hide the line path
+        this.engine.renderer?.hideLinePath();
+
+        // Re-enable normal tile highlight
+        this.engine.renderer?.hideTileHighlight();
+    }
+
+    /**
+     * Update the spell path line based on current mouse position
+     */
+    updateSpellPath() {
+        if (!this.spellAimingMode || !this.spellCaster) return;
+
+        const inputManager = this.engine.inputManager;
+        if (!inputManager) return;
+
+        const targetX = inputManager.hoveredTile.x;
+        const targetY = inputManager.hoveredTile.y;
+
+        // Don't draw path if mouse is off-screen or on caster
+        if (targetX < 0 || targetY < 0) {
+            this.engine.renderer?.hideLinePath();
+            return;
+        }
+
+        if (targetX === this.spellCaster.x && targetY === this.spellCaster.y) {
+            this.engine.renderer?.hideLinePath();
+            return;
+        }
+
+        // Check spell range (only if defined)
+        const range = this.spellItem?.getAttribute('spell_range');
+        let pathColor = 0xFF6600; // Default orange for spells
+
+        if (range) {
+            const dx = targetX - this.spellCaster.x;
+            const dy = targetY - this.spellCaster.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            pathColor = distance <= range ? 0xFF6600 : 0x666666; // Orange if in range, gray if out
+        }
+
+        // Show the line path from caster to target
+        this.engine.renderer?.showLinePath(
+            this.spellCaster.x,
+            this.spellCaster.y,
+            targetX,
+            targetY,
+            pathColor
+        );
+    }
+
+    /**
+     * Execute the spell at the current target position
+     */
+    executeSpell() {
+        console.log('executeSpell called');
+        if (!this.spellAimingMode || !this.spellCaster || !this.spellItem) {
+            console.log('executeSpell early return - missing state:', { spellAimingMode: this.spellAimingMode, spellCaster: !!this.spellCaster, spellItem: !!this.spellItem });
+            return;
+        }
+
+        const inputManager = this.engine.inputManager;
+        if (!inputManager) {
+            console.log('executeSpell early return - no inputManager');
+            return;
+        }
+
+        const targetX = inputManager.hoveredTile.x;
+        const targetY = inputManager.hoveredTile.y;
+        console.log('executeSpell target:', targetX, targetY, 'caster:', this.spellCaster.x, this.spellCaster.y);
+
+        // Don't cast if mouse is off-screen or on caster
+        if (targetX < 0 || targetY < 0) {
+            console.log('executeSpell early return - target off screen');
+            return;
+        }
+        if (targetX === this.spellCaster.x && targetY === this.spellCaster.y) {
+            console.log('executeSpell early return - target is caster');
+            return;
+        }
+
+        // Check spell range (only if spell_range is defined)
+        const range = this.spellItem.getAttribute('spell_range');
+        if (range) {
+            const dx = targetX - this.spellCaster.x;
+            const dy = targetY - this.spellCaster.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+
+            if (distance > range) {
+                const displayName = this.spellItem.getDisplayName ? this.spellItem.getDisplayName() : this.spellItem.name;
+                this.engine.inputManager?.showMessage(`Target is out of range for ${displayName}.`);
+                return;
+            }
+        }
+
+        // Get the actual landing position (may be blocked by solid actor for line-of-sight spells)
+        const pathResult = this.engine.renderer?.showLinePath(
+            this.spellCaster.x,
+            this.spellCaster.y,
+            targetX,
+            targetY
+        );
+
+        if (!pathResult || pathResult.path.length === 0) return;
+
+        // Store references before exiting aiming mode
+        const item = this.spellItem;
+        const caster = this.spellCaster;
+        const path = pathResult.path;
+        const landingPoint = path[path.length - 1];
+
+        // Exit aiming mode
+        this.exitSpellAimingMode();
+
+        // Consume charge from item stat if applicable
+        const chargeStat = item.getAttribute('charge_stat');
+        if (chargeStat && item.stats?.[chargeStat]) {
+            const useCost = item.getAttribute('charge_cost') || item.stats[chargeStat].max;
+            item.modifyStat(chargeStat, -useCost);
+        }
+
+        // Play spell cast sound
+        const castSound = item.getAttribute('cast_sound') || 'fire';
+        this.engine.playSound(castSound);
+
+        // Get spell effect type (what actors to spawn)
+        const spellEffect = item.getAttribute('spell_effect') || { center: 'fire', radius: 0 };
+
+        // Animate projectile to target, then spawn effects
+        this.animateSpellProjectile(item, path, () => {
+            this.completeSpell(item, caster, landingPoint, spellEffect);
+        });
+    }
+
+    /**
+     * Animate a spell projectile along a path
+     * @param {Item} item - The item casting the spell
+     * @param {Array} path - Array of {x, y} points
+     * @param {Function} onComplete - Callback when animation finishes
+     */
+    animateSpellProjectile(item, path, onComplete) {
+        const renderer = this.engine.renderer;
+        if (!renderer || path.length === 0) {
+            onComplete();
+            return;
+        }
+
+        const tileWidth = this.engine.config.tileWidth;
+        const tileHeight = this.engine.config.tileHeight;
+        const tileset = PIXI.Loader.shared.resources.tiles;
+
+        // Get projectile tile from item, or use a default fireball tile
+        let projectileTile = item.getAttribute('projectile_tile') || item.tileIndex;
+        // Resolve tile name to coordinates if it's a string
+        if (typeof projectileTile === 'string') {
+            projectileTile = this.engine.spriteLibrary?.resolveTile(projectileTile);
+        }
+        const projectileTint = item.getAttribute('projectile_tint') || item.tint || 0xFF6600;
+
+        if (!tileset || !projectileTile) {
+            onComplete();
+            return;
+        }
+
+        // Create projectile sprite
+        const rect = new PIXI.Rectangle(
+            projectileTile.x * tileWidth,
+            projectileTile.y * tileHeight,
+            tileWidth,
+            tileHeight
+        );
+        const texture = new PIXI.Texture(tileset.texture.baseTexture, rect);
+        const projectileSprite = new PIXI.Sprite(texture);
+
+        // Apply tint
+        if (projectileTint !== undefined && projectileTint !== null) {
+            projectileSprite.tint = typeof projectileTint === 'string' ?
+                parseInt(projectileTint.replace('#', ''), 16) : projectileTint;
+        }
+
+        projectileSprite.zIndex = 100; // Above everything
+        renderer.uiContainer.addChild(projectileSprite);
+
+        // Animate through path
+        let currentIndex = 0;
+        const frameDelay = 20; // milliseconds per tile (faster than thrown items)
+
+        const animateFrame = () => {
+            if (currentIndex >= path.length) {
+                // Animation complete - remove sprite and call callback
+                renderer.uiContainer.removeChild(projectileSprite);
+                projectileSprite.destroy();
+                onComplete();
+                return;
+            }
+
+            const point = path[currentIndex];
+            projectileSprite.x = point.x * tileWidth;
+            projectileSprite.y = point.y * tileHeight;
+
+            currentIndex++;
+            setTimeout(animateFrame, frameDelay);
+        };
+
+        // Start animation
+        animateFrame();
+    }
+
+    /**
+     * Complete the spell - spawn effect actors at target
+     * @param {Item} item - The spell item
+     * @param {Actor} caster - The actor who cast it
+     * @param {Object} landingPoint - {x, y} where spell lands
+     * @param {Object} spellEffect - Effect configuration {center, radius, outer}
+     */
+    completeSpell(item, caster, landingPoint, spellEffect) {
+        const entityManager = this.engine.entityManager;
+        if (!entityManager) return;
+
+        const { center, radius = 0, outer } = spellEffect;
+        const x = landingPoint.x;
+        const y = landingPoint.y;
+
+        // Spawn center actor
+        if (center) {
+            entityManager.spawnActor(center, x, y);
+        }
+
+        // Spawn actors in radius
+        if (radius > 0) {
+            const outerType = outer || center;
+            for (let dx = -radius; dx <= radius; dx++) {
+                for (let dy = -radius; dy <= radius; dy++) {
+                    if (dx === 0 && dy === 0) continue; // Skip center
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist <= radius) {
+                        entityManager.spawnActor(outerType, x + dx, y + dy);
+                    }
+                }
+            }
+        }
+
+        // Identify the item after successful cast
+        if (!item.identified) {
+            item.identify();
+            const identifiedName = item.getDisplayName ? item.getDisplayName() : item.name;
+            this.engine.inputManager?.showMessage(`You identified the ${identifiedName}!`);
+        }
+
+        // Show cast message
+        const displayName = item.getDisplayName ? item.getDisplayName() : item.name;
+        this.engine.inputManager?.showMessage(`You cast ${displayName}!`);
+
+        // Update sidebar
+        this.updateSidebar();
+
+        // This counts as a player action
+        this.engine.inputManager?.onPlayerAction();
+    }
+
+    /**
+     * Handle keyboard input during spell aiming mode
+     * @param {string} key - The key pressed
+     * @returns {boolean} True if key was handled
+     */
+    handleSpellAimingKey(key) {
+        if (!this.spellAimingMode) return false;
+        if (key === 'Escape') {
+            this.exitSpellAimingMode();
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Handle mouse click during spell aiming mode
+     * @returns {boolean} True if click was handled
+     */
+    handleSpellAimingClick() {
+        console.log('handleSpellAimingClick called, spellAimingMode:', this.spellAimingMode);
+        if (!this.spellAimingMode) return false;
+        console.log('Calling executeSpell');
+        this.executeSpell();
+        return true;
+    }
+
+    /**
+     * Check if in spell aiming mode
+     * @returns {boolean}
+     */
+    isSpellAiming() {
+        return this.spellAimingMode;
     }
 
     // ========================================================================

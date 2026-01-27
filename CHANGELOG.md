@@ -45,6 +45,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Equipping can be cancelled by starting to equip a different item
 - Knockback weapon proc now staggers target (target loses next turn)
 - Item action menus now close before effects execute for better visual feedback
+- Item stats system with per-turn modification (for recharging items like staffs):
+  - Items can now have `stats` with `per_turn`, `ready_at`, and `ready_message`
+  - Item stats process each turn when item is in actor's inventory
+  - `start` value allows items to begin uncharged (e.g., `"start": 0`)
+- Targeted spell system for items:
+  - `use_effect: "targeted_spell"` enables aiming mode with mouse targeting
+  - `charge_stat` and `charge_cost` for items that need to recharge between uses
+  - `spell_range` limits how far spells can be cast
+  - `spell_effect` spawns actors at target: `{ center, radius, outer }`
+  - `projectile_tile` and `projectile_tint` customize the spell projectile appearance
+  - Spell aiming shows orange path (gray if out of range)
+- Staff of Fireball item:
+  - Casts fireball that spawns intense_fire at center and fire in radius 1
+  - Recharges 5% per turn, requires 100% charge to cast
+  - Shows "Your Staff of Fireball is fully charged!" when ready
+  - Starts unidentified with random substance name (e.g., "malachite staff")
+- Substances data loaded globally for `[substances.substances]` template syntax
+- Item identification now supports `[substances.substances]` template variable
 
 ### Fixed
 
@@ -58,6 +76,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed multiple actors spawning when set to 100% max 1 in prototype:
   - `spawnUnplacedEntities` now skips actors configured in `random_actors`
   - `removeEntity` now also removes actor from scheduler
+- Fixed doors being attacked instead of opened: openable check now happens before combat
+- Fixed stairways being hidden by walls: wall spawning skips tiles with stairways
+- Canvas stat thermometers now normalized to fixed width (10 tiles) regardless of max value
+- HTML stat ratio numbers hidden for stats with max > 100 (thermometer-only display)
+- Canvas stat thermometers hidden when HTML `#actors` element exists (avoids duplication)
 
 ### Changed
 

@@ -52,7 +52,7 @@
 
   "rations": {
     "name": "Rations",
-    "tileIndex": "FULL_BLOCK",
+    "tileIndex": "SEMICOLON",
     "tint": "#daa520",
     "attributes": {
       "pickupable": true,

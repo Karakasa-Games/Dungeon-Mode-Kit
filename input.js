@@ -162,6 +162,9 @@ class InputManager {
             // Update throw path if in aiming mode
             if (this.engine.interfaceManager?.isThrowAiming()) {
                 this.engine.interfaceManager.updateThrowPath();
+            } else if (this.engine.interfaceManager?.isSpellAiming()) {
+                // Update spell path if in spell aiming mode
+                this.engine.interfaceManager.updateSpellPath();
             } else if (!this.autoWalking) {
                 // Show walk path when not in special modes
                 this.updateWalkPath(tileX, tileY);
@@ -188,6 +191,12 @@ class InputManager {
 
         // Check if in throw aiming mode
         if (this.engine.interfaceManager?.handleThrowClick()) {
+            event.preventDefault();
+            return;
+        }
+
+        // Check if in spell aiming mode
+        if (this.engine.interfaceManager?.handleSpellAimingClick()) {
             event.preventDefault();
             return;
         }
@@ -735,6 +744,7 @@ class InputManager {
     }
 
     handleKeyDown(event) {
+        console.log('handleKeyDown:', event.key, 'enabled:', this.enabled);
         if (!this.enabled) return;
 
         // Cancel auto-walk on any key press
@@ -745,6 +755,12 @@ class InputManager {
 
         // Check if throw aiming mode wants to handle this key first
         if (this.engine.interfaceManager?.handleThrowKey(event.key)) {
+            event.preventDefault();
+            return;
+        }
+
+        // Check if spell aiming mode wants to handle this key
+        if (this.engine.interfaceManager?.handleSpellAimingKey(event.key)) {
             event.preventDefault();
             return;
         }
