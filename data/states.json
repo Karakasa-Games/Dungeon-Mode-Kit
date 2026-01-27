@@ -65,5 +65,14 @@
     "per_turn_effect": { "health": 2 },
     "on_apply_message": "[actor_name] begins regenerating!",
     "on_remove_message": "The regeneration effect fades."
+  },
+
+  "paralyzed": {
+    "name": "Paralyzed",
+    "duration": 6,
+    "skip_turn": true,
+    "immunity": "paralysis_immune",
+    "on_apply_message": "[actor_name] is paralyzed!",
+    "on_remove_message": "[actor_name] can move again."
   }
 }

@@ -871,7 +871,8 @@ class InterfaceManager {
 
         // Build menu lines
         const lines = [];
-        lines.push(item.name);
+        const displayName = item.getDisplayName ? item.getDisplayName() : item.name;
+        lines.push(displayName);
         lines.push(''); // blank line
 
         // Add description if available
@@ -1370,6 +1371,18 @@ class InterfaceManager {
     }
 
     /**
+     * Calculate the maximum throw range for an actor
+     * Base range is 10 tiles + actor's strength attribute
+     * @param {Actor} actor - The actor throwing
+     * @returns {number} Maximum throw range in tiles
+     */
+    getThrowRange(actor) {
+        const baseRange = 10;
+        const strength = actor.getAttribute('strength') || 0;
+        return baseRange + strength;
+    }
+
+    /**
      * Update the throw path line based on current mouse position
      */
     updateThrowPath() {
@@ -1392,12 +1405,17 @@ class InterfaceManager {
             return;
         }
 
-        // Show the line path from player to target
+        // Calculate throw range (10 + strength)
+        const maxRange = this.getThrowRange(this.currentPlayer);
+
+        // Show the line path from player to target with range limit
         this.engine.renderer?.showLinePath(
             this.currentPlayer.x,
             this.currentPlayer.y,
             targetX,
-            targetY
+            targetY,
+            0xFF0000, // Red color for throw path
+            maxRange
         );
     }
 
@@ -1417,15 +1435,26 @@ class InterfaceManager {
         if (targetX < 0 || targetY < 0) return;
         if (targetX === this.currentPlayer.x && targetY === this.currentPlayer.y) return;
 
-        // Get the actual landing position (may be blocked by solid actor)
+        // Calculate throw range (10 + strength)
+        const maxRange = this.getThrowRange(this.currentPlayer);
+
+        // Get the actual landing position (may be blocked by solid actor or range limit)
         const pathResult = this.engine.renderer?.showLinePath(
             this.currentPlayer.x,
             this.currentPlayer.y,
             targetX,
-            targetY
+            targetY,
+            0xFF0000,
+            maxRange
         );
 
         if (!pathResult || pathResult.path.length === 0) return;
+
+        // Don't allow throwing if target is out of range
+        if (pathResult.outOfRange) {
+            this.engine.inputManager?.showMessage("That's too far to throw!");
+            return;
+        }
 
         // Store references before exiting aiming mode
         const item = this.throwItem;
@@ -1726,12 +1755,19 @@ class InterfaceManager {
                     const trapCollisionEffect = trap.data?.trap_collision_effect;
                     if (trapCollisionEffect) {
                         spawnedActor.setAttribute('collision_effect', trapCollisionEffect);
-                        // Mark as origin cloud so it spreads
-                        spawnedActor.isCloudOrigin = true;
-                        spawnedActor.cloudOriginX = trap.x;
-                        spawnedActor.cloudOriginY = trap.y;
-                        spawnedActor.cloudLifetime = 8;
                     }
+
+                    // Apply state to apply if specified (for paralysis/confusion gas)
+                    const trapApplyState = trap.data?.trap_apply_state;
+                    if (trapApplyState) {
+                        spawnedActor.setAttribute('apply_state', trapApplyState);
+                    }
+
+                    // Mark as origin cloud so it spreads
+                    spawnedActor.isCloudOrigin = true;
+                    spawnedActor.cloudOriginX = trap.x;
+                    spawnedActor.cloudOriginY = trap.y;
+                    spawnedActor.cloudLifetime = 8;
                 }
             }
         }
@@ -1760,7 +1796,17 @@ class InterfaceManager {
         // Use the item's use_effect as the cloud's collision_effect
         const useEffect = item.getAttribute('use_effect');
         if (useEffect && typeof useEffect === 'object') {
-            cloud.setAttribute('collision_effect', useEffect);
+            // Extract apply_state separately from stat effects
+            if (useEffect.apply_state) {
+                cloud.setAttribute('apply_state', useEffect.apply_state);
+            }
+
+            // Set remaining properties as collision_effect (for stat damage)
+            const collisionEffect = { ...useEffect };
+            delete collisionEffect.apply_state;
+            if (Object.keys(collisionEffect).length > 0) {
+                cloud.setAttribute('collision_effect', collisionEffect);
+            }
         }
 
         // Mark as origin cloud so it spreads

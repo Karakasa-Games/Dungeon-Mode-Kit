@@ -3318,13 +3318,29 @@ class Actor extends Entity {
      */
     executeItemEffect(item, effect) {
         console.log('executeItemEffect called with effect:', effect, 'typeof:', typeof effect);
-        // Handle object format: { "health": 20, "strength": 2, "defense": 5 }
-        // Supports both stats (health, nutrition) and attributes (strength, defense, accuracy, armor)
+        // Handle object format: { "health": 20, "strength": 2, "defense": 5, "apply_state": "poisoned" }
+        // Supports stats (health, nutrition), attributes (strength, defense), and state application
         if (typeof effect === 'object') {
             console.log('Effect is an object, processing as stat modifiers');
             let anyModified = false;
             let shouldDie = false;
             for (const [key, amount] of Object.entries(effect)) {
+                // Handle state application
+                if (key === 'apply_state') {
+                    const stateName = amount;
+                    const statesData = this.engine.globalStates;
+                    if (statesData && statesData[stateName]) {
+                        const applied = this.applyState(stateName, statesData[stateName]);
+                        if (applied) {
+                            anyModified = true;
+                            console.log(`Applied state ${stateName} to ${this.name}`);
+                        }
+                    } else {
+                        console.log(`Unknown state: ${stateName}`);
+                    }
+                    continue;
+                }
+
                 // Try stat modification first (for health, nutrition, etc.)
                 const statResult = this.modifyStat(key, amount, { source: item });
                 if (statResult !== null) {
@@ -5219,6 +5235,11 @@ const BehaviorLibrary = {
                 // Copy properties from origin cloud
                 newCloud.tint = actor.tint;
                 newCloud.setAttribute('collision_effect', actor.getAttribute('collision_effect'));
+                // Copy apply_state for state-applying clouds (paralysis, confusion)
+                const applyState = actor.getAttribute('apply_state');
+                if (applyState) {
+                    newCloud.setAttribute('apply_state', applyState);
+                }
                 // Give spawned clouds the same remaining lifetime as the origin
                 newCloud.cloudLifetime = actor.cloudLifetime;
                 // Update sprites with new tint
@@ -5231,12 +5252,16 @@ const BehaviorLibrary = {
     },
 
     /**
-     * Apply cloud's collision effect to any actors standing in it
+     * Apply cloud's collision effect and/or state to any actors standing in it
      * Shows a message describing the effect for visible actors
      */
     cloud_affect_actors: (actor) => {
         const collisionEffect = actor.getAttribute('collision_effect');
-        if (!collisionEffect || Object.keys(collisionEffect).length === 0) return false;
+        const applyStateName = actor.getAttribute('apply_state');
+
+        // Skip if no effects to apply
+        const hasCollisionEffect = collisionEffect && Object.keys(collisionEffect).length > 0;
+        if (!hasCollisionEffect && !applyStateName) return false;
 
         const entityManager = actor.engine.entityManager;
 
@@ -5253,24 +5278,38 @@ const BehaviorLibrary = {
             // Track effects applied for messaging
             const effectsApplied = [];
 
-            // Apply collision effect
-            for (const [key, value] of Object.entries(collisionEffect)) {
-                if (other.stats && other.stats[key] !== undefined) {
-                    const stat = other.stats[key];
-                    if (typeof stat === 'object' && stat.current !== undefined) {
-                        stat.current = Math.max(0, stat.current + value);
+            // Apply collision effect (stat damage)
+            if (hasCollisionEffect) {
+                for (const [key, value] of Object.entries(collisionEffect)) {
+                    if (other.stats && other.stats[key] !== undefined) {
+                        const stat = other.stats[key];
+                        if (typeof stat === 'object' && stat.current !== undefined) {
+                            stat.current = Math.max(0, stat.current + value);
 
-                        // Track what happened for the message
-                        const statCapitalized = key.charAt(0).toUpperCase() + key.slice(1);
-                        if (value > 0) {
-                            effectsApplied.push(`+${value} ${statCapitalized}`);
-                        } else {
-                            effectsApplied.push(`${value} ${statCapitalized}`);
-                        }
+                            // Track what happened for the message
+                            const statCapitalized = key.charAt(0).toUpperCase() + key.slice(1);
+                            if (value > 0) {
+                                effectsApplied.push(`+${value} ${statCapitalized}`);
+                            } else {
+                                effectsApplied.push(`${value} ${statCapitalized}`);
+                            }
 
-                        if (key === 'health' && stat.current <= 0) {
-                            other.die();
+                            if (key === 'health' && stat.current <= 0) {
+                                other.die();
+                            }
                         }
+                    }
+                }
+            }
+
+            // Apply state if specified (paralysis, confusion, etc.)
+            if (applyStateName && other.applyState) {
+                const statesData = actor.engine.globalStates;
+                if (statesData && statesData[applyStateName]) {
+                    const stateApplied = other.applyState(applyStateName, statesData[applyStateName]);
+                    if (stateApplied) {
+                        // State message is shown by applyState itself, but track for messaging purposes
+                        effectsApplied.push(statesData[applyStateName].name || applyStateName);
                     }
                 }
             }
@@ -5278,15 +5317,21 @@ const BehaviorLibrary = {
             // Show effect message and flash only if effects were applied
             if (effectsApplied.length > 0) {
                 const gasName = actor.type === 'mist' ? 'mist' : 'clouds';
-                const effectStr = effectsApplied.join(', ');
 
-                if (other.hasAttribute('controlled')) {
-                    // Player message
-                    actor.engine.inputManager?.showMessage(`The ${gasName} engulfs you! (${effectStr})`);
-                } else if (tileIsVisible && other.hasAttribute('visible')) {
-                    // Visible NPC message
-                    const otherName = other.getNameWithArticle ? other.getNameWithArticle() : `the ${other.name}`;
-                    actor.engine.inputManager?.showMessage(`The ${gasName} engulfs ${otherName}. (${effectStr})`);
+                // Only show generic engulf message for stat effects, not state application
+                // (state application shows its own message via applyState)
+                const statEffects = effectsApplied.filter(e => e.includes('+') || e.includes('-'));
+                if (statEffects.length > 0) {
+                    const effectStr = statEffects.join(', ');
+
+                    if (other.hasAttribute('controlled')) {
+                        // Player message
+                        actor.engine.inputManager?.showMessage(`The ${gasName} engulfs you! (${effectStr})`);
+                    } else if (tileIsVisible && other.hasAttribute('visible')) {
+                        // Visible NPC message
+                        const otherName = other.getNameWithArticle ? other.getNameWithArticle() : `the ${other.name}`;
+                        actor.engine.inputManager?.showMessage(`The ${gasName} engulfs ${otherName}. (${effectStr})`);
+                    }
                 }
 
                 // Flash the affected actor
@@ -5988,12 +6033,19 @@ const BehaviorLibrary = {
                     const trapCollisionEffect = actor.data?.trap_collision_effect;
                     if (trapCollisionEffect) {
                         spawnedActor.setAttribute('collision_effect', trapCollisionEffect);
-                        // Mark as origin cloud so it spreads
-                        spawnedActor.isCloudOrigin = true;
-                        spawnedActor.cloudOriginX = actor.x;
-                        spawnedActor.cloudOriginY = actor.y;
-                        spawnedActor.cloudLifetime = 8;
                     }
+
+                    // Apply state to apply if specified (for paralysis/confusion gas)
+                    const trapApplyState = actor.data?.trap_apply_state;
+                    if (trapApplyState) {
+                        spawnedActor.setAttribute('apply_state', trapApplyState);
+                    }
+
+                    // Mark as origin cloud so it spreads
+                    spawnedActor.isCloudOrigin = true;
+                    spawnedActor.cloudOriginX = actor.x;
+                    spawnedActor.cloudOriginY = actor.y;
+                    spawnedActor.cloudLifetime = 8;
                 }
             }
         }
@@ -6933,15 +6985,16 @@ class RenderSystem {
     }
 
     /**
-     * Show a line path highlight 
+     * Show a line path highlight
      * @param {number} startX - Starting tile X
      * @param {number} startY - Starting tile Y
      * @param {number} endX - Target tile X
      * @param {number} endY - Target tile Y
      * @param {number} color - Optional color for the path (default: 0xFF0000 red)
-     * @returns {{path: Array, blockedAt: {x,y}|null}} The path and where it was blocked (if any)
+     * @param {number} maxRange - Optional maximum range (path truncated at this distance)
+     * @returns {{path: Array, blockedAt: {x,y}|null, outOfRange: boolean}} The path, where blocked, and if target is out of range
      */
-    showLinePath(startX, startY, endX, endY, color = 0xFF0000) {
+    showLinePath(startX, startY, endX, endY, color = 0xFF0000, maxRange = null) {
         // Clear any existing path highlight
         this.hideLinePath();
 
@@ -6953,10 +7006,17 @@ class RenderSystem {
 
         // Track where path is blocked (skip start position)
         let blockedAt = null;
+        let outOfRange = false;
         const displayPath = [];
 
         for (let i = 1; i < fullPath.length; i++) {
             const point = fullPath[i];
+
+            // Check if we've exceeded max range
+            if (maxRange !== null && i > maxRange) {
+                outOfRange = true;
+                break;
+            }
 
             // Check for solid actors that would block the path
             const actor = this.engine.entityManager?.getActorAt(point.x, point.y);
@@ -6972,6 +7032,9 @@ class RenderSystem {
         // Create path overlay sprites
         this.linePathSprites = [];
 
+        // Determine path color - gray if out of range
+        const pathColor = outOfRange ? 0x888888 : color;
+
         for (let i = 0; i < displayPath.length; i++) {
             const point = displayPath[i];
             const isBlocked = blockedAt && point.x === blockedAt.x && point.y === blockedAt.y;
@@ -6982,11 +7045,11 @@ class RenderSystem {
 
             if (isTarget || isBlocked) {
                 // Target/blocked tile - brighter, inverted
-                graphics.beginFill(color, 1);
+                graphics.beginFill(pathColor, 1);
                 graphics.blendMode = PIXI.BLEND_MODES.MULTIPLY;
             } else {
                 // Path tile - faint
-                graphics.beginFill(color, 0.6);
+                graphics.beginFill(pathColor, 0.6);
                 graphics.blendMode = PIXI.BLEND_MODES.MULTIPLY;
             }
 
@@ -7003,7 +7066,8 @@ class RenderSystem {
 
         return {
             path: displayPath,
-            blockedAt: blockedAt
+            blockedAt: blockedAt,
+            outOfRange: outOfRange
         };
     }
 

@@ -10,11 +10,17 @@
     "darkness": false
   },
   "random_actors": {
-    "poison_gas_trap": { "chance": 60, "min": 2, "max": 4 },
-    "fire_trap": { "chance": 40, "min": 1, "max": 3 }
+    "poison_gas_trap": { "chance": 60, "min": 1, "max": 2 },
+    "fire_trap": { "chance": 40, "min": 1, "max": 2 },
+    "paralysis_gas_trap": { "chance": 50, "min": 1, "max": 2 },
+    "confusion_gas_trap": { "chance": 50, "min": 1, "max": 2 }
   },
   "random_items": {
-    "staff_of_fireball": { "chance": 100, "min": 1, "max": 1 }
+    "staff_of_fireball": { "chance": 100, "min": 1, "max": 1 },
+    "potion_of_haste": { "chance": 50, "min": 1, "max": 2 },
+    "potion_of_confusion": { "chance": 40, "min": 1, "max": 2 },
+    "potion_of_paralysis": { "chance": 30, "min": 1, "max": 1 },
+    "potion_of_regeneration": { "chance": 50, "min": 1, "max": 2 }
   },
   "win_conditions": ["wearing:crown"]
 }

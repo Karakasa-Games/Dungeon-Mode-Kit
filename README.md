@@ -56,6 +56,7 @@ Item JSON schema:
       "collision_sound": "sound_name",
       "use_verb": "Drink",                    // action menu label
       "use_effect": { "health": 20 },         // stat/attribute modification on use
+      "use_effect": { "apply_state": "poisoned" }, // or apply a state to the user
       "use_sound": "sound_name",
       "weapon": true,                         // or "knockback", "lifesteal", "critical" for proc effects
       "wearable": "top|middle|lower",         // equipment slot
@@ -222,9 +223,10 @@ Personality → behaviors[] → BehaviorLibrary
 
 **Fire System:** Lava incinerates any entity without `fireproof` attribute. Fire spreads to adjacent tiles with `flammable` entities. Use `fireproof: true` to make items/actors immune to incineration.
 
-**Trap System:** Traps start invisible (`visible: false`) and become visible when triggered. They remain on the tile and can be re-triggered. Players are warned before stepping on visible traps. Traps support two effect formats:
+**Trap System:** Traps start invisible (`visible: false`) and become visible when triggered. They remain on the tile and can be re-triggered. Items on traps "hold down" the trigger, preventing re-triggering until removed. Players are warned before stepping on visible traps (unless an item holds the trigger). Traps support:
 - `trap_spawn`: single actor (e.g., `"trap_spawn": "cloud"` with `trap_collision_effect` and `trap_spawn_tint`)
 - `trap_effect`: spell-like area effect (e.g., `"trap_effect": { "center": "intense_fire", "radius": 1, "outer": "fire" }`)
+- `trap_apply_state`: applies a state to actors caught in the effect (e.g., `"trap_apply_state": "paralyzed"`)
 
 #### Architect
 

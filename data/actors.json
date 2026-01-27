@@ -569,6 +569,40 @@
     },
     "trap_effect": { "center": "intense_fire", "radius": 1, "outer": "fire" },
     "trap_message": "Flames erupt from the floor!"
+  },
+
+  "paralysis_gas_trap": {
+    "name": "Paralysis Gas Trap",
+    "tileIndexBase": "INVERSE_BULLET",
+    "tint": "#AAAAFF",
+    "personality": "trap_behavior",
+    "attributes": {
+      "solid": false,
+      "visible": false,
+      "trap": true,
+      "trap_type": "paralysis_gas"
+    },
+    "trap_spawn": "cloud",
+    "trap_spawn_tint": "#AADDFF",
+    "trap_apply_state": "paralyzed",
+    "trap_message": "A numbing gas billows forth!"
+  },
+
+  "confusion_gas_trap": {
+    "name": "Confusion Gas Trap",
+    "tileIndexBase": "INVERSE_BULLET",
+    "tint": "#FF88FF",
+    "personality": "trap_behavior",
+    "attributes": {
+      "solid": false,
+      "visible": false,
+      "trap": true,
+      "trap_type": "confusion_gas"
+    },
+    "trap_spawn": "cloud",
+    "trap_spawn_tint": "#FFAAFF",
+    "trap_apply_state": "confused",
+    "trap_message": "A disorienting mist fills the air!"
   }
 
 }

@@ -34,13 +34,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Traps start invisible and become visible when triggered
   - Re-triggerable: same trap can fire multiple times when stepped on again
   - Won't re-trigger while same actor/item remains on tile
-  - Hazard warning prompts before stepping on visible traps
+  - Items on traps "hold down" the trigger, preventing re-triggering until removed
+  - Hazard warning prompts before stepping on visible traps (skipped if item holds trigger)
   - Can be triggered by thrown items landing on them
   - Two trap effect formats:
     - `trap_spawn`: spawns single actor (e.g., poison cloud)
     - `trap_effect`: spell-like area effect with center/radius/outer (e.g., fire trap)
-  - `poison_gas_trap`: spawns spreading poison cloud
-  - `fire_trap`: spawns intense_fire at center with fire in radius 1 (like fireball)
+  - `trap_apply_state`: applies a state to actors caught in the trap's effect
+  - Trap types:
+    - `poison_gas_trap`: spawns spreading poison cloud that damages health
+    - `fire_trap`: spawns intense_fire at center with fire in radius 1 (like fireball)
+    - `paralysis_gas_trap`: spawns spreading gas that paralyzes actors
+    - `confusion_gas_trap`: spawns spreading gas that confuses actors
+- State-applying potions:
+  - Potions can now apply states via `use_effect: { "apply_state": "state_name" }`
+  - `potion_of_poison`: applies poisoned state (damage over time)
+  - `potion_of_confusion`: applies confused state (random movement)
+  - `potion_of_haste`: applies hasted state (extra turn)
+  - `potion_of_paralysis`: applies paralyzed state (skip turns)
+  - `potion_of_regeneration`: applies regenerating state (heal over time)
+  - Thrown explosive potions create clouds that apply their state to actors
+- `paralyzed` state: actors skip turns for 6 turns (similar to stunned but longer)
 - Actor `data` property: actors now store their full definition data for behavior access
 - Per-turn stat modifications (data-driven):
   - Stats can have `per_turn` value for automatic changes each turn (e.g., nutrition drain, health regen)
