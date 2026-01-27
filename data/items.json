@@ -341,7 +341,6 @@
         "max": 800,
         "start": 800,
         "per_turn": 1,
-        "ready_at": 800,
         "ready_message": "Your [item_name] is fully charged!"
       }
     }
