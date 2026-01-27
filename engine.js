@@ -4812,7 +4812,7 @@ class Personality {
         this.data = data;
         this.actor = actor;
     }
-    
+
     execute(actor) {
         // Execute behaviors in order
         for (const behaviorName of this.behaviors) {
@@ -6053,6 +6053,227 @@ const BehaviorLibrary = {
         // Trap remains on tile (Brogue-style) - no die() call
 
         return true;
+    },
+
+    /**
+     * Shoot a projectile at a visible target within range
+     * Used by stationary ranged attackers like turrets
+     * Requires ammunition in inventory (items with collision_effect)
+     */
+    shoot_at_target: (actor, data) => {
+        const entityManager = actor.engine.entityManager;
+
+        // Get attack range from personality data or default to 8
+        const attackRange = data?.attack_range || actor.getAttribute('attack_range') || 8;
+
+        // Find nearest hostile target (player or controlled actor)
+        let target = null;
+        let nearestDist = Infinity;
+
+        for (const other of entityManager.actors) {
+            if (other === actor) continue;
+            if (other.isDead) continue;
+            if (!other.hasAttribute('controlled')) continue; // Only target player-controlled
+
+            const dx = other.x - actor.x;
+            const dy = other.y - actor.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+
+            if (dist <= attackRange && dist < nearestDist) {
+                // Check line of sight - callback checks if a tile is blocked by solid actors
+                const isBlocked = (x, y) => {
+                    const actorAtTile = entityManager.getActorAt(x, y);
+                    return actorAtTile && !actorAtTile.isDead && actorAtTile.hasAttribute('solid') &&
+                           actorAtTile !== actor && actorAtTile !== other;
+                };
+                if (hasLineOfSight(actor.x, actor.y, other.x, other.y, isBlocked)) {
+                    target = other;
+                    nearestDist = dist;
+                }
+            }
+        }
+
+        if (!target) return false;
+
+        // Get ammunition from inventory (any item with collision_effect)
+        const ammo = actor.inventory.find(item => item.getAttribute('collision_effect'));
+        if (!ammo) {
+            // No ammo - turret is empty
+            return false;
+        }
+
+        // Remove ammo from inventory
+        const ammoIndex = actor.inventory.indexOf(ammo);
+        if (ammoIndex > -1) {
+            actor.inventory.splice(ammoIndex, 1);
+        }
+
+        // Calculate hit chance using same formula as melee/throw
+        const accuracy = actor.getEffectiveAccuracy?.() ?? actor.getAttribute('accuracy') ?? 50;
+        const defense = target.getEffectiveDefense?.() ?? target.getAttribute('defense') ?? 0;
+        const rawProbability = accuracy * Math.pow(0.987, defense);
+        const hitChance = Math.max(5, Math.min(95, Math.round(rawProbability)));
+        const roll = ROT.RNG.getPercentage();
+        const hits = roll <= hitChance;
+
+        console.log(`${actor.name} shoots at ${target.name}: accuracy ${accuracy} vs defense ${defense} = ${hitChance}% chance, rolled ${roll}, ${hits ? 'HIT' : 'MISS'}`);
+
+        // Get the line path for the projectile
+        const path = getLinePath(actor.x, actor.y, target.x, target.y);
+        // Remove the starting position
+        const projectilePath = path.slice(1);
+
+        if (projectilePath.length === 0) return false;
+
+        // Animate the projectile
+        BehaviorLibrary._animateRangedAttack(actor, ammo, projectilePath, target, hits, () => {
+            if (hits) {
+                // Apply damage
+                const collisionEffect = ammo.getAttribute('collision_effect');
+                if (collisionEffect && target.stats) {
+                    for (const [key, rawValue] of Object.entries(collisionEffect)) {
+                        const value = actor.resolveAttributeValue?.(rawValue, actor) ?? rawValue;
+
+                        if (target.stats[key] !== undefined) {
+                            const stat = target.stats[key];
+                            if (typeof stat === 'object' && stat.current !== undefined) {
+                                stat.current = Math.min(stat.max, Math.max(0, stat.current + value));
+                                if (key === 'health' && stat.current <= 0) {
+                                    target.die();
+                                }
+                            }
+                        }
+                    }
+                    target.flash?.();
+                }
+
+                // Show hit message
+                const displayName = ammo.getDisplayName ? ammo.getDisplayName() : ammo.name;
+                const targetName = target.getNameWithArticle ? target.getNameWithArticle() : `the ${target.name}`;
+                const actorName = actor.getNameWithArticle ? actor.getNameWithArticle() : `The ${actor.name}`;
+                actor.engine.inputManager?.showMessage(`${actorName} shoots ${targetName} with ${displayName}!`);
+
+                // Play hit sound
+                const collisionSound = ammo.getAttribute('collision_sound') || 'arrow_hit';
+                actor.engine.playSound?.(collisionSound);
+            } else {
+                // Show miss message
+                const displayName = ammo.getDisplayName ? ammo.getDisplayName() : ammo.name;
+                const targetName = target.getNameWithArticle ? target.getNameWithArticle() : `the ${target.name}`;
+                const actorName = actor.getNameWithArticle ? actor.getNameWithArticle() : `The ${actor.name}`;
+                actor.engine.inputManager?.showMessage(`${actorName}'s ${displayName} misses ${targetName}!`);
+
+                // Play miss sound
+                actor.engine.playSound?.('arrow_miss');
+
+                // Drop the ammo near the target (on a random adjacent floor tile)
+                const adjacentTile = BehaviorLibrary._findAdjacentFloor(target.x, target.y, entityManager, actor.engine.mapManager);
+                if (adjacentTile) {
+                    ammo.x = adjacentTile.x;
+                    ammo.y = adjacentTile.y;
+                    entityManager.addEntity(ammo);
+                }
+            }
+
+            // Update sidebar
+            actor.engine.interfaceManager?.updateSidebar();
+        });
+
+        return true; // Action taken
+    },
+
+    /**
+     * Helper: Animate a ranged attack projectile
+     * @private
+     */
+    _animateRangedAttack: (shooter, ammo, path, _target, _willHit, onComplete) => {
+        const renderer = shooter.engine.renderer;
+        if (!renderer || path.length === 0) {
+            onComplete();
+            return;
+        }
+
+        const tileWidth = shooter.engine.config.tileWidth;
+        const tileHeight = shooter.engine.config.tileHeight;
+        const tileset = PIXI.Loader.shared.resources.tiles;
+
+        if (!tileset || !ammo.tileIndex) {
+            onComplete();
+            return;
+        }
+
+        // Create projectile sprite
+        const rect = new PIXI.Rectangle(
+            ammo.tileIndex.x * tileWidth,
+            ammo.tileIndex.y * tileHeight,
+            tileWidth,
+            tileHeight
+        );
+        const texture = new PIXI.Texture(tileset.texture.baseTexture, rect);
+        const projectileSprite = new PIXI.Sprite(texture);
+
+        // Apply ammo tint if present
+        if (ammo.tint !== undefined && ammo.tint !== null) {
+            projectileSprite.tint = ammo.tint;
+        }
+
+        projectileSprite.zIndex = 100;
+        renderer.uiContainer.addChild(projectileSprite);
+
+        // Animate through path
+        let currentIndex = 0;
+        const frameDelay = 25;
+
+        const animateFrame = () => {
+            if (currentIndex >= path.length) {
+                renderer.uiContainer.removeChild(projectileSprite);
+                projectileSprite.destroy();
+                onComplete();
+                return;
+            }
+
+            const point = path[currentIndex];
+            projectileSprite.x = point.x * tileWidth;
+            projectileSprite.y = point.y * tileHeight;
+
+            currentIndex++;
+            setTimeout(animateFrame, frameDelay);
+        };
+
+        animateFrame();
+    },
+
+    /**
+     * Helper: Find an adjacent floor tile
+     * @private
+     */
+    _findAdjacentFloor: (x, y, entityManager, mapManager) => {
+        const directions = [
+            { dx: -1, dy: -1 }, { dx: 0, dy: -1 }, { dx: 1, dy: -1 },
+            { dx: -1, dy: 0 },                     { dx: 1, dy: 0 },
+            { dx: -1, dy: 1 },  { dx: 0, dy: 1 },  { dx: 1, dy: 1 }
+        ];
+
+        // Shuffle for random placement
+        for (let i = directions.length - 1; i > 0; i--) {
+            const j = Math.floor(ROT.RNG.getUniform() * (i + 1));
+            [directions[i], directions[j]] = [directions[j], directions[i]];
+        }
+
+        for (const dir of directions) {
+            const tx = x + dir.dx;
+            const ty = y + dir.dy;
+
+            const floorTile = mapManager?.floorMap?.[ty]?.[tx];
+            if (!floorTile || floorTile.tileId <= 0) continue;
+
+            const actor = entityManager?.getActorAt(tx, ty);
+            if (actor && !actor.isDead && actor.hasAttribute('solid')) continue;
+
+            return { x: tx, y: ty };
+        }
+
+        return null;
     }
 };
 
