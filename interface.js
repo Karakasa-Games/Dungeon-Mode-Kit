@@ -679,10 +679,19 @@ class InterfaceManager {
                     const statKey = chargeStat || Object.keys(item.stats)[0];
                     const stat = item.stats[statKey];
                     if (stat && typeof stat === 'object' && stat.max !== undefined) {
+                        const readyAt = stat.ready_at || stat.max;
+                        const availableCharges = Math.floor(stat.current / readyAt);
+                        const maxCharges = Math.floor(stat.max / readyAt);
+                        const progressTowardNext = stat.current % readyAt;
+
+                        // Only show charge count if item is identified
+                        const isIdentified = item.identified !== false;
+
                         statLine = {
-                            label: `      ${this.capitalize(statKey)}: `,
-                            current: stat.current,
-                            max: stat.ready_at || stat.max // Use ready_at as max if defined (shows "ready" threshold)
+                            label: `      Charges: `,
+                            chargeCount: isIdentified ? `${availableCharges}/${maxCharges}` : `?/?`,
+                            current: progressTowardNext,
+                            max: readyAt
                         };
                     }
                 }
@@ -723,8 +732,12 @@ class InterfaceManager {
 
                 // Add stat line below item if it has stats
                 if (statLine) {
-                    itemStatLineIndices.push({ lineIndex: lines.length, ...statLine });
-                    lines.push(statLine.label); // Placeholder - thermometer rendered separately
+                    // Combine label and charge count for display text
+                    const displayLabel = statLine.chargeCount
+                        ? `${statLine.label}${statLine.chargeCount} `
+                        : statLine.label;
+                    itemStatLineIndices.push({ lineIndex: lines.length, label: displayLabel, current: statLine.current, max: statLine.max });
+                    lines.push(displayLabel); // Shows "      Charges: 2/3 " then thermometer renders after
                 }
             }
         } else {
@@ -2101,9 +2114,11 @@ class InterfaceManager {
         this.exitSpellAimingMode();
 
         // Consume charge from item stat if applicable
+        // Each use costs one charge's worth (ready_at threshold)
         const chargeStat = item.getAttribute('charge_stat');
         if (chargeStat && item.stats?.[chargeStat]) {
-            const useCost = item.getAttribute('charge_cost') || item.stats[chargeStat].max;
+            const stat = item.stats[chargeStat];
+            const useCost = stat.ready_at || stat.max;
             item.modifyStat(chargeStat, -useCost);
         }
 

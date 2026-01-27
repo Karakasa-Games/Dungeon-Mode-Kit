@@ -329,7 +329,7 @@
       "use_verb": "Cast",
       "use_effect": "targeted_spell",
       "charge_stat": "pow",
-      "charge_cost": 500,
+      "uses": 1,
       "spell_effect": { "center": "intense_fire", "radius": 1, "outer": "fire" },
       "projectile_tile": "OPAQUE_INVERSE_DIAMOND_SUITE",
       "projectile_tint": "#FF6600",
@@ -338,10 +338,10 @@
     },
     "stats": {
       "pow": {
-        "max": 100,
-        "start": 100,
-        "per_turn": 5,
-        "ready_at": 100,
+        "max": 800,
+        "start": 800,
+        "per_turn": 1,
+        "ready_at": 800,
         "ready_message": "Your [item_name] is fully charged!"
       }
     }
