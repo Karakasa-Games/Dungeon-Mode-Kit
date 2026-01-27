@@ -18,7 +18,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Planned
 
-- stats that have per-turn operations, like "nutrition" that ticks down or "health" that ticks up. Not hard-coded, can be set in actor json when defining the stat. The amount-per-turn can be modified by item wear effects etc.
 - put a counter by repeated description messages rather than let them add additional messages to list
 
 ### In Progress
@@ -31,6 +30,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Per-turn stat modifications (data-driven):
+  - Stats can have `per_turn` value for automatic changes each turn (e.g., nutrition drain, health regen)
+  - `fatal: true` makes stat depletion kill the actor (health is always fatal)
+  - `death_message` for custom death text when stat reaches zero
+  - `warnings` array for threshold-based messages (e.g., hunger warnings at 50%, 25%, 10%)
+  - Equipment `wear_effect` can modify per-turn rates (e.g., `"nutrition_per_turn": 0.5` reduces hunger)
+  - Passive inventory effects can also modify per-turn rates
 - Combat turn costs:
   - Item use takes one turn
   - Multi-turn armor equipping based on strength requirement
@@ -45,9 +51,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Combat message ordering: attack descriptions now appear before death messages
 - Fixed double death messages when multiple enemies attack simultaneously
 - Fixed dead actors being attacked (early exit check in applyCollisionEffects)
-- Fixed multiple minotaurs spawning in arena:
+- Fixed AI attacking twice per turn: missed attacks now properly consume the turn
+  - `applyCollisionEffects` now returns `attackAttempted` flag (true even on miss)
+  - `attack_adjacent` and `defend_self` behaviors return true on any attack attempt
+  - `tryMove` uses `attackAttempted` instead of `effectApplied` for action taken
+- Fixed multiple actors spawning when set to 100% max 1 in prototype:
   - `spawnUnplacedEntities` now skips actors configured in `random_actors`
-  - Arena respawn button properly removes existing minotaurs before spawning new one
   - `removeEntity` now also removes actor from scheduler
 
 ### Changed

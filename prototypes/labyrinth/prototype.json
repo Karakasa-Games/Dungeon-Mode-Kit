@@ -11,7 +11,8 @@
     "darkness": true
   },
   "random_items": {
-    "shield": { "chance": 100 }
+    "shield": { "chance": 100 },
+    "sword": { "chance": 100 }
   },
   "win_conditions": ["killed:minotaur"]
 }

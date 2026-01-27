@@ -60,7 +60,10 @@ Item JSON schema:
       "weapon": true,                         // or "knockback", "lifesteal", "critical" for proc effects
       "wearable": "top|middle|lower",         // equipment slot
       "requires_stat": { "strength": 8 },     // stat requirements to equip; strength value = turns to equip
-      "wear_effect": { "defense": 5 },        // stat bonuses when worn
+      "wear_effect": {                        // stat bonuses when worn
+        "defense": 5,
+        "nutrition_per_turn": 0.5             // modifies per-turn rate (reduces hunger drain)
+      },
       "passive_effect": {                     // effect while in inventory (no equip needed)
         "type": "stat_bonus",                 // stat_bonus or leave_trail
         "defense": 10                         // stat bonuses applied passively
@@ -123,9 +126,21 @@ Actor JSON schema (organized by property type):
     "default_items": ["item_id"],          // items actor spawns with
 
     // STATS - numeric values with max/current that change during gameplay
+    // Simple format: "health": 30 becomes { max: 30, current: 30, per_turn: 0 }
+    // Extended format for per-turn changes and warnings:
     "stats": {
-      "health": 30,      // becomes { max: 30, current: 30 }
-      "strength": 5
+      "health": 30,
+      "nutrition": {
+        "max": 100,
+        "per_turn": -1,              // changes by this amount each turn
+        "fatal": true,               // reaching 0 kills the actor
+        "death_message": "You starve to death!",
+        "warnings": [                // threshold messages (player only)
+          { "threshold": 0.5, "message": "You are getting hungry." },
+          { "threshold": 0.25, "message": "You are very hungry." },
+          { "threshold": 0.1, "message": "You are starving!" }
+        ]
+      }
     },
 
     // ATTRIBUTES - boolean flags/capabilities

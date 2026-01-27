@@ -20,7 +20,10 @@
       "accuracy": 40
     },
     "stats": {
-      "health": 1
+      "health": {
+        "max": 1,
+        "per_turn": 1
+      }
     }
   },
 

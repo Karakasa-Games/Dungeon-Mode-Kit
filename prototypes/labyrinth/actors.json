@@ -16,12 +16,11 @@
       "inventory": 5,
       "strength": 10,
       "remains": "skull",
-      "accuracy": 50,
+      "accuracy": 40,
       "defense": 6
     },
     "stats": {
       "health": 100
-    },
-    "default_items": ["sword"]
+    }
   }
 }

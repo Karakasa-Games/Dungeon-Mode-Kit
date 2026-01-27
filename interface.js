@@ -271,6 +271,7 @@ class InterfaceManager {
 
     /**
      * Render a thermometer bar using FULL_BLOCK for fill and LIGHT_SHADE for background
+     * Bar is normalized to a fixed width regardless of max value
      * @param {PIXI.Container} container - Container to add sprites to
      * @param {number} current - Current stat value
      * @param {number} max - Maximum stat value
@@ -278,8 +279,10 @@ class InterfaceManager {
      * @param {number} y - Y position in pixels
      */
     renderThermometerBar(container, current, max, x, y) {
-        const totalTiles = Math.ceil(max / 10);
-        const filledTiles = Math.ceil(current / 10);
+        // Fixed width for all thermometer bars (normalized)
+        const totalTiles = 10;
+        const fillPercentage = max > 0 ? current / max : 0;
+        const filledTiles = Math.round(fillPercentage * totalTiles);
 
         const fullBlockCoords = this.spriteLibrary.getTileByName('FULL_BLOCK');
         const lightShadeCoords = this.spriteLibrary.getTileByName('LIGHT_SHADE');
@@ -621,12 +624,16 @@ class InterfaceManager {
             this.removeBox(infoBoxId);
         }
 
+        // Check if HTML actors element exists - if so, skip canvas thermometers
+        // since stats are already displayed in the HTML sidebar
+        const hasHtmlActorsElement = document.getElementById('actors') !== null;
+
         // Gather stats, separating thermometer stats from regular stats
         const regularStats = [];
         const thermometerStats = []; // { key, current, max, lineIndex }
         if (player.stats) {
             for (const [key, value] of Object.entries(player.stats)) {
-                if (this.isThermometerStat(key)) {
+                if (this.isThermometerStat(key) && !hasHtmlActorsElement) {
                     // Get current and max values (handle both object and simple number formats)
                     const max = typeof value === 'object' ? value.max : value;
                     const current = typeof value === 'object' ? value.current : value;
@@ -634,11 +641,13 @@ class InterfaceManager {
                     if (max > 1) {
                         thermometerStats.push({ key, current, max });
                     }
-                } else {
+                } else if (!this.isThermometerStat(key)) {
                     // Regular stat - display as text
                     const displayValue = typeof value === 'object' ? value.current : value;
                     regularStats.push(`${this.capitalize(key)}: ${displayValue}`);
                 }
+                // When hasHtmlActorsElement is true, thermometer stats are skipped entirely
+                // (they're shown in the HTML sidebar instead)
             }
         }
 
@@ -697,10 +706,10 @@ class InterfaceManager {
         // Calculate dimensions - account for thermometer bar widths
         const padding = 1;
         let maxLineLength = Math.max(...lines.map(l => l.length), 10);
-        // Check if any thermometer bars would be wider
-        for (const { label, stat } of thermometerLineIndices) {
-            const barWidth = Math.ceil(stat.max / 10);
-            const totalWidth = label.length + barWidth;
+        // Check if any thermometer bars would be wider (fixed width of 10 tiles)
+        const thermometerBarWidth = 10;
+        for (const { label } of thermometerLineIndices) {
+            const totalWidth = label.length + thermometerBarWidth;
             if (totalWidth > maxLineLength) {
                 maxLineLength = totalWidth;
             }
@@ -2045,7 +2054,10 @@ class InterfaceManager {
                     html += `<figure class="stat-thermometer">`;
                     html += `<div class="stat-fill" style="width: ${percentage}%"></div>`;
                     html += `</figure>`;
-                    html += `<span class="stat-ratio">${current}/${max}</span>`;
+                    // Only show ratio numbers for stats with max <= 100
+                    if (max <= 100) {
+                        html += `<span class="stat-ratio">${current}/${max}</span>`;
+                    }
                     html += `</li>`;
                 }
                 html += '</ul>';

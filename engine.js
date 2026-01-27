@@ -1810,11 +1810,16 @@ class Actor extends Entity {
 
         if (data.stats) {
             Object.entries(data.stats).forEach(([stat, value]) => {
-                // Normalize to { max, current } format
+                // Normalize to { max, current, per_turn, ... } format
+                // Preserves additional config: fatal, death_message, warnings
                 if (typeof value === 'object' && value.max !== undefined) {
-                    this.stats[stat] = { ...value };
+                    this.stats[stat] = {
+                        ...value, // Preserve all config (fatal, death_message, warnings, etc.)
+                        current: value.current !== undefined ? value.current : value.max,
+                        per_turn: value.per_turn || 0
+                    };
                 } else {
-                    this.stats[stat] = { max: value, current: value };
+                    this.stats[stat] = { max: value, current: value, per_turn: 0 };
                 }
             });
         }
@@ -1983,6 +1988,10 @@ class Actor extends Entity {
      * @returns {Promise} Resolves when action is complete
      */
     act() {
+        // Process per-turn stat changes (regeneration, hunger, poison, etc.)
+        this.processPerTurnStats();
+        if (this.isDead) return Promise.resolve(); // Died from stat depletion
+
         // Player-controlled actors lock the engine and wait for input
         if (this.isPlayerControlled()) {
             this.engine.turnEngine.lock();
@@ -2535,6 +2544,115 @@ class Actor extends Entity {
     }
 
     /**
+     * Get the effective per-turn change for a stat (base + equipment bonuses)
+     * Equipment can modify per_turn values via wear_effect (e.g., ring that slows hunger)
+     * @param {string} statName - The stat to get per-turn value for
+     * @returns {number} Per-turn change amount (positive = gain, negative = loss)
+     */
+    getEffectivePerTurn(statName) {
+        const stat = this.stats[statName];
+        if (!stat) return 0;
+
+        let perTurn = stat.per_turn || 0;
+
+        // Add modifiers from equipped items' wear_effects
+        // Format: wear_effect: { "health_per_turn": 2 } or { "nutrition_per_turn": -0.5 }
+        const perTurnKey = `${statName}_per_turn`;
+        for (const slot of ['weapon', 'top', 'middle', 'lower']) {
+            const item = this.equipment[slot];
+            if (item) {
+                const wearEffect = item.getAttribute('wear_effect');
+                if (wearEffect && typeof wearEffect[perTurnKey] === 'number') {
+                    perTurn += wearEffect[perTurnKey];
+                }
+            }
+        }
+
+        // Add passive bonuses from inventory items
+        for (const item of this.inventory) {
+            const passiveEffect = item.getAttribute('passive_effect');
+            if (passiveEffect && passiveEffect.type === 'stat_bonus' && typeof passiveEffect[perTurnKey] === 'number') {
+                perTurn += passiveEffect[perTurnKey];
+            }
+        }
+
+        return perTurn;
+    }
+
+    /**
+     * Process per-turn stat changes for this actor
+     * Called at the start of each turn
+     *
+     * Stat config options (set in actor JSON stats block):
+     *   per_turn: number - Amount to change each turn (positive or negative)
+     *   fatal: boolean - If true, reaching 0 kills the actor (default: false, except health)
+     *   death_message: string - Message shown when stat causes death (player only)
+     *   warnings: array - Threshold warnings [{threshold: 0.5, message: "Getting low"}]
+     *
+     * Example:
+     *   "nutrition": {
+     *     "max": 100,
+     *     "per_turn": -1,
+     *     "fatal": true,
+     *     "death_message": "You starve to death!",
+     *     "warnings": [
+     *       {"threshold": 0.5, "message": "You are getting hungry."},
+     *       {"threshold": 0.25, "message": "You are very hungry."},
+     *       {"threshold": 0.1, "message": "You are starving!"}
+     *     ]
+     *   }
+     */
+    processPerTurnStats() {
+        if (!this.stats || this.isDead) return;
+
+        for (const [statName, stat] of Object.entries(this.stats)) {
+            const perTurn = this.getEffectivePerTurn(statName);
+            if (perTurn === 0) continue;
+
+            // Apply the per-turn change
+            const oldValue = stat.current;
+            stat.current = Math.max(0, Math.min(stat.max, stat.current + perTurn));
+            const newValue = stat.current;
+
+            // Only process if value actually changed
+            if (oldValue === newValue) continue;
+
+            console.log(`${this.name}'s ${statName} per-turn: ${oldValue} -> ${newValue} (${perTurn >= 0 ? '+' : ''}${perTurn})`);
+
+            // Check for death - health is always fatal, other stats need fatal: true
+            const isFatal = statName === 'health' || stat.fatal === true;
+            if (newValue <= 0 && isFatal) {
+                if (this.isPlayerControlled() && stat.death_message) {
+                    this.engine.inputManager?.showMessage(stat.death_message);
+                }
+                this.die();
+                return; // Stop processing if dead
+            }
+
+            // Show warning messages for player when crossing thresholds
+            if (this.isPlayerControlled() && stat.warnings && this.engine.inputManager) {
+                const oldPercentage = oldValue / stat.max;
+                const newPercentage = newValue / stat.max;
+
+                // Check warnings in order (they should be sorted highest to lowest threshold)
+                for (const warning of stat.warnings) {
+                    // Trigger when crossing below threshold
+                    if (newPercentage <= warning.threshold && oldPercentage > warning.threshold) {
+                        this.engine.inputManager.showMessage(warning.message);
+                        break; // Only show one warning per turn
+                    }
+                }
+            }
+        }
+
+        // Update UI after all per-turn changes
+        if (this.isPlayerControlled()) {
+            this.engine.interfaceManager?.updatePlayerInfo();
+        }
+        this.engine.interfaceManager?.updateActorsDiv();
+    }
+
+    /**
      * Get weapon type from weapon attribute
      * Supports boolean (true = 'normal') or string type names
      * @param {Item} weapon - The weapon item
@@ -3025,12 +3143,12 @@ class Actor extends Entity {
      * Damage comes from equipped weapon OR actor's collision_effect (not both)
      * Utility effects (like keys unlocking doors) always apply
      * @param {Actor} target - The actor being collided with
-     * @returns {{effectApplied: boolean, targetPassable: boolean}}
+     * @returns {{effectApplied: boolean, targetPassable: boolean, targetKilled: boolean, attackAttempted: boolean}}
      */
     applyCollisionEffects(target) {
         // Skip if target is already dead
         if (target.isDead) {
-            return { effectApplied: false, targetPassable: true, targetKilled: false };
+            return { effectApplied: false, targetPassable: true, targetKilled: false, attackAttempted: false };
         }
 
         let effectApplied = false;
@@ -3048,7 +3166,7 @@ class Actor extends Entity {
 
         if (targetIsMineable && !hasMiningTool) {
             // Just bump sound, no combat
-            return { effectApplied: false, targetPassable: false };
+            return { effectApplied: false, targetPassable: false, targetKilled: false, attackAttempted: false };
         }
         let damageSource = null;
 
@@ -3167,7 +3285,10 @@ class Actor extends Entity {
             target.die();
         }
 
-        return { effectApplied, targetPassable, targetKilled: targetShouldDie };
+        // attackAttempted is true if we had a damage source (even on miss)
+        // This is used to consume the turn regardless of hit/miss
+        const attackAttempted = damageSource !== null;
+        return { effectApplied, targetPassable, targetKilled: targetShouldDie, attackAttempted };
     }
 
     /**
@@ -3657,11 +3778,11 @@ class Actor extends Entity {
                 return { moved: false, actionTaken: true };
             }
 
-            if (!collisionResult.effectApplied) {
+            if (!collisionResult.attackAttempted) {
                 console.log(`${this.name} blocked by ${actorAtTarget.name}`);
             }
-            // Effect applied = action taken (attack), even though we didn't move
-            return { moved: false, actionTaken: collisionResult.effectApplied };
+            // Attack attempted (hit or miss) = action taken, even though we didn't move
+            return { moved: false, actionTaken: collisionResult.attackAttempted };
         }
 
         // Check for floor tile - if no floor, actor falls
@@ -4348,11 +4469,9 @@ const BehaviorLibrary = {
             if (!target || target.isDead || !target.hasAttribute('controlled')) continue;
 
             // Use unified collision effects system (handles damage, sounds, flash, etc.)
-            const result = actor.applyCollisionEffects(target);
-
-            if (result.effectApplied) {
-                return true; // Attack was made
-            }
+            // An attack attempt (even a miss) consumes the turn
+            actor.applyCollisionEffects(target);
+            return true; // Attack was attempted (hit or miss)
         }
 
         return false; // No valid target found
@@ -4533,15 +4652,9 @@ const BehaviorLibrary = {
             return actor.moveToward(attacker.x, attacker.y);
         }
 
-        // Attack the attacker
-        const result = actor.applyCollisionEffects(attacker);
-        if (result.effectApplied) {
-            // Clear attacker after successful retaliation (or keep pursuing)
-            // actor._lastAttacker = null;
-            return true;
-        }
-
-        return false;
+        // Attack the attacker - an attack attempt (even a miss) consumes the turn
+        actor.applyCollisionEffects(attacker);
+        return true; // Attack was attempted
     },
 
     /**
