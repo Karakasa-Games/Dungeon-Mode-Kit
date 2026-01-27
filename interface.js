@@ -1383,6 +1383,79 @@ class InterfaceManager {
     }
 
     /**
+     * Roll to determine if a thrown item misses its target
+     * Uses the thrower's accuracy vs target's defense (same formula as melee)
+     * @param {Actor} thrower - The actor throwing the item
+     * @param {Actor} target - The target being thrown at
+     * @returns {boolean} True if the throw MISSED, false if it hit
+     */
+    rollThrowAccuracy(thrower, target) {
+        // Get thrower's accuracy (default 50 if not set - throwing is harder than melee)
+        const accuracy = thrower.getEffectiveAccuracy?.() ?? thrower.getAttribute('accuracy') ?? 50;
+
+        // If thrower has no accuracy concept, always hit
+        if (accuracy === null) return false;
+
+        // Get target's defense
+        const defense = target.getEffectiveDefense?.() ?? target.getAttribute('defense') ?? 0;
+
+        // Use same formula as melee: accuracy * 0.987^defense
+        const rawProbability = accuracy * Math.pow(0.987, defense);
+
+        // Clamp to 5-95%
+        const hitChance = Math.max(5, Math.min(95, Math.round(rawProbability)));
+
+        // Roll for hit
+        const roll = ROT.RNG.getPercentage(); // Returns 1-100
+        const missed = roll > hitChance;
+
+        console.log(`Throw accuracy: ${accuracy} vs defense ${defense} = ${hitChance}% hit chance, rolled ${roll}, ${missed ? 'MISS' : 'HIT'}`);
+
+        return missed;
+    }
+
+    /**
+     * Find an adjacent floor tile to a given position
+     * Used for placing missed thrown items
+     * @param {number} x - Center X position
+     * @param {number} y - Center Y position
+     * @returns {{x: number, y: number}|null} Adjacent floor position or null if none found
+     */
+    findAdjacentFloorTile(x, y) {
+        const directions = [
+            { dx: -1, dy: -1 }, { dx: 0, dy: -1 }, { dx: 1, dy: -1 },
+            { dx: -1, dy: 0 },                     { dx: 1, dy: 0 },
+            { dx: -1, dy: 1 },  { dx: 0, dy: 1 },  { dx: 1, dy: 1 }
+        ];
+
+        // Shuffle directions for random placement
+        for (let i = directions.length - 1; i > 0; i--) {
+            const j = Math.floor(ROT.RNG.getUniform() * (i + 1));
+            [directions[i], directions[j]] = [directions[j], directions[i]];
+        }
+
+        const mapManager = this.engine.mapManager;
+        const entityManager = this.engine.entityManager;
+
+        for (const dir of directions) {
+            const tx = x + dir.dx;
+            const ty = y + dir.dy;
+
+            // Check if this is a valid floor tile
+            const floorTile = mapManager?.floorMap?.[ty]?.[tx];
+            if (!floorTile || floorTile.tileId <= 0) continue;
+
+            // Check if there's a solid actor blocking
+            const actor = entityManager?.getActorAt(tx, ty);
+            if (actor && !actor.isDead && actor.hasAttribute('solid')) continue;
+
+            return { x: tx, y: ty };
+        }
+
+        return null;
+    }
+
+    /**
      * Update the throw path line based on current mouse position
      */
     updateThrowPath() {
@@ -1475,20 +1548,12 @@ class InterfaceManager {
         // Exit aiming mode (hides line path)
         this.exitThrowAimingMode();
 
-        // Determine if we'll hit something (for sound selection)
+        // Determine if we'll potentially hit something
         const landingPoint = path[path.length - 1];
         const hitActor = this.engine.entityManager?.getActorAt(landingPoint.x, landingPoint.y);
         const willHit = hitActor && !hitActor.isDead && hitActor.hasAttribute('solid');
 
-        // Play sound before animation starts so they sync better
-        if (willHit) {
-            const collisionSound = item.getAttribute('collision_sound') || 'arrow_hit';
-            this.engine.playSound(collisionSound);
-        } else {
-            this.engine.playSound('arrow_miss');
-        }
-
-        // Animate the projectile, then apply effects
+        // Animate the projectile, then apply effects (sound plays in completeThrow after accuracy roll)
         this.animateProjectile(item, path, () => {
             this.completeThrow(item, player, path, willHit);
         });
@@ -1585,6 +1650,7 @@ class InterfaceManager {
         const isExplosive = item.hasAttribute('explosive');
 
         // Handle explosive items - they create a cloud and are always destroyed
+        // Explosive items always hit (they explode on the tile regardless of accuracy)
         if (isExplosive) {
             this.createExplosiveCloud(item, landingPoint.x, landingPoint.y);
             const displayName = item.getDisplayName ? item.getDisplayName() : item.name;
@@ -1600,55 +1666,93 @@ class InterfaceManager {
             const hitActor = this.engine.entityManager?.getActorAt(landingPoint.x, landingPoint.y);
 
             if (hitActor) {
-                // Mark actor as hit this turn for flee_from_danger behavior
-                hitActor.wasHitThisTurn = true;
+                // Perform accuracy roll for thrown items
+                const throwMissed = this.rollThrowAccuracy(player, hitActor);
 
-                // Apply collision effect if the item has one
-                const collisionEffect = item.getAttribute('collision_effect');
-                if (collisionEffect) {
-                    for (const [key, rawValue] of Object.entries(collisionEffect)) {
-                        const value = player.resolveAttributeValue(rawValue, player);
+                if (throwMissed) {
+                    // Play miss sound
+                    this.engine.playSound('arrow_miss');
 
-                        if (hitActor.stats && hitActor.stats[key] !== undefined) {
-                            const stat = hitActor.stats[key];
-                            if (typeof stat === 'object' && stat.current !== undefined) {
-                                stat.current = Math.min(stat.max, Math.max(0, stat.current + value));
-                                if (key === 'health' && stat.current <= 0) {
-                                    hitActor.die();
+                    // Throw missed - item lands on adjacent floor tile, unbroken
+                    const displayName = item.getDisplayName ? item.getDisplayName() : item.name;
+                    const targetName = hitActor.getNameWithArticle ? hitActor.getNameWithArticle() : `the ${hitActor.name}`;
+                    this.engine.inputManager?.showMessage(`The ${displayName} misses ${targetName}!`);
+
+                    // Find adjacent floor tile to land on
+                    const missLandingPoint = this.findAdjacentFloorTile(landingPoint.x, landingPoint.y);
+                    if (missLandingPoint) {
+                        item.x = missLandingPoint.x;
+                        item.y = missLandingPoint.y;
+                    } else if (path.length > 1) {
+                        // Fallback: land on tile before target
+                        const landBeforeHit = path[path.length - 2];
+                        item.x = landBeforeHit.x;
+                        item.y = landBeforeHit.y;
+                    } else {
+                        // Last resort: land at player's feet
+                        item.x = player.x;
+                        item.y = player.y;
+                    }
+                    this.engine.entityManager.addEntity(item);
+                } else {
+                    // Play hit sound
+                    const collisionSound = item.getAttribute('collision_sound') || 'arrow_hit';
+                    this.engine.playSound(collisionSound);
+
+                    // Throw hit - apply damage and effects
+                    // Mark actor as hit this turn for flee_from_danger behavior
+                    hitActor.wasHitThisTurn = true;
+
+                    // Apply collision effect if the item has one
+                    const collisionEffect = item.getAttribute('collision_effect');
+                    if (collisionEffect) {
+                        for (const [key, rawValue] of Object.entries(collisionEffect)) {
+                            const value = player.resolveAttributeValue(rawValue, player);
+
+                            if (hitActor.stats && hitActor.stats[key] !== undefined) {
+                                const stat = hitActor.stats[key];
+                                if (typeof stat === 'object' && stat.current !== undefined) {
+                                    stat.current = Math.min(stat.max, Math.max(0, stat.current + value));
+                                    if (key === 'health' && stat.current <= 0) {
+                                        hitActor.die();
+                                    }
                                 }
                             }
                         }
+                        hitActor.flash?.();
+                        this.updateSidebar();
                     }
-                    hitActor.flash?.();
-                    this.updateSidebar();
+
+                    // Show hit message
+                    const displayName = item.getDisplayName ? item.getDisplayName() : item.name;
+                    const targetName = hitActor.getNameWithArticle ? hitActor.getNameWithArticle() : `the ${hitActor.name}`;
+                    this.engine.inputManager?.showMessage(`The ${displayName} hits ${targetName}!`);
+
+                    // Item lands at the tile before the hit (or destroyed if breakable)
+                    // Items are breakable_on_throw by default (like Brogue) unless explicitly set to false
+                    const breakable = item.getAttribute('breakable_on_throw') !== false;
+                    if (breakable) {
+                        // Item is destroyed on impact
+                        const displayName2 = item.getDisplayName ? item.getDisplayName() : item.name;
+                        this.engine.inputManager?.showMessage(`The ${displayName2} shatters!`);
+                    } else if (path.length > 1) {
+                        // Land one tile before the blocked tile
+                        const landBeforeHit = path[path.length - 2];
+                        item.x = landBeforeHit.x;
+                        item.y = landBeforeHit.y;
+                        this.engine.entityManager.addEntity(item);
+                    } else {
+                        // Path was only 1 tile, land at player's feet
+                        item.x = player.x;
+                        item.y = player.y;
+                        this.engine.entityManager.addEntity(item);
+                    }
                 }
-
-                // Show hit message
-                const displayName = item.getDisplayName ? item.getDisplayName() : item.name;
-                const targetName = hitActor.getNameWithArticle ? hitActor.getNameWithArticle() : `the ${hitActor.name}`;
-                this.engine.inputManager?.showMessage(`The ${displayName} hits ${targetName}!`);
-            }
-
-            // Item lands at the tile before the hit (or destroyed if breakable)
-            // Items are breakable_on_throw by default (like Brogue) unless explicitly set to false
-            const breakable = item.getAttribute('breakable_on_throw') !== false;
-            if (breakable) {
-                // Item is destroyed on impact
-                const displayName = item.getDisplayName ? item.getDisplayName() : item.name;
-                this.engine.inputManager?.showMessage(`The ${displayName} shatters!`);
-            } else if (path.length > 1) {
-                // Land one tile before the blocked tile
-                const landBeforeHit = path[path.length - 2];
-                item.x = landBeforeHit.x;
-                item.y = landBeforeHit.y;
-                this.engine.entityManager.addEntity(item);
-            } else {
-                // Path was only 1 tile, land at player's feet
-                item.x = player.x;
-                item.y = player.y;
-                this.engine.entityManager.addEntity(item);
             }
         } else {
+            // Play landing sound (no target hit)
+            this.engine.playSound('arrow_miss');
+
             // No hit - item lands at target
             item.x = landingPoint.x;
             item.y = landingPoint.y;

@@ -52,6 +52,26 @@
     }
   },
 
+  "turret": {
+    "name": "Dart turret",
+    "description": "A clockwork blowgun",
+    "tileIndexBase": "CANDLE_STICK",
+    "tileIndexTop": "CYCLOPS_FACE",
+    "tint": "#fffece",
+    "personality": "stationed_ranged",
+    "collision_description": "The [actor_name] [attacks.melee_verbs] the [attacked_actor_name]!",
+    "attributes": {
+      "hostile": true,
+      "solid": true,
+      "visible": true,
+      "flammable": false,
+      "breakable": true,
+      "inventory": 5,
+      "remains": "rubble",
+      "accuracy": 70
+    }
+  },
+
   "basilisk": {
     "name": "Basilisk",
     "tileIndexBase": {"x": 10, "y": 7},

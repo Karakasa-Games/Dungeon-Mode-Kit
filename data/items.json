@@ -33,21 +33,6 @@
     }
   },
 
-  "bow": {
-    "name": "Bow",
-    "tileIndex": "BOW_AND_ARROW",
-    "attributes": {
-      "pickupable": true,
-      "visible": true,
-      "stackable": false,
-      "flammable": true,
-      "use_verb": "Fire",
-      "use_effect": "ranged_attack",
-      "attack_range": 10,
-      "requires": "arrow"
-    }
-  },
-
   "arrow": {
     "name": "Arrow",
     "tileIndex": "RIGHTWARDS_ARROW",
@@ -56,7 +41,8 @@
       "visible": true,
       "stackable": true,
       "flammable": true,
-      "ammunition": true
+      "collision_effect": { "health": -10 },
+      "collision_sound": "tap2"
     }
   },
 
