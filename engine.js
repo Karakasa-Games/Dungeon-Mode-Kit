@@ -3051,7 +3051,6 @@ class Actor extends Entity {
 
         // Get the use effect to determine what happens
         const useEffect = item.getAttribute('use_effect');
-        console.log('useItem: use_effect =', useEffect, 'type =', typeof useEffect);
         let success = false;
 
         if (useEffect) {
@@ -3146,16 +3145,12 @@ class Actor extends Entity {
         }
 
         // Handle string format: method name for complex effects
-        console.log('Effect is a string, checking switch cases for:', effect);
         switch (effect) {
             case 'targeted_spell':
-                console.log('Matched targeted_spell case!');
                 // Targeted spell enters aiming mode - handled by interface
                 // Check if item stat is ready (for charged items like staffs)
                 const chargeStat = item.getAttribute('charge_stat');
-                console.log('chargeStat:', chargeStat, 'item.stats:', item.stats, 'isStatReady:', chargeStat ? item.isStatReady(chargeStat) : 'no charge stat');
                 if (chargeStat && !item.isStatReady(chargeStat)) {
-                    console.log('Staff not charged - returning false');
                     const stat = item.stats?.[chargeStat];
                     const current = stat?.current ?? 0;
                     const readyAt = stat?.ready_at ?? stat?.max ?? 100;
@@ -3166,9 +3161,7 @@ class Actor extends Entity {
                     return false;
                 }
                 // Enter spell aiming mode via interface manager
-                console.log('About to enter spell aiming mode, interfaceManager:', !!this.engine.interfaceManager);
                 this.engine.interfaceManager?.enterSpellAimingMode(item, this);
-                console.log('After enterSpellAimingMode, spellAimingMode:', this.engine.interfaceManager?.spellAimingMode);
                 return true; // Returns true but turn is consumed in executeSpell
             default:
                 console.log(`Unknown item effect: ${effect}`);
@@ -6224,7 +6217,100 @@ class EntityManager {
             this.engine.scheduler.add(actor, true);
         }
 
+        // Apply immediate damage to actors at this location
+        // This ensures fire/cloud damage hits before victims can flee
+        this.applySpawnDamage(actor);
+
         return actor;
+    }
+
+    /**
+     * Apply immediate damage from a newly spawned actor to any actors at its location
+     * This handles fire, cloud, and other hazardous actors that should damage on contact
+     * @param {Actor} hazard - The newly spawned hazardous actor
+     */
+    applySpawnDamage(hazard) {
+        // Check if this actor has damage-dealing behaviors
+        const personality = hazard.personality;
+        if (!personality) return;
+
+        const behaviors = personality.data?.behaviors || [];
+        const hasDamageBehavior = behaviors.includes('fire_burn_out') ||
+                                   behaviors.includes('cloud_affect_actors') ||
+                                   behaviors.includes('incinerate_entities');
+
+        if (!hasDamageBehavior) return;
+
+        // Find other actors at this position
+        for (const other of this.actors) {
+            if (other === hazard) continue;
+            if (other.isDead) continue;
+            if (other.x !== hazard.x || other.y !== hazard.y) continue;
+
+            // Skip other hazards (fire, cloud, mist, lava)
+            if (other.type === 'fire' || other.type === 'intense_fire' ||
+                other.type === 'cloud' || other.type === 'mist' || other.type === 'lava') continue;
+
+            // Apply fire damage
+            if (behaviors.includes('fire_burn_out')) {
+                const damagePerTurn = hazard.data?.damage_per_turn ?? 10;
+
+                // Skip fireproof actors
+                if (other.hasAttribute('fireproof')) continue;
+
+                if (damagePerTurn > 0 && other.stats?.health) {
+                    const oldHealth = other.stats.health.current;
+                    other.stats.health.current = Math.max(0, oldHealth - damagePerTurn);
+
+                    // Show damage message
+                    if (other.hasAttribute('visible')) {
+                        this.engine.inputManager?.showMessage(`The fire burns ${other.name} for ${damagePerTurn} damage!`);
+                    }
+
+                    // Flash the victim
+                    other.flash?.();
+
+                    // Check for death
+                    if (other.stats.health.current <= 0) {
+                        other.die();
+                    }
+                }
+            }
+
+            // Apply cloud/mist collision effect
+            if (behaviors.includes('cloud_affect_actors')) {
+                const collisionEffect = hazard.getAttribute('collision_effect');
+                if (collisionEffect && typeof collisionEffect === 'object') {
+                    for (const [key, value] of Object.entries(collisionEffect)) {
+                        if (other.stats && other.stats[key] !== undefined) {
+                            const stat = other.stats[key];
+                            if (typeof stat === 'object' && stat.current !== undefined) {
+                                stat.current = Math.max(0, stat.current + value);
+
+                                // Show effect message
+                                if (other.hasAttribute('visible') && value < 0) {
+                                    const statCapitalized = key.charAt(0).toUpperCase() + key.slice(1);
+                                    this.engine.inputManager?.showMessage(`${other.name} takes ${Math.abs(value)} ${statCapitalized} damage from the ${hazard.name}!`);
+                                }
+
+                                // Check for death from health damage
+                                if (key === 'health' && stat.current <= 0) {
+                                    other.die();
+                                }
+                            }
+                        }
+                    }
+
+                    // Flash the victim if there was negative health effect
+                    if (collisionEffect.health && collisionEffect.health < 0) {
+                        other.flash?.();
+                    }
+                }
+            }
+        }
+
+        // Update sidebar to reflect damage
+        this.engine.interfaceManager?.updateSidebar();
     }
 
     /**

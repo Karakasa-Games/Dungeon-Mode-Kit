@@ -1142,9 +1142,7 @@ class InterfaceManager {
         }
 
         // Don't consume turn if we entered spell aiming mode (turn consumed on cast)
-        console.log('After useItem, spellAimingMode:', this.spellAimingMode);
         if (this.spellAimingMode) {
-            console.log('Returning early - spell aiming mode active');
             return;
         }
 
@@ -1679,7 +1677,6 @@ class InterfaceManager {
      * @param {Actor} caster - The actor using the item
      */
     enterSpellAimingMode(item, caster) {
-        console.log('Entering spell aiming mode for', item.name);
         this.spellAimingMode = true;
         this.spellItem = item;
         this.spellCaster = caster;
@@ -1756,29 +1753,23 @@ class InterfaceManager {
      * Execute the spell at the current target position
      */
     executeSpell() {
-        console.log('executeSpell called');
         if (!this.spellAimingMode || !this.spellCaster || !this.spellItem) {
-            console.log('executeSpell early return - missing state:', { spellAimingMode: this.spellAimingMode, spellCaster: !!this.spellCaster, spellItem: !!this.spellItem });
             return;
         }
 
         const inputManager = this.engine.inputManager;
         if (!inputManager) {
-            console.log('executeSpell early return - no inputManager');
             return;
         }
 
         const targetX = inputManager.hoveredTile.x;
         const targetY = inputManager.hoveredTile.y;
-        console.log('executeSpell target:', targetX, targetY, 'caster:', this.spellCaster.x, this.spellCaster.y);
 
         // Don't cast if mouse is off-screen or on caster
         if (targetX < 0 || targetY < 0) {
-            console.log('executeSpell early return - target off screen');
             return;
         }
         if (targetX === this.spellCaster.x && targetY === this.spellCaster.y) {
-            console.log('executeSpell early return - target is caster');
             return;
         }
 
@@ -1980,9 +1971,7 @@ class InterfaceManager {
      * @returns {boolean} True if click was handled
      */
     handleSpellAimingClick() {
-        console.log('handleSpellAimingClick called, spellAimingMode:', this.spellAimingMode);
         if (!this.spellAimingMode) return false;
-        console.log('Calling executeSpell');
         this.executeSpell();
         return true;
     }

@@ -744,7 +744,6 @@ class InputManager {
     }
 
     handleKeyDown(event) {
-        console.log('handleKeyDown:', event.key, 'enabled:', this.enabled);
         if (!this.enabled) return;
 
         // Cancel auto-walk on any key press
