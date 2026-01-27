@@ -270,7 +270,7 @@
   
   "pushable_wall": {
     "name": "Wall",
-    "tileIndexBase": "MEDIUM_SHADE",
+    "tileIndexBase": "OPAQUE_MEDIUM_SHADE",
     "tileIndexTop": "OPAQUE_LIGHT_SHADE",
     "tint": "#ccccb5",
     "attributes": {
