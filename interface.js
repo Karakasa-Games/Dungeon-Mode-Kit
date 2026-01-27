@@ -657,20 +657,37 @@ class InterfaceManager {
         }
 
         // Gather inventory items with letter prefixes
-        const inventoryItems = []; // { text, item }
+        const inventoryItems = []; // { text, item, statLine }
         if (player.inventory && player.inventory.length > 0) {
             for (let i = 0; i < player.inventory.length; i++) {
                 const item = player.inventory[i];
                 const letter = String.fromCharCode(97 + i); // 'a', 'b', 'c', etc.
                 // Use getDisplayName() for identification-aware display, truncated for UI
                 let displayName = item.getDisplayName ? item.getDisplayName() : item.name;
-                displayName = this.truncateText(displayName, 16);
+                displayName = this.truncateText(displayName, 26);
                 let itemText = `${letter})  ${displayName}`; // Extra space for tile
                 // Mark equipped items
                 if (player.isItemEquipped(item)) {
                     itemText += item.hasAttribute('weapon') ? ' (equipped)' : ' (worn)';
                 }
-                inventoryItems.push({ text: itemText, item });
+
+                // Check if item has displayable stats (like pow for staffs)
+                let statLine = null;
+                if (item.stats && Object.keys(item.stats).length > 0) {
+                    // Find a stat to display (prefer charge_stat if defined)
+                    const chargeStat = item.getAttribute('charge_stat');
+                    const statKey = chargeStat || Object.keys(item.stats)[0];
+                    const stat = item.stats[statKey];
+                    if (stat && typeof stat === 'object' && stat.max !== undefined) {
+                        statLine = {
+                            label: `      ${this.capitalize(statKey)}: `,
+                            current: stat.current,
+                            max: stat.ready_at || stat.max // Use ready_at as max if defined (shows "ready" threshold)
+                        };
+                    }
+                }
+
+                inventoryItems.push({ text: itemText, item, statLine });
             }
         }
 
@@ -696,12 +713,19 @@ class InterfaceManager {
         }
 
         const inventoryLineIndices = []; // Track which lines have item tiles
+        const itemStatLineIndices = []; // Track which lines have item stat thermometers
         if (inventoryItems.length > 0) {
             if (hasStats) lines.push('');
             lines.push('Inventory:');
-            for (const { text, item } of inventoryItems) {
+            for (const { text, item, statLine } of inventoryItems) {
                 inventoryLineIndices.push({ lineIndex: lines.length, item });
                 lines.push('  ' + text);
+
+                // Add stat line below item if it has stats
+                if (statLine) {
+                    itemStatLineIndices.push({ lineIndex: lines.length, ...statLine });
+                    lines.push(statLine.label); // Placeholder - thermometer rendered separately
+                }
             }
         } else {
             if (hasStats) lines.push('');
@@ -714,6 +738,13 @@ class InterfaceManager {
         // Check if any thermometer bars would be wider (fixed width of 10 tiles)
         const thermometerBarWidth = 10;
         for (const { label } of thermometerLineIndices) {
+            const totalWidth = label.length + thermometerBarWidth;
+            if (totalWidth > maxLineLength) {
+                maxLineLength = totalWidth;
+            }
+        }
+        // Also check item stat thermometers
+        for (const { label } of itemStatLineIndices) {
             const totalWidth = label.length + thermometerBarWidth;
             if (totalWidth > maxLineLength) {
                 maxLineLength = totalWidth;
@@ -776,6 +807,13 @@ class InterfaceManager {
             const tileX = textStartX + (5 * globalVars.TILE_WIDTH); // Position after "  a) "
             const tileY = textStartY + (lineIndex * globalVars.TILE_HEIGHT);
             this.renderItemTile(boxContainer, item, tileX, tileY);
+        }
+
+        // Render thermometer bars for item stats (like staff pow)
+        for (const { lineIndex, label, current, max } of itemStatLineIndices) {
+            const barX = textStartX + (label.length * globalVars.TILE_WIDTH);
+            const barY = textStartY + (lineIndex * globalVars.TILE_HEIGHT);
+            this.renderThermometerBar(boxContainer, current, max, barX, barY);
         }
 
         // Enable inventory selection mode
@@ -2023,7 +2061,7 @@ class InterfaceManager {
             const item = player.inventory[i];
             const letter = String.fromCharCode(97 + i); // 'a', 'b', 'c', etc.
             let displayName = item.getDisplayName ? item.getDisplayName() : item.name;
-            displayName = this.truncateText(displayName, 16);
+            displayName = this.truncateText(displayName, 26);
             let itemText = `${letter})  ${displayName}`;
             // Mark equipped items
             if (player.isItemEquipped(item)) {
@@ -2196,7 +2234,7 @@ class InterfaceManager {
                 const item = entry.item;
                 const letter = String.fromCharCode(97 + i); // 'a', 'b', 'c', etc.
                 let displayName = item.getDisplayName ? item.getDisplayName() : item.name;
-                displayName = this.truncateText(displayName, 14);
+                displayName = this.truncateText(displayName, 24);
 
                 const isEquipped = player.isItemEquipped(item);
                 let status = '';

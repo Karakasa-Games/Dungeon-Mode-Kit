@@ -1,0 +1,69 @@
+{
+  "burning": {
+    "name": "Burning",
+    "duration": 5,
+    "attached_actor": "fire",
+    "immunity": "fireproof",
+    "on_apply_message": "[actor_name] catches fire!",
+    "on_remove_message": "[actor_name] stops burning.",
+    "on_apply_sound": "fireball"
+  },
+
+  "poisoned": {
+    "name": "Poisoned",
+    "duration": 10,
+    "per_turn_effect": { "health": -2 },
+    "immunity": "poison_immune",
+    "on_apply_message": "[actor_name] is poisoned!",
+    "on_remove_message": "The poison wears off."
+  },
+
+  "stunned": {
+    "name": "Stunned",
+    "duration": 2,
+    "skip_turn": true,
+    "on_apply_message": "[actor_name] is stunned!",
+    "on_remove_message": "[actor_name] recovers from being stunned."
+  },
+
+  "sleeping": {
+    "name": "Sleeping",
+    "duration": 5,
+    "skip_turn": true,
+    "remove_on_damage": true,
+    "on_apply_message": "[actor_name] falls asleep.",
+    "on_remove_message": "[actor_name] wakes up!"
+  },
+
+  "confused": {
+    "name": "Confused",
+    "duration": 8,
+    "random_movement": true,
+    "on_apply_message": "[actor_name] is confused!",
+    "on_remove_message": "[actor_name] is no longer confused."
+  },
+
+  "hasted": {
+    "name": "Hasted",
+    "duration": 15,
+    "extra_turn": true,
+    "on_apply_message": "[actor_name] speeds up!",
+    "on_remove_message": "[actor_name] slows back down."
+  },
+
+  "slowed": {
+    "name": "Slowed",
+    "duration": 10,
+    "skip_every_other_turn": true,
+    "on_apply_message": "[actor_name] slows down!",
+    "on_remove_message": "[actor_name] returns to normal speed."
+  },
+
+  "regenerating": {
+    "name": "Regenerating",
+    "duration": 20,
+    "per_turn_effect": { "health": 2 },
+    "on_apply_message": "[actor_name] begins regenerating!",
+    "on_remove_message": "The regeneration effect fades."
+  }
+}

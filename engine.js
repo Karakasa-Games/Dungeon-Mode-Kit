@@ -433,7 +433,7 @@ class DungeonEngine {
     async loadGlobalData() {
         try {
             // Load global entity definitions
-            const [actorsRes, itemsRes, personalitiesRes, entitiesRes, colorsRes, adjectivesRes, attacksRes, reagentsRes, substancesRes] = await Promise.all([
+            const [actorsRes, itemsRes, personalitiesRes, entitiesRes, colorsRes, adjectivesRes, attacksRes, reagentsRes, substancesRes, statesRes] = await Promise.all([
                 fetch(`${globalVars.BASE_PATH}/data/actors.json`),
                 fetch(`${globalVars.BASE_PATH}/data/items.json`),
                 fetch(`${globalVars.BASE_PATH}/data/personalities.json`),
@@ -442,7 +442,8 @@ class DungeonEngine {
                 fetch(`${globalVars.BASE_PATH}/data/adjectives.json`),
                 fetch(`${globalVars.BASE_PATH}/data/attacks.json`),
                 fetch(`${globalVars.BASE_PATH}/data/reagents.json`),
-                fetch(`${globalVars.BASE_PATH}/data/substances.json`)
+                fetch(`${globalVars.BASE_PATH}/data/substances.json`),
+                fetch(`${globalVars.BASE_PATH}/data/states.json`)
             ]);
 
             this.globalActors = await actorsRes.json();
@@ -461,6 +462,9 @@ class DungeonEngine {
             // Load substances
             this.globalSubstances = await substancesRes.json();
 
+            // Load actor states (burning, poisoned, stunned, etc.)
+            this.globalStates = await statesRes.json();
+
             console.log('Global data loaded:', {
                 actors: Object.keys(this.globalActors).length,
                 items: Object.keys(this.globalItems).length,
@@ -470,7 +474,8 @@ class DungeonEngine {
                 adjectives: Object.keys(this.globalAdjectives).length,
                 attacks: Object.keys(this.globalAttacks).length,
                 reagents: Object.keys(this.globalReagents).length,
-                substances: this.globalSubstances?.substances?.length || 0
+                substances: this.globalSubstances?.substances?.length || 0,
+                states: Object.keys(this.globalStates).length
             });
         } catch (error) {
             console.error('Failed to load global data:', error);
@@ -483,6 +488,7 @@ class DungeonEngine {
             this.globalAttacks = {};
             this.globalReagents = {};
             this.globalSubstances = { substances: [] };
+            this.globalStates = {};
         }
     }
 
@@ -1930,6 +1936,10 @@ class Actor extends Entity {
         
         this.inventory = [];
 
+        // Temporary states with durations (burning, poisoned, stunned, etc.)
+        // Format: { stateName: { duration: N, attachedActor: ref, data: {...} } }
+        this.states = {};
+
         this.personality = null;
         if (data.personality) {
             this.loadPersonality(data.personality);
@@ -2099,6 +2109,15 @@ class Actor extends Entity {
 
         // Process per-turn stats for items in inventory (recharging staffs, etc.)
         this.processInventoryItemStats();
+
+        // Process active states (burning, poisoned, stunned, etc.)
+        this.processStates();
+        if (this.isDead) return Promise.resolve(); // Died from state effect
+
+        // Check if incapacitated by a state (stunned, sleeping, etc.)
+        if (this.isIncapacitated()) {
+            return Promise.resolve(); // Skip turn but don't lock engine
+        }
 
         // Player-controlled actors lock the engine and wait for input
         if (this.isPlayerControlled()) {
@@ -2550,6 +2569,199 @@ class Actor extends Entity {
                this.equipment.top === item ||
                this.equipment.middle === item ||
                this.equipment.lower === item;
+    }
+
+    // ========================================================================
+    // STATE MANAGEMENT (burning, poisoned, stunned, etc.)
+    // ========================================================================
+
+    /**
+     * Apply a temporary state to this actor
+     * @param {string} stateName - The state name (e.g., 'burning', 'poisoned')
+     * @param {Object} stateData - State configuration from states.json
+     * @param {Object} [options] - Additional options
+     * @param {number} [options.duration] - Override default duration
+     * @param {Actor} [options.source] - The actor that applied this state
+     * @returns {boolean} True if state was applied, false if immune or already has state
+     */
+    applyState(stateName, stateData, options = {}) {
+        // Check immunity
+        if (stateData.immunity && this.hasAttribute(stateData.immunity)) {
+            return false;
+        }
+
+        // Check if already has this state
+        if (this.states[stateName]) {
+            // Refresh duration if already present
+            const duration = options.duration ?? stateData.duration ?? 5;
+            this.states[stateName].duration = Math.max(this.states[stateName].duration, duration);
+            return true;
+        }
+
+        const duration = options.duration ?? stateData.duration ?? 5;
+
+        // Create state entry
+        this.states[stateName] = {
+            duration: duration,
+            data: stateData,
+            source: options.source || null,
+            attachedActor: null
+        };
+
+        // Spawn attached actor if defined (e.g., fire for burning)
+        if (stateData.attached_actor) {
+            const attachedActor = this.engine.entityManager.spawnActor(
+                stateData.attached_actor,
+                this.x,
+                this.y
+            );
+            if (attachedActor) {
+                // Mark as attached to this actor so it follows and doesn't apply spawn damage
+                attachedActor._attachedTo = this;
+                attachedActor._isAttachedFire = true; // Skip normal fire damage, state handles it
+                this.states[stateName].attachedActor = attachedActor;
+            }
+        }
+
+        // Show apply message
+        if (stateData.on_apply_message && this.engine.inputManager) {
+            const message = stateData.on_apply_message.replace('[actor_name]', this.name);
+            this.engine.inputManager.showMessage(message);
+        }
+
+        // Play apply sound
+        if (stateData.on_apply_sound) {
+            this.engine.playSound?.(stateData.on_apply_sound);
+        }
+
+        return true;
+    }
+
+    /**
+     * Remove a state from this actor
+     * @param {string} stateName - The state name to remove
+     * @param {boolean} [silent=false] - If true, don't show removal message
+     */
+    removeState(stateName, silent = false) {
+        const state = this.states[stateName];
+        if (!state) return;
+
+        // Remove attached actor
+        if (state.attachedActor && !state.attachedActor.isDead) {
+            state.attachedActor.die();
+        }
+
+        // Show removal message
+        if (!silent && state.data.on_remove_message && this.engine.inputManager) {
+            const message = state.data.on_remove_message.replace('[actor_name]', this.name);
+            this.engine.inputManager.showMessage(message);
+        }
+
+        // Play removal sound
+        if (!silent && state.data.on_remove_sound) {
+            this.engine.playSound?.(state.data.on_remove_sound);
+        }
+
+        delete this.states[stateName];
+    }
+
+    /**
+     * Check if actor has a specific state
+     * @param {string} stateName - The state name to check
+     * @returns {boolean} True if actor has the state
+     */
+    hasState(stateName) {
+        return !!this.states[stateName];
+    }
+
+    /**
+     * Get remaining duration for a state
+     * @param {string} stateName - The state name
+     * @returns {number|null} Remaining duration or null if state not present
+     */
+    getStateDuration(stateName) {
+        return this.states[stateName]?.duration ?? null;
+    }
+
+    /**
+     * Process all active states each turn
+     * Decrements durations, applies per-turn effects, removes expired states
+     * Called at the start of each turn in act()
+     */
+    processStates() {
+        const statesToRemove = [];
+
+        for (const [stateName, state] of Object.entries(this.states)) {
+            const stateData = state.data;
+
+            // Update attached actor position to follow this actor
+            if (state.attachedActor && !state.attachedActor.isDead) {
+                if (state.attachedActor.x !== this.x || state.attachedActor.y !== this.y) {
+                    state.attachedActor.x = this.x;
+                    state.attachedActor.y = this.y;
+                    // Update sprite position
+                    if (state.attachedActor.spriteBase) {
+                        state.attachedActor.spriteBase.x = this.x * globalVars.TILE_WIDTH;
+                        state.attachedActor.spriteBase.y = this.y * globalVars.TILE_HEIGHT;
+                    }
+                    if (state.attachedActor.spriteTop) {
+                        state.attachedActor.spriteTop.x = this.x * globalVars.TILE_WIDTH;
+                        state.attachedActor.spriteTop.y = (this.y - 1) * globalVars.TILE_HEIGHT;
+                    }
+                }
+            }
+
+            // Apply per-turn effect (e.g., poison damage)
+            if (stateData.per_turn_effect && this.stats) {
+                for (const [statKey, value] of Object.entries(stateData.per_turn_effect)) {
+                    if (this.stats[statKey] !== undefined) {
+                        const oldValue = this.stats[statKey].current;
+                        this.stats[statKey].current = Math.max(0, oldValue + value);
+
+                        // Show damage message for health effects
+                        if (statKey === 'health' && value < 0 && this.hasAttribute('visible')) {
+                            const stateName_display = stateData.name || stateName;
+                            this.engine.inputManager?.showMessage(
+                                `${this.name} takes ${Math.abs(value)} damage from ${stateName_display}!`
+                            );
+                            this.flash?.();
+                        }
+
+                        // Check for death
+                        if (statKey === 'health' && this.stats[statKey].current <= 0) {
+                            this.die();
+                            return; // Stop processing states if dead
+                        }
+                    }
+                }
+            }
+
+            // Decrement duration
+            state.duration--;
+
+            // Check if state expired
+            if (state.duration <= 0) {
+                statesToRemove.push(stateName);
+            }
+        }
+
+        // Remove expired states
+        for (const stateName of statesToRemove) {
+            this.removeState(stateName);
+        }
+    }
+
+    /**
+     * Check if actor should skip their turn due to a state
+     * @returns {boolean} True if actor should skip turn
+     */
+    isIncapacitated() {
+        for (const state of Object.values(this.states)) {
+            if (state.data.skip_turn) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
