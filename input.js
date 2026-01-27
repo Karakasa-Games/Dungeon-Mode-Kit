@@ -969,6 +969,23 @@ class InputManager {
             }
         }
 
+        // Check for visible traps at target position
+        for (const actor of entityManager.actors) {
+            if (actor.x !== targetX || actor.y !== targetY) continue;
+            if (actor.isDead) continue;
+
+            // Warn about visible traps (traps that have been revealed)
+            // Don't warn if there's an item on the trap - it won't trigger until item is moved
+            if (actor.hasAttribute('trap') && actor.hasAttribute('visible')) {
+                const itemOnTrap = entityManager.items.find(
+                    i => i.x === targetX && i.y === targetY && !i.isDead
+                );
+                if (!itemOnTrap) {
+                    return { message: `Really step on the ${actor.name}?` };
+                }
+            }
+        }
+
         return null; // No hazard
     }
 

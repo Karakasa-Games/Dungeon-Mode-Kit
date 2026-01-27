@@ -157,6 +157,18 @@
       "remains": "rubble"
     }
   },
+  "column": {
+    "name": "Column",
+    "tileIndexBase": "CANDLE_STICK",
+    "tileIndexTop": "MEDIUM_SHADE_LOWER_ONE_HALF_BLOCK",
+    "attributes": {
+      "solid": true,
+      "visible": true,
+      "pushable": false,
+      "breakable": true,
+      "remains": "rubble"
+    }
+  },
   "wall-bottom-left-corner": {
     "name": "Wall",
     "tileIndexBase": "OPAQUE_DARK_SHADE_BOTTOM_LEFT_TRIANGLE",
@@ -525,6 +537,38 @@
     },
     "collision_effect": {},
     "lifetime": 4
+  },
+
+  "poison_gas_trap": {
+    "name": "Poison Gas Trap",
+    "tileIndexBase": "INVERSE_BULLET",
+    "tint": "#55AA55",
+    "personality": "trap_behavior",
+    "attributes": {
+      "solid": false,
+      "visible": false,
+      "trap": true,
+      "trap_type": "poison_gas"
+    },
+    "trap_spawn": "cloud",
+    "trap_spawn_tint": "#55FF55",
+    "trap_collision_effect": { "health": -3 },
+    "trap_message": "A hidden vent releases poisonous gas!"
+  },
+
+  "fire_trap": {
+    "name": "Fire Trap",
+    "tileIndexBase": "INVERSE_BULLET",
+    "tint": "#FF6622",
+    "personality": "trap_behavior",
+    "attributes": {
+      "solid": false,
+      "visible": false,
+      "trap": true,
+      "trap_type": "fire"
+    },
+    "trap_effect": { "center": "intense_fire", "radius": 1, "outer": "fire" },
+    "trap_message": "Flames erupt from the floor!"
   }
- 
+
 }

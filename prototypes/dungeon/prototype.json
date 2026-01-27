@@ -23,7 +23,9 @@
   },
   "random_actors": {
     "skeleton": { "chance": 80, "min": 4, "max": 8 },
-    "kobold": { "chance": 50, "min": 2, "max": 5 }
+    "kobold": { "chance": 50, "min": 2, "max": 5 },
+    "poison_gas_trap": { "chance": 60, "min": 2, "max": 4 },
+    "fire_trap": { "chance": 40, "min": 1, "max": 3 }
   },
   "random_items": {
     "key": { "chance": 100 },

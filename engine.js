@@ -1973,6 +1973,9 @@ class Actor extends Entity {
         // Copy lifetime for actors that expire (clouds, fire, etc.)
         this.lifetime = data.lifetime || null;
 
+        // Store original data for behaviors that need custom properties (traps, fire, etc.)
+        this.data = data;
+
         // Legacy support: load state properties as attributes (open, locked, etc.)
         // New format: define these directly in attributes instead of state
         if (data.state) {
@@ -5876,6 +5879,128 @@ const BehaviorLibrary = {
         }
 
         return false;
+    },
+
+    /**
+     * Trap check trigger behavior - checks if an actor or item has stepped on the trap
+     * Traps start invisible and become visible when triggered (Brogue-style)
+     * Traps are re-triggerable but won't trigger again while same entity remains on tile
+     */
+    trap_check_trigger: (actor) => {
+        const entityManager = actor.engine.entityManager;
+
+        // Initialize tracking set for entities that have triggered while on this tile
+        if (!actor._triggeredBy) actor._triggeredBy = new Set();
+
+        // Check if anything is currently on the trap
+        const itemOnTrap = entityManager.items.find(
+            i => i.x === actor.x && i.y === actor.y && !i.isDead
+        );
+        const solidActorOnTrap = entityManager.actors.find(
+            a => a.x === actor.x && a.y === actor.y && !a.isDead && a !== actor &&
+                 !a.hasAttribute('trap') && a.hasAttribute('solid')
+        );
+
+        // If trap needs reset (was triggered by item), check if tile is now empty
+        if (actor._needsReset) {
+            if (!itemOnTrap && !solidActorOnTrap) {
+                // Tile is empty, trap resets
+                actor._needsReset = false;
+                actor._triggeredBy.clear();
+            }
+            // Still needs reset, don't trigger
+            return false;
+        }
+
+        // Clean up: remove entities no longer on this tile
+        for (const entity of actor._triggeredBy) {
+            if (entity.isDead || entity.x !== actor.x || entity.y !== actor.y) {
+                actor._triggeredBy.delete(entity);
+            }
+        }
+
+        // Find any actor standing on this trap that hasn't triggered it yet
+        // Skip non-solid actors (fire, clouds, etc.) - only solid actors trigger traps
+        const actorVictim = solidActorOnTrap && !actor._triggeredBy.has(solidActorOnTrap)
+            ? solidActorOnTrap : null;
+
+        if (!actorVictim) return false;
+
+        // Mark this entity as having triggered
+        actor._triggeredBy.add(triggeringEntity);
+
+        // Make the trap visible (stays visible permanently)
+        if (!actor.hasAttribute('visible')) {
+            actor.setAttribute('visible', true);
+            actor.engine.renderer?.createActorSprites(actor);
+        }
+
+        // Show trap message
+        const trapMessage = actor.data?.trap_message || `A trap is sprung!`;
+        actor.engine.inputManager?.showMessage(trapMessage);
+
+        // Play trap sound
+        actor.engine.playSound?.('trap1');
+
+        // Spawn the trap effect - supports two formats:
+        // 1. trap_effect: { center, radius, outer } - spell-like area effect (like fireball)
+        // 2. trap_spawn: "actor_type" - simple single actor spawn
+        const trapEffect = actor.data?.trap_effect;
+        if (trapEffect) {
+            // Spell-like area effect
+            const { center, radius = 0, outer } = trapEffect;
+            const x = actor.x;
+            const y = actor.y;
+
+            // Spawn center actor
+            if (center) {
+                entityManager.spawnActor(center, x, y);
+            }
+
+            // Spawn actors in radius
+            if (radius > 0) {
+                const outerType = outer || center;
+                for (let dx = -radius; dx <= radius; dx++) {
+                    for (let dy = -radius; dy <= radius; dy++) {
+                        if (dx === 0 && dy === 0) continue; // Skip center
+                        const dist = Math.sqrt(dx * dx + dy * dy);
+                        if (dist <= radius) {
+                            entityManager.spawnActor(outerType, x + dx, y + dy);
+                        }
+                    }
+                }
+            }
+        } else {
+            // Simple single actor spawn
+            const spawnType = actor.data?.trap_spawn;
+            if (spawnType) {
+                const spawnedActor = entityManager.spawnActor(spawnType, actor.x, actor.y);
+                if (spawnedActor) {
+                    // Apply custom tint if specified
+                    const trapTint = actor.data?.trap_spawn_tint;
+                    if (trapTint) {
+                        spawnedActor.tint = trapTint;
+                        if (spawnedActor.spriteBase) spawnedActor.spriteBase.tint = PIXI.utils.string2hex(trapTint);
+                        if (spawnedActor.spriteTop) spawnedActor.spriteTop.tint = PIXI.utils.string2hex(trapTint);
+                    }
+
+                    // Apply custom collision effect if specified (for clouds)
+                    const trapCollisionEffect = actor.data?.trap_collision_effect;
+                    if (trapCollisionEffect) {
+                        spawnedActor.setAttribute('collision_effect', trapCollisionEffect);
+                        // Mark as origin cloud so it spreads
+                        spawnedActor.isCloudOrigin = true;
+                        spawnedActor.cloudOriginX = actor.x;
+                        spawnedActor.cloudOriginY = actor.y;
+                        spawnedActor.cloudLifetime = 8;
+                    }
+                }
+            }
+        }
+
+        // Trap remains on tile (Brogue-style) - no die() call
+
+        return true;
     }
 };
 

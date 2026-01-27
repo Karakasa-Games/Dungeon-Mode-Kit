@@ -30,6 +30,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Trap system (Brogue-style):
+  - Traps start invisible and become visible when triggered
+  - Re-triggerable: same trap can fire multiple times when stepped on again
+  - Won't re-trigger while same actor/item remains on tile
+  - Hazard warning prompts before stepping on visible traps
+  - Can be triggered by thrown items landing on them
+  - Two trap effect formats:
+    - `trap_spawn`: spawns single actor (e.g., poison cloud)
+    - `trap_effect`: spell-like area effect with center/radius/outer (e.g., fire trap)
+  - `poison_gas_trap`: spawns spreading poison cloud
+  - `fire_trap`: spawns intense_fire at center with fire in radius 1 (like fireball)
+- Actor `data` property: actors now store their full definition data for behavior access
 - Per-turn stat modifications (data-driven):
   - Stats can have `per_turn` value for automatic changes each turn (e.g., nutrition drain, health regen)
   - `fatal: true` makes stat depletion kill the actor (health is always fatal)

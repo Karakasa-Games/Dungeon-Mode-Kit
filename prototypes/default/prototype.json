@@ -9,6 +9,10 @@
     "fog_of_war": false,
     "darkness": false
   },
+  "random_actors": {
+    "poison_gas_trap": { "chance": 60, "min": 2, "max": 4 },
+    "fire_trap": { "chance": 40, "min": 1, "max": 3 }
+  },
   "random_items": {
     "staff_of_fireball": { "chance": 100, "min": 1, "max": 1 }
   },

@@ -218,8 +218,13 @@ Personality → behaviors[] → BehaviorLibrary
 - `cloud_behavior` / `mist_behavior` - Gas clouds that spread, disperse and apply effects
 - `liquid_pooling` - Cellular automata transformation (e.g., sewage → deep_sewage when surrounded)
 - `deep_water_behavior` - Currents that can sweep items from inventory and cause drift
+- `trap_behavior` - Hidden traps that trigger when stepped on or hit by thrown items (Brogue-style)
 
 **Fire System:** Lava incinerates any entity without `fireproof` attribute. Fire spreads to adjacent tiles with `flammable` entities. Use `fireproof: true` to make items/actors immune to incineration.
+
+**Trap System:** Traps start invisible (`visible: false`) and become visible when triggered. They remain on the tile and can be re-triggered. Players are warned before stepping on visible traps. Traps support two effect formats:
+- `trap_spawn`: single actor (e.g., `"trap_spawn": "cloud"` with `trap_collision_effect` and `trap_spawn_tint`)
+- `trap_effect`: spell-like area effect (e.g., `"trap_effect": { "center": "intense_fire", "radius": 1, "outer": "fire" }`)
 
 #### Architect
 

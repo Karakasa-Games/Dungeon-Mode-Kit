@@ -145,5 +145,13 @@
       "wander_to_wall",
       "random_walk"
     ]
+  },
+
+  "trap_behavior": {
+    "name": "Trap",
+    "hostile": false,
+    "behaviors": [
+      "trap_check_trigger"
+    ]
   }
 }
