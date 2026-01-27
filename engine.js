@@ -4102,7 +4102,17 @@ class Actor extends Entity {
                 // Can't push - fall through to normal blocking behavior
             }
 
-            // Check if actor can be opened (doors, chests, etc.) BEFORE combat
+            // Apply collision effects from held items (before door check so keys can unlock doors)
+            const collisionResult = this.applyCollisionEffects(actorAtTarget);
+
+            // If collision effects made the actor passable (e.g., key unlocked door), try again
+            // But don't move onto a tile where we just killed something - attack is the action
+            if (collisionResult.targetPassable && !collisionResult.targetKilled) {
+                // Recurse to check if we can now move
+                return this.tryMove(newX, newY);
+            }
+
+            // Check if actor can be opened (doors, chests, etc.)
             if (actorAtTarget.hasAttribute('openable') && !actorAtTarget.hasAttribute('open')) {
                 // Check if locked - play tap sound and block
                 if (actorAtTarget.hasAttribute('locked')) {
@@ -4116,16 +4126,6 @@ class Actor extends Entity {
                 actorAtTarget.open();
                 this.engine.updateLighting();
                 return { moved: false, actionTaken: true };
-            }
-
-            // Apply collision effects from held items
-            const collisionResult = this.applyCollisionEffects(actorAtTarget);
-
-            // If collision effects made the actor passable, try again
-            // But don't move onto a tile where we just killed something - attack is the action
-            if (collisionResult.targetPassable && !collisionResult.targetKilled) {
-                // Recurse to check if we can now move
-                return this.tryMove(newX, newY);
             }
 
             // Check for collision_description attribute (for non-combat interactions like locked stairways)

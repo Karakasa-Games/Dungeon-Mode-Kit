@@ -333,7 +333,6 @@
   "staff_of_fireball": {
     "name": "Staff of Fireball",
     "tileIndex": "SOLIDUS",
-    "tint": "#FF4400",
     "identified": false,
     "unidentified_template": "[substances.substances] staff",
     "identified_template": "Staff of Fireball",
@@ -344,9 +343,9 @@
       "use_verb": "Cast",
       "use_effect": "targeted_spell",
       "charge_stat": "pow",
-      "charge_cost": 100,
+      "charge_cost": 500,
       "spell_effect": { "center": "intense_fire", "radius": 1, "outer": "fire" },
-      "projectile_tile": "INVERSE_DIAMOND_SUITE",
+      "projectile_tile": "OPAQUE_INVERSE_DIAMOND_SUITE",
       "projectile_tint": "#FF6600",
       "cast_sound": "fireball",
       "description": "An ancient staff that hurls balls of fire. Recharges over time."
