@@ -128,6 +128,13 @@
     "item_drift_chance": 0.3
   },
 
+  "drain_behavior": {
+    "name": "Drain",
+    "hostile": false,
+    "behaviors": ["drain_suction"],
+    "suction_range": 2
+  },
+
   "game_of_life": {
     "name": "Game of Life",
     "hostile": false,

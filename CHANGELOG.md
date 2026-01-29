@@ -92,6 +92,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Click-to-walk path now restores properly after exiting spell aiming or throw aiming modes
+- Staff `uses` attribute now works correctly: a staff with `uses: 2` costs half pow per use and shows proper charge count
+- Staff thermometer now displays total power as fraction of max, giving clear visual feedback when charges are used
+- Gas clouds now properly apply states (paralysis, confusion) to actors:
+  - Added `sentient` attribute to creature actors (player, skeleton, etc.) to mark which actors can be affected by states
+  - Clouds apply state when spreading to a tile with an actor (not just when actor walks in)
+  - Actors check for cloud effects when moving into a tile
 - Combat message ordering: attack descriptions now appear before death messages
 - Fixed double death messages when multiple enemies attack simultaneously
 - Fixed dead actors being attacked (early exit check in applyCollisionEffects)

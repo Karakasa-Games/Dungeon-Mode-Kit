@@ -679,10 +679,15 @@ class InterfaceManager {
                     const statKey = chargeStat || Object.keys(item.stats)[0];
                     const stat = item.stats[statKey];
                     if (stat && typeof stat === 'object' && stat.max !== undefined) {
-                        const readyAt = stat.ready_at || stat.max;
+                        const uses = item.getAttribute('uses') || 1;
+                        const readyAt = stat.ready_at || Math.floor(stat.max / uses);
                         const availableCharges = Math.floor(stat.current / readyAt);
-                        const maxCharges = Math.floor(stat.max / readyAt);
-                        const progressTowardNext = stat.current % readyAt;
+                        const maxCharges = uses;
+
+                        // Thermometer shows total power as fraction of max
+                        // This way using a charge visibly reduces the bar
+                        const thermometerCurrent = stat.current;
+                        const thermometerMax = stat.max;
 
                         // Only show charge count if item is identified
                         const isIdentified = item.identified !== false;
@@ -690,8 +695,8 @@ class InterfaceManager {
                         statLine = {
                             label: `      Charges: `,
                             chargeCount: isIdentified ? `${availableCharges}/${maxCharges}` : `?/?`,
-                            current: progressTowardNext,
-                            max: readyAt
+                            current: thermometerCurrent,
+                            max: thermometerMax
                         };
                     }
                 }
@@ -1381,6 +1386,12 @@ class InterfaceManager {
 
         // Re-enable normal tile highlight
         this.engine.renderer?.hideTileHighlight();
+
+        // Restore walk path display for current hovered tile
+        const inputManager = this.engine.inputManager;
+        if (inputManager && inputManager.hoveredTile.x >= 0) {
+            inputManager.updateWalkPath(inputManager.hoveredTile.x, inputManager.hoveredTile.y);
+        }
     }
 
     /**
@@ -1649,6 +1660,61 @@ class InterfaceManager {
 
         // Start animation
         animateFrame();
+    }
+
+    /**
+     * Show a brief weapon swing visual at the target position
+     * @param {Item} weapon - The weapon being swung
+     * @param {number} targetX - Target tile X coordinate
+     * @param {number} targetY - Target tile Y coordinate
+     * @param {number} duration - How long to display (ms), default 100
+     */
+    showWeaponSwing(weapon, targetX, targetY, duration = 100) {
+        const renderer = this.engine.renderer;
+        if (!renderer || !weapon?.tileIndex) return;
+
+        const tileWidth = this.engine.config.tileWidth;
+        const tileHeight = this.engine.config.tileHeight;
+        const tileset = PIXI.Loader.shared.resources.tiles;
+
+        if (!tileset) return;
+
+        // Create weapon sprite from tile
+        const rect = new PIXI.Rectangle(
+            weapon.tileIndex.x * tileWidth,
+            weapon.tileIndex.y * tileHeight,
+            tileWidth,
+            tileHeight
+        );
+        const texture = new PIXI.Texture(tileset.texture.baseTexture, rect);
+        const weaponSprite = new PIXI.Sprite(texture);
+
+        // Apply weapon tint if present
+        if (weapon.tint !== undefined && weapon.tint !== null) {
+            weaponSprite.tint = weapon.tint;
+        }
+
+        // Apply flip if present
+        if (weapon.flipH || weapon.flipV) {
+            weaponSprite.anchor.set(0.5, 0.5);
+            weaponSprite.scale.x = weapon.flipH ? -1 : 1;
+            weaponSprite.scale.y = weapon.flipV ? -1 : 1;
+            // Position at center of tile when using anchor
+            weaponSprite.x = targetX * tileWidth + tileWidth / 2;
+            weaponSprite.y = targetY * tileHeight + tileHeight / 2;
+        } else {
+            weaponSprite.x = targetX * tileWidth;
+            weaponSprite.y = targetY * tileHeight;
+        }
+
+        weaponSprite.zIndex = 100; // Above everything
+        renderer.uiContainer.addChild(weaponSprite);
+
+        // Remove after duration
+        setTimeout(() => {
+            renderer.uiContainer.removeChild(weaponSprite);
+            weaponSprite.destroy();
+        }, duration);
     }
 
     /**
@@ -2010,6 +2076,12 @@ class InterfaceManager {
 
         // Re-enable normal tile highlight
         this.engine.renderer?.hideTileHighlight();
+
+        // Restore walk path display for current hovered tile
+        const inputManager = this.engine.inputManager;
+        if (inputManager && inputManager.hoveredTile.x >= 0) {
+            inputManager.updateWalkPath(inputManager.hoveredTile.x, inputManager.hoveredTile.y);
+        }
     }
 
     /**
@@ -2114,11 +2186,12 @@ class InterfaceManager {
         this.exitSpellAimingMode();
 
         // Consume charge from item stat if applicable
-        // Each use costs one charge's worth (ready_at threshold)
+        // Cost per use is max / uses (or ready_at if specified)
         const chargeStat = item.getAttribute('charge_stat');
         if (chargeStat && item.stats?.[chargeStat]) {
             const stat = item.stats[chargeStat];
-            const useCost = stat.ready_at || stat.max;
+            const uses = item.getAttribute('uses') || 1;
+            const useCost = stat.ready_at || Math.floor(stat.max / uses);
             item.modifyStat(chargeStat, -useCost);
         }
 

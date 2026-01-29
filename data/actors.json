@@ -15,6 +15,7 @@
       "visible": true,
       "flammable": true,
       "sighted": true,
+      "sentient": true,
       "inventory": 1,
       "remains": "skull",
       "accuracy": 40
@@ -42,6 +43,7 @@
       "solid": true,
       "visible": true,
       "flammable": true,
+      "sentient": true,
       "inventory": 1,
       "remains": "skull",
       "accuracy": 60,
@@ -85,11 +87,12 @@
       "solid": true,
       "visible": true,
       "flammable": false,
+      "sentient": true,
       "strength": 8
     },
     "stats": {
       "health": 50
-      
+
     }
   },
   "kobold": {
@@ -109,6 +112,7 @@
       "visible": true,
       "flammable": true,
       "sighted": true,
+      "sentient": true,
       "inventory": 1,
       "remains": "skull",
       "accuracy": 35,
@@ -130,6 +134,7 @@
       "solid": true,
       "visible": true,
       "flammable": true,
+      "sentient": true,
       "inventory": 1,
       "remains": "blood"
     },
@@ -151,6 +156,7 @@
       "visible": true,
       "flammable": true,
       "proper_named": true,
+      "sentient": true,
       "inventory": 1,
       "remains": "skull",
       "strength": 8,
@@ -161,9 +167,9 @@
       "health": 30
     },
     "default_items": ["horns"]
-    
+
   },
-  
+
   "wall": {
     "name": "Wall",
     "tileIndexBase": "OPAQUE_DARK_SHADE",
@@ -386,6 +392,21 @@
       "liquid": true,
       "nauseates": true,
       "mass_noun": true,
+      "entry_sound": "step_mud"
+    }
+  },
+  "drain": {
+    "name": "drain",
+    "tileIndexBase": "OPAQUE_PRISON_WINDOW",
+    "tileIndexTop": "BLANK",
+    "animated": true,
+    "animation_frames": "fluid",
+    "tint": "#CAD49D",
+    "personality": "drain_behavior",
+    "attributes": {
+      "solid": true,
+      "visible": true,
+      "spreads": false,
       "entry_sound": "step_mud"
     }
   },

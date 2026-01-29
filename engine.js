@@ -1650,12 +1650,11 @@ class Item extends Entity {
         const stat = this.stats?.[statName];
         if (!stat || typeof stat !== 'object') return true; // No stat or simple stat = always ready
 
-        // If no ready_at defined, check if current >= max
-        if (stat.ready_at === undefined) {
-            return stat.current >= stat.max;
-        }
+        // Calculate threshold: ready_at takes priority, otherwise max / uses
+        const uses = this.getAttribute('uses') || 1;
+        const readyAt = stat.ready_at ?? Math.floor(stat.max / uses);
 
-        return stat.current >= stat.ready_at;
+        return stat.current >= readyAt;
     }
 
     /**
@@ -2588,6 +2587,12 @@ class Actor extends Entity {
      * @returns {boolean} True if state was applied, false if immune or already has state
      */
     applyState(stateName, stateData, options = {}) {
+        // Only apply states to actors with the 'sentient' attribute
+        // This excludes walls, traps, fire, clouds, etc.
+        if (!this.hasAttribute('sentient')) {
+            return false;
+        }
+
         // Check immunity
         if (stateData.immunity && this.hasAttribute(stateData.immunity)) {
             return false;
@@ -3384,7 +3389,8 @@ class Actor extends Entity {
                 if (chargeStat && !item.isStatReady(chargeStat)) {
                     const stat = item.stats?.[chargeStat];
                     const current = stat?.current ?? 0;
-                    const readyAt = stat?.ready_at ?? stat?.max ?? 100;
+                    const uses = item.getAttribute('uses') || 1;
+                    const readyAt = stat?.ready_at ?? Math.floor((stat?.max ?? 100) / uses);
                     if (this.isPlayerControlled()) {
                         const displayName = item.getDisplayName ? item.getDisplayName() : item.name;
                         this.engine.inputManager?.showMessage(`The ${displayName} is not charged yet (${Math.floor(current)}/${readyAt}).`);
@@ -3602,6 +3608,11 @@ class Actor extends Entity {
                     });
                 }
             }
+        }
+
+        // Show weapon swing visual (for equipped weapons only)
+        if (equippedWeapon?.tileIndex && this.engine.renderer) {
+            this.engine.interfaceManager?.showWeaponSwing(equippedWeapon, target.x, target.y);
         }
 
         // Perform hit roll for damage source
@@ -4219,6 +4230,9 @@ class Actor extends Entity {
         // Check for submersion in deep liquids
         this.updateSubmersionState();
 
+        // Check for clouds/mist at destination and apply their effects immediately
+        this.checkCloudEffects(newX, newY);
+
         // Notify interface of player move (for dismissOnMove text boxes)
         if (this.isPlayerControlled() && this.engine.interfaceManager) {
             this.engine.interfaceManager.onPlayerMove();
@@ -4238,6 +4252,47 @@ class Actor extends Entity {
 
     moveBy(dx, dy) {
         return this.tryMove(this.x + dx, this.y + dy);
+    }
+
+    /**
+     * Check for cloud/mist effects at a position and apply them to this actor
+     * Called when actor moves into a tile to apply effects immediately
+     * @param {number} x - X coordinate to check
+     * @param {number} y - Y coordinate to check
+     */
+    checkCloudEffects(x, y) {
+        const entityManager = this.engine.entityManager;
+
+        for (const other of entityManager.actors) {
+            if (other === this) continue;
+            if (other.x !== x || other.y !== y) continue;
+            if (other.type !== 'cloud' && other.type !== 'mist') continue;
+
+            // Apply collision effect (stat damage)
+            const collisionEffect = other.getAttribute('collision_effect');
+            if (collisionEffect && Object.keys(collisionEffect).length > 0) {
+                for (const [key, value] of Object.entries(collisionEffect)) {
+                    if (this.stats && this.stats[key] !== undefined) {
+                        const stat = this.stats[key];
+                        if (typeof stat === 'object' && stat.current !== undefined) {
+                            stat.current = Math.max(0, stat.current + value);
+                            if (key === 'health' && stat.current <= 0) {
+                                this.die();
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Apply state if specified (paralysis, confusion, etc.)
+            const applyStateName = other.getAttribute('apply_state');
+            if (applyStateName && this.applyState) {
+                const statesData = this.engine.globalStates;
+                if (statesData && statesData[applyStateName]) {
+                    this.applyState(applyStateName, statesData[applyStateName]);
+                }
+            }
+        }
     }
 
     // ========================================================================
@@ -5245,6 +5300,22 @@ const BehaviorLibrary = {
                 // Update sprites with new tint
                 if (newCloud.spriteBase) newCloud.spriteBase.tint = actor.tint;
                 if (newCloud.spriteTop) newCloud.spriteTop.tint = actor.tint;
+
+                // Apply state to any actors at this position (since applySpawnDamage ran before apply_state was set)
+                if (applyState) {
+                    const statesData = actor.engine.globalStates;
+                    if (statesData && statesData[applyState]) {
+                        for (const other of entityManager.actors) {
+                            if (other === newCloud) continue;
+                            if (other.isDead) continue;
+                            if (other.x !== targetX || other.y !== targetY) continue;
+                            if (other.type === 'cloud' || other.type === 'mist') continue;
+                            if (other.applyState) {
+                                other.applyState(applyState, statesData[applyState]);
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -5739,6 +5810,74 @@ const BehaviorLibrary = {
     },
 
     /**
+     * Drain suction behavior - pulls items on liquid tiles toward the drain
+     *
+     * Items within range that are floating on liquid actors are pulled toward the drain.
+     * Items at distance 1 are sucked down and deleted.
+     * Items at distance 2+ move one step closer.
+     *
+     * Data parameters:
+     * - suction_range: Maximum distance to affect items (default: 2)
+     */
+    drain_suction: (actor, data) => {
+        const entityManager = actor.engine.entityManager;
+        const drainX = actor.x;
+        const drainY = actor.y;
+
+        // Find items within range (default 2 tiles)
+        const range = data.suction_range ?? 2;
+
+        // Iterate over a copy since we may remove items
+        const itemsCopy = [...entityManager.items];
+
+        for (const item of itemsCopy) {
+            if (item.isDead) continue;
+
+            // Calculate Chebyshev distance
+            const dx = item.x - drainX;
+            const dy = item.y - drainY;
+            const distance = Math.max(Math.abs(dx), Math.abs(dy));
+
+            if (distance === 0 || distance > range) continue;
+
+            // Check if item is on a liquid tile
+            const liquidActor = entityManager.actors.find(
+                a => a.x === item.x && a.y === item.y &&
+                     !a.isDead && a.hasAttribute('liquid')
+            );
+            if (!liquidActor) continue;
+
+            if (distance === 1) {
+                // Item is adjacent - suck it down the drain
+                const itemName = item.getDisplayName ? item.getDisplayName() : item.name;
+                actor.engine.inputManager?.showMessage(`The ${itemName} is sucked down the drain!`);
+                entityManager.removeEntity(item);
+            } else {
+                // Item is further away - move it one step toward drain
+                const stepX = dx === 0 ? 0 : (dx > 0 ? -1 : 1);
+                const stepY = dy === 0 ? 0 : (dy > 0 ? -1 : 1);
+
+                const newX = item.x + stepX;
+                const newY = item.y + stepY;
+
+                // Only move if target tile has liquid
+                const targetLiquid = entityManager.actors.find(
+                    a => a.x === newX && a.y === newY &&
+                         !a.isDead && a.hasAttribute('liquid')
+                );
+                if (targetLiquid) {
+                    item.x = newX;
+                    item.y = newY;
+                    item.updateSpritePosition();
+                    actor.engine.renderer?.updateItemZIndex(item);
+                }
+            }
+        }
+
+        return false; // Allow other behaviors to run
+    },
+
+    /**
      * Conway's Game of Life cellular automaton step
      * Evaluates all cells simultaneously and applies Conway's rules:
      * - Live cell with 2-3 neighbors survives
@@ -5972,7 +6111,7 @@ const BehaviorLibrary = {
         if (!actorVictim) return false;
 
         // Mark this entity as having triggered
-        actor._triggeredBy.add(triggeringEntity);
+        actor._triggeredBy.add(actorVictim);
 
         // Make the trap visible (stays visible permanently)
         if (!actor.hasAttribute('visible')) {
@@ -6914,6 +7053,15 @@ class EntityManager {
                     // Flash the victim if there was negative health effect
                     if (collisionEffect.health && collisionEffect.health < 0) {
                         other.flash?.();
+                    }
+                }
+
+                // Apply state if cloud has apply_state (paralysis, confusion, etc.)
+                const applyStateName = hazard.getAttribute('apply_state');
+                if (applyStateName && other.applyState) {
+                    const statesData = this.engine.globalStates;
+                    if (statesData && statesData[applyStateName]) {
+                        other.applyState(applyStateName, statesData[applyStateName]);
                     }
                 }
             }

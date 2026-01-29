@@ -27,8 +27,24 @@
       "flammable": false,
       "weapon": true,
       "collision_effect": { "health": -10 },
-      "collision_sound": "tap2",
+      "collision_sound": "bow",
       "collision_description": "[actor_name] [attacks.melee_verbs] the [attacked_actor_name] with [a-an] [weapon_name]!",
+      "wear_effect": { "accuracy": "{strength}" }
+    }
+  },
+  "dagger": {
+    "name": "Sword",
+    "tileIndex": "LATIN_SMALL_LETTER_T",
+    "flipV": true,
+    "attributes": {
+      "pickupable": true,
+      "visible": true,
+      "stackable": false,
+      "flammable": false,
+      "weapon": true,
+      "collision_effect": { "health": -5 },
+      "collision_sound": "bow",
+      "collision_description": "[actor_name] stabs the [attacked_actor_name] with [a-an] [weapon_name]!",
       "wear_effect": { "accuracy": "{strength}" }
     }
   },
@@ -247,7 +263,7 @@
       "flammable": false,
       "weapon": "knockback",
       "collision_effect": { "health": -8 },
-      "collision_sound": "tap2",
+      "collision_sound": "plunk3",
       "collision_description": "[actor_name] smashes [attacked_actor_name] with [a-an] [weapon_name]!",
       "description": "A heavy hammer that knocks enemies back on hit."
     }
@@ -334,7 +350,7 @@
       "projectile_tile": "OPAQUE_INVERSE_DIAMOND_SUITE",
       "projectile_tint": "#FF6600",
       "cast_sound": "fireball",
-      "description": "An ancient staff that hurls balls of fire. Recharges over time."
+      "description": "A [substances.substances] staff."
     },
     "stats": {
       "pow": {
@@ -364,6 +380,7 @@
       "consumable": true,
       "explosive": true,
       "use_verb": "Drink",
+      "use_sound": "swallow",
       "use_effect": { "apply_state": "poisoned" }
     }
   },
@@ -386,6 +403,7 @@
       "consumable": true,
       "explosive": true,
       "use_verb": "Drink",
+      "use_sound": "swallow",
       "use_effect": { "apply_state": "confused" }
     }
   },
@@ -409,7 +427,7 @@
       "explosive": true,
       "use_verb": "Drink",
       "use_effect": { "apply_state": "hasted" },
-      "use_sound": "heal"
+      "use_sound": "swallow"
     }
   },
 
@@ -431,6 +449,7 @@
       "consumable": true,
       "explosive": true,
       "use_verb": "Drink",
+      "use_sound": "swallow",
       "use_effect": { "apply_state": "paralyzed" }
     }
   },
@@ -454,7 +473,7 @@
       "explosive": true,
       "use_verb": "Drink",
       "use_effect": { "apply_state": "regenerating" },
-      "use_sound": "heal"
+      "use_sound": "swallow"
     }
   }
 }

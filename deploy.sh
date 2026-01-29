@@ -39,6 +39,7 @@ mkdir -p "$DEST"/{lib,assets/sprites,assets/audio,data,prototypes/default,protot
 
 # Core JavaScript files
 echo "Copying core JS files..."
+cp "$SCRIPT_DIR/architect.js" "$DEST/"
 cp "$SCRIPT_DIR/engine.js" "$DEST/"
 cp "$SCRIPT_DIR/globals.js" "$DEST/"
 cp "$SCRIPT_DIR/input.js" "$DEST/"
