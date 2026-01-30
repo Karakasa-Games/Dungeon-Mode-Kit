@@ -6034,6 +6034,12 @@ const BehaviorLibrary = {
         const entityManager = actor.engine.entityManager;
         const damagePerTurn = actor.data?.damage_per_turn ?? 10;
 
+        // Fire cannot survive on void tiles (no floor)
+        if (!actor.hasFloorAt(actor.x, actor.y)) {
+            actor.die();
+            return true;
+        }
+
         // Initialize lifetime from actor data if not set
         if (actor.fireLifetime === undefined) {
             actor.fireLifetime = actor.lifetime || 5;
