@@ -1134,6 +1134,14 @@ class InterfaceManager {
     executeDropItem(item) {
         if (!this.currentPlayer) return;
 
+        // Unequip if this item is currently equipped
+        for (const slot of ['top', 'middle', 'lower']) {
+            if (this.currentPlayer.equipment[slot] === item) {
+                this.currentPlayer.unequipFromSlot(slot);
+                break;
+            }
+        }
+
         // Remove from inventory
         const index = this.currentPlayer.inventory.indexOf(item);
         if (index > -1) {

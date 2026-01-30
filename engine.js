@@ -3948,10 +3948,7 @@ class Actor extends Entity {
             return false;
         }
 
-        // Check for floor
-        if (!this.hasFloorAt(x, y)) {
-            return false;
-        }
+        // Floor check removed - pushing into voids is allowed (actor will fall)
 
         // Check for walls don't need this since all walls in play are actors
         /* const wallTile = this.engine.mapManager.wallMap[y][x];
@@ -4110,11 +4107,23 @@ class Actor extends Entity {
                     actorAtTarget.x = pushX;
                     actorAtTarget.y = pushY;
                     actorAtTarget.updateSpritePosition();
-                    console.log(`${this.name} pushes ${actorAtTarget.name}`);
                     this.engine.playSound('push1');
-                    // Show push message if player is pushing
-                    if (this.isPlayerControlled()) {
-                        this.engine.inputManager?.showMessage(`You push ${actorAtTarget.getNameWithArticle()}.`);
+
+                    // Check if pushed into void
+                    if (!this.hasFloorAt(pushX, pushY)) {
+                        console.log(`${this.name} pushes ${actorAtTarget.name} into the void`);
+                        if (this.isPlayerControlled()) {
+                            this.engine.inputManager?.showMessage(`You push ${actorAtTarget.getNameWithArticle()} into the void!`);
+                        }
+                        // Kill the actor (same as fall() but without duplicate message)
+                        actorAtTarget.dropItems(true);
+                        actorAtTarget.die(false);
+                    } else {
+                        console.log(`${this.name} pushes ${actorAtTarget.name}`);
+                        // Show push message if player is pushing
+                        if (this.isPlayerControlled()) {
+                            this.engine.inputManager?.showMessage(`You push ${actorAtTarget.getNameWithArticle()}.`);
+                        }
                     }
 
                     // Now move into the vacated space
@@ -6441,6 +6450,8 @@ class EntityManager {
                     this.spawnActorsFromLayer(layer, entryDirection, placedActorTypes);
                 } else if (layer.name === 'items') {
                     this.spawnItemsFromLayer(layer, placedItemTypes);
+                } else if (layer.name === 'landmarks') {
+                    this.spawnLandmarksFromLayer(layer);
                 }
             }
         }
@@ -6814,7 +6825,61 @@ class EntityManager {
             console.log(`Spawned ${itemType} at tile (${tileX}, ${tileY})`);
         }
     }
-    
+
+    /**
+     * Spawn landmark entities from a Tiled object layer
+     * Landmarks are ad-hoc entities defined entirely in the map file,
+     * not requiring pre-defined data in entities.json
+     * @param {Object} layer - Tiled object layer
+     */
+    spawnLandmarksFromLayer(layer) {
+        for (const obj of layer.objects) {
+            // Get tile name from class/type (e.g., "IMPERFECT_DOTTED_LIGHT_SHADE")
+            const tileName = obj.class || obj.type;
+            if (!tileName) {
+                console.warn('Landmark object has no class/type (tile name), skipping:', obj);
+                continue;
+            }
+
+            // Convert pixel coordinates to tile coordinates
+            const tileX = Math.floor(obj.x / this.engine.config.tileWidth);
+            const tileY = Math.floor(obj.y / this.engine.config.tileHeight);
+
+            // Create entity directly without requiring entities.json lookup
+            const entity = new Entity(tileX, tileY, 'landmark', this.engine);
+            entity.name = obj.name || 'landmark';
+
+            // Resolve tile from the tile name
+            entity.tileIndex = this.engine.spriteLibrary.resolveTile(tileName);
+            if (!entity.tileIndex) {
+                console.warn(`Landmark tile '${tileName}' not found in sprite library`);
+                continue;
+            }
+
+            // Set visible by default
+            entity.setAttribute('visible', true);
+
+            // Extract custom properties from Tiled object
+            if (obj.properties) {
+                for (const prop of obj.properties) {
+                    if (prop.name === 'walk_description') {
+                        entity.setAttribute('walk_description', prop.value);
+                    } else if (prop.name === 'tint') {
+                        entity.tint = parseTint(prop.value);
+                    } else if (prop.name === 'fillColor') {
+                        entity.fillColor = parseTint(prop.value);
+                    }
+                }
+            }
+
+            // Create sprite and add to entities list
+            this.engine.renderer?.createEntitySprite(entity);
+            this.entities.push(entity);
+
+            console.log(`Spawned landmark at (${tileX}, ${tileY}) with tile '${tileName}'`);
+        }
+    }
+
     addEntity(entity) {
         this.entities.push(entity);
 
@@ -6881,7 +6946,8 @@ class EntityManager {
     }
 
     getEntityAt(x, y) {
-        return this.entities.find(e => e.x === x && e.y === y);
+        // Return only base Entity objects (not Actor or Item subclasses)
+        return this.entities.find(e => e.x === x && e.y === y && !(e instanceof Actor) && !(e instanceof Item));
     }
     
     getActorAt(x, y) {

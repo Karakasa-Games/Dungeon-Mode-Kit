@@ -263,6 +263,21 @@ Actors render as two sprites stacked vertically (base at position, top one tile 
 - `wildcards` (tilelayer) - Special tiles that trigger procedural generation
 - `actors` (objectgroup) - Objects with `type` or `class` matching actor definitions
 - `items` (objectgroup) - Objects with `type` matching item definitions
+- `landmarks` (objectgroup) - Ad-hoc decorative entities with walk-over descriptions (see below)
+
+**Landmarks Layer:**
+
+The `landmarks` layer allows creating Bitsy-style descriptive decorations directly in Tiled without pre-defining them in entities.json. Useful for adding flavor text to specific map locations.
+
+| Tiled Field | Purpose |
+|-------------|---------|
+| `class`/`type` | Tile name from static-tiles.json (e.g., `SKULL`, `IMPERFECT_DOTTED_LIGHT_SHADE`) |
+| `name` | Optional display name for the landmark |
+| `walk_description` (custom property) | Message shown when player walks over the tile |
+| `tint` (custom property) | Color tint as hex string (e.g., `#FF0000`) |
+| `fillColor` (custom property) | Fill color for colored rectangle overlay |
+
+Example: Add an object to the `landmarks` layer with `type` set to `IMPERFECT_DOTTED_LIGHT_SHADE` and a custom property `walk_description` = `"Dried lichen crunches under your feet."` to create a decorative floor detail with a walk-over message.
 
 **[Lighting](/LIGHTING.md)**
 

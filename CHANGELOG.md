@@ -26,6 +26,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - FOV epistemology (currently messages aren't filtered by vision range, make sound alternate messages for those, also some things like mining walls can still be seen out of range)
 - Ball of thread item and entity trails (this is almost done, last tile of thread is hidden when walking down but still overlaps actor top tile when approaching from under on either side)
 
+## [0.8b] 2025-01-29
+
+### Added
+
+- Landmarks layer support for Tiled maps:
+  - New optional "landmarks" object layer in map.tmj files
+  - Create ad-hoc descriptive entities without defining them in entities.json
+  - Bitsy-style decorative tiles with walk-over messages
+  - Object `class`/`type` specifies tile name from static-tiles.json
+  - Supported custom properties: `walk_description`, `tint`, `fillColor`
+
+### Fixed
+
+- Pushing actors into voids now works - pushable actors can be pushed into void tiles and will fall with message "You push [the Wall] into the void!"
+- Dropping equipped items now properly unequips them first, fixing visual bug where equipment sprites remained on player after dropping
+
 ## [0.8a] 2025-01-26
 
 ### Added

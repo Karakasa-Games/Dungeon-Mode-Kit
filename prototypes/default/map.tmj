@@ -201,7 +201,7 @@
          "name":"wildcards",
          "opacity":1,
          "type":"tilelayer",
-         "visible":true,
+         "visible":false,
          "width":40,
          "x":0,
          "y":0
@@ -356,17 +356,6 @@
                 }, 
                 {
                  "height":30,
-                 "id":49,
-                 "name":"",
-                 "rotation":0,
-                 "type":"paralysis_gas_trap",
-                 "visible":true,
-                 "width":40,
-                 "x":1040,
-                 "y":660
-                }, 
-                {
-                 "height":30,
                  "id":50,
                  "name":"",
                  "rotation":0,
@@ -458,9 +447,37 @@
          "visible":true,
          "x":0,
          "y":0
+        }, 
+        {
+         "draworder":"topdown",
+         "id":8,
+         "name":"landmarks",
+         "objects":[
+                {
+                 "height":30,
+                 "id":53,
+                 "name":"",
+                 "properties":[
+                        {
+                         "name":"walk_description",
+                         "type":"string",
+                         "value":"Dried lichen cruches under your feet."
+                        }],
+                 "rotation":0,
+                 "type":"IMPERFECT_DOTTED_LIGHT_SHADE",
+                 "visible":true,
+                 "width":40,
+                 "x":920,
+                 "y":660
+                }],
+         "opacity":1,
+         "type":"objectgroup",
+         "visible":true,
+         "x":0,
+         "y":0
         }],
- "nextlayerid":7,
- "nextobjectid":51,
+ "nextlayerid":9,
+ "nextobjectid":54,
  "orientation":"orthogonal",
  "renderorder":"right-down",
  "tiledversion":"1.11.2",
